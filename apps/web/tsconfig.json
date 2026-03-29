@@ -17,12 +17,12 @@
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "incremental": true,
+
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     },
+
     "plugins": [
       {
         "name": "next"

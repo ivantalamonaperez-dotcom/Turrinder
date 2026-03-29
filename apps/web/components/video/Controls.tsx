@@ -3,15 +3,18 @@
 import { useState } from "react";
 
 type Props = {
-  onNext: () => void;
-  onLike: () => void;
+  onNext: () => void | Promise<void>;
+  onLike: () => void | Promise<void>;
+  liked?: boolean; // 🔥 agregado
 };
 
-export default function Controls({ onNext, onLike }: Props) {
+export default function Controls({ onNext, onLike, liked }: Props) {
   const [likeAnim, setLikeAnim] = useState(false);
   const [passAnim, setPassAnim] = useState(false);
 
   const handleLike = () => {
+    if (liked) return; // 🔥 evita spam
+
     setLikeAnim(true);
     setTimeout(() => setLikeAnim(false), 400);
     onLike();
@@ -63,7 +66,7 @@ export default function Controls({ onNext, onLike }: Props) {
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: transform 0.15s ease, box-shadow 0.15s ease;
+          transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s;
           position: relative;
           flex-shrink: 0;
         }
@@ -81,7 +84,6 @@ export default function Controls({ onNext, onLike }: Props) {
           background: rgba(255,77,77,0.12);
           border: 1.5px solid rgba(255,77,77,0.25);
           color: #ff4d4d;
-          box-shadow: 0 0 0 0 rgba(255,77,77,0);
         }
 
         .btn-pass::after {
@@ -105,7 +107,6 @@ export default function Controls({ onNext, onLike }: Props) {
           background: rgba(255,45,107,0.12);
           border: 1.5px solid rgba(255,45,107,0.25);
           color: #ff2d6b;
-          box-shadow: 0 0 0 0 rgba(255,45,107,0);
         }
 
         .btn-like::after {
@@ -125,6 +126,14 @@ export default function Controls({ onNext, onLike }: Props) {
         }
 
         .btn-like.anim::after { opacity: 1; }
+
+        /* 🔥 estado deshabilitado */
+        .btn-like.disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+          transform: none !important;
+          box-shadow: none !important;
+        }
 
         .btn-center {
           width: 52px; height: 52px;
@@ -166,9 +175,12 @@ export default function Controls({ onNext, onLike }: Props) {
         </button>
 
         <button
-          className={`ctrl-btn btn-like ${likeAnim ? "anim" : ""}`}
+          className={`ctrl-btn btn-like ${likeAnim ? "anim" : ""} ${
+            liked ? "disabled" : ""
+          }`}
           onClick={handleLike}
           title="Like"
+          disabled={liked}
         >
           ♥
         </button>
