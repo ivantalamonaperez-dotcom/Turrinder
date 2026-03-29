@@ -18,7 +18,6 @@ import MatchModal from "@/components/match/MatchModal";
 export default function DiscoverPage() {
   const router = useRouter();
 
-  // 🔐 proteger ruta
   useEffect(() => {
     const check = async () => {
       const { data } = await supabase.auth.getUser();
@@ -27,35 +26,25 @@ export default function DiscoverPage() {
     check();
   }, []);
 
-  // 👤 perfil + presencia
   useProfile();
   usePresence();
 
-  // 🔥 matchmaking
   const { room, searching } = useMatchmaking();
-
-  // 🔥 usuario matcheado
   const { matchUser } = useMatchUser(room);
-
-  // ❤️ likes
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
-  // 🔄 siguiente usuario
   const nextUser = async () => {
     if (!room) return;
 
-    await supabase
-      .from("rooms")
-      .update({ ended: true })
-      .eq("id", room.id);
+    // ✅ Limpiar señales WebRTC de la room antes de terminarla
+    await supabase.from("signals").delete().eq("room_id", room.id);
 
-    // Dar tiempo al realtime para notificar al otro antes de recargar
+    await supabase.from("rooms").update({ ended: true }).eq("id", room.id);
+
     await new Promise((res) => setTimeout(res, 300));
-
     window.location.reload();
   };
 
-  // ⏳ buscando
   if (searching || !room) {
     return <Searching />;
   }
@@ -129,6 +118,8 @@ export default function DiscoverPage() {
         .video-area {
           flex: 1;
           position: relative;
+          min-height: 0;        /* ✅ fix flexbox para que no crezca infinito */
+          overflow: hidden;     /* ✅ contener el video dentro del área */
         }
 
         .controls-area {
@@ -136,6 +127,7 @@ export default function DiscoverPage() {
           z-index: 10;
           background: linear-gradient(to top, rgba(8,8,16,1) 60%, transparent 100%);
           padding-top: 20px;
+          flex-shrink: 0;       /* ✅ los controles nunca se comprimen */
         }
 
         .match-info {
@@ -153,7 +145,6 @@ export default function DiscoverPage() {
         }
       `}</style>
 
-      {/* ✅ Modal de match — visible para AMBOS usuarios cuando hay like mutual */}
       <MatchModal
         visible={isMatch}
         onClose={() => setIsMatch(false)}
@@ -189,7 +180,6 @@ export default function DiscoverPage() {
           )}
         </div>
 
-        {/* liked se pasa a Controls para deshabilitar el botón tras el primer like */}
         <div className="controls-area">
           <Controls onNext={nextUser} onLike={likeUser} liked={liked} />
         </div>

@@ -7,19 +7,27 @@ export default function VideoPlayer({ room }: { room: any }) {
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
+  const iceCandidateBuffer = useRef<RTCIceCandidateInit[]>([]);
+  const isConnected = useRef(false); // ✅ guard para ignorar señales tardías
 
   useEffect(() => {
     if (!room) return;
 
     let userId: string;
     let channel: any;
+    let isUser1: boolean;
 
     const start = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
       userId = data.user.id;
+      isUser1 = room.user1 === userId;
+      isConnected.current = false;
+      iceCandidateBuffer.current = [];
 
-      // 🎥 1. Obtener cámara
+      console.log(`🎭 Soy ${isUser1 ? "user1 (OFFER)" : "user2 (ANSWER)"}`);
+
+      // 🎥 1. Cámara y micrófono
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -27,49 +35,73 @@ export default function VideoPlayer({ room }: { room: any }) {
           audio: true,
         });
       } catch (err) {
-        console.error("❌ No se pudo acceder a la cámara:", err);
+        console.error("❌ Cámara no disponible:", err);
         return;
       }
 
-      // ✅ Asignar video local DESPUÉS de obtener el stream
       if (localVideo.current) {
         localVideo.current.srcObject = stream;
       }
 
-      // 🔗 2. Crear peer connection
+      // 🔗 2. Peer connection
       pc.current = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
       });
 
-      // Enviar tracks locales
       stream.getTracks().forEach((track) => {
-        pc.current?.addTrack(track, stream);
+        pc.current!.addTrack(track, stream);
       });
 
-      // Recibir video remoto
       pc.current.ontrack = (event) => {
+        console.log("📡 Track remoto recibido");
         if (remoteVideo.current) {
           remoteVideo.current.srcObject = event.streams[0];
         }
       };
 
-      // ICE candidates → signals
       pc.current.onicecandidate = async (event) => {
-        if (event.candidate && pc.current?.remoteDescription) {
+        if (event.candidate) {
           await supabase.from("signals").insert({
             room_id: room.id,
             sender: userId,
             type: "candidate",
-            data: event.candidate,
+            data: event.candidate.toJSON(),
           });
         }
       };
 
-      // ✅ 3. Suscribirse PRIMERO al canal antes de crear el offer
-      // Esto evita el race condition donde user2 se pierde el offer
+      pc.current.onconnectionstatechange = () => {
+        const state = pc.current?.connectionState;
+        console.log("🔌 Connection state:", state);
+        if (state === "connected") {
+          isConnected.current = true; // ✅ marcar como conectado
+        }
+      };
+
+      pc.current.oniceconnectionstatechange = () => {
+        console.log("🧊 ICE state:", pc.current?.iceConnectionState);
+      };
+
+      // ✅ 3. user1 limpia TODAS las señales viejas de la room
+      // user2 espera a que user1 limpie antes de suscribirse
+      if (isUser1) {
+        await supabase
+          .from("signals")
+          .delete()
+          .eq("room_id", room.id);
+      } else {
+        // user2 espera un poco para que user1 termine de limpiar
+        await new Promise((res) => setTimeout(res, 500));
+      }
+
+      // ✅ 4. Suscribirse con nombre único para evitar CHANNEL_ERROR
+      const channelName = `webrtc-${room.id}-${Date.now()}`;
       await new Promise<void>((resolve) => {
         channel = supabase
-          .channel("webrtc-" + room.id)
+          .channel(channelName)
           .on(
             "postgres_changes",
             {
@@ -80,20 +112,28 @@ export default function VideoPlayer({ room }: { room: any }) {
             },
             async (payload) => {
               const signal = payload.new;
-
-              // Ignorar señales propias y señales de rooms anteriores
               if (signal.sender === userId) return;
 
-              if (signal.type === "offer" && pc.current) {
-                // Ignorar si ya tenemos remote description
-                if (pc.current.signalingState !== "stable") return;
+              // ✅ Ignorar señales si ya estamos conectados (señales tardías/viejas)
+              if (isConnected.current && signal.type !== "candidate") return;
 
-                await pc.current.setRemoteDescription(
+              console.log("📨 Señal recibida:", signal.type);
+
+              if (signal.type === "offer" && !isUser1) {
+                // Ignorar si ya procesamos un offer
+                if (pc.current!.signalingState !== "stable") return;
+
+                await pc.current!.setRemoteDescription(
                   new RTCSessionDescription(signal.data)
                 );
 
-                const answer = await pc.current.createAnswer();
-                await pc.current.setLocalDescription(answer);
+                for (const c of iceCandidateBuffer.current) {
+                  try { await pc.current!.addIceCandidate(c); } catch {}
+                }
+                iceCandidateBuffer.current = [];
+
+                const answer = await pc.current!.createAnswer();
+                await pc.current!.setLocalDescription(answer);
 
                 await supabase.from("signals").insert({
                   room_id: room.id,
@@ -103,43 +143,42 @@ export default function VideoPlayer({ room }: { room: any }) {
                 });
               }
 
-              if (signal.type === "answer" && pc.current) {
-                // Ignorar si ya tenemos remote description
-                if (pc.current.signalingState !== "have-local-offer") return;
+              if (signal.type === "answer" && isUser1) {
+                if (pc.current!.signalingState !== "have-local-offer") return;
 
-                await pc.current.setRemoteDescription(
+                await pc.current!.setRemoteDescription(
                   new RTCSessionDescription(signal.data)
                 );
+
+                for (const c of iceCandidateBuffer.current) {
+                  try { await pc.current!.addIceCandidate(c); } catch {}
+                }
+                iceCandidateBuffer.current = [];
               }
 
-              if (signal.type === "candidate" && pc.current) {
-                // Solo agregar candidatos si ya hay remote description
-                if (!pc.current.remoteDescription) return;
-
-                try {
-                  await pc.current.addIceCandidate(
-                    new RTCIceCandidate(signal.data)
-                  );
-                } catch (e) {
-                  // ignorar candidatos duplicados
+              if (signal.type === "candidate") {
+                if (pc.current!.remoteDescription) {
+                  try {
+                    await pc.current!.addIceCandidate(
+                      new RTCIceCandidate(signal.data)
+                    );
+                  } catch {}
+                } else {
+                  iceCandidateBuffer.current.push(signal.data);
                 }
               }
             }
           )
           .subscribe((status) => {
-            if (status === "SUBSCRIBED") {
-              resolve(); // ✅ canal listo, recién ahora crear el offer
-            }
+            console.log("📡 Canal WebRTC:", status);
+            if (status === "SUBSCRIBED") resolve();
           });
       });
 
-      // ✅ 4. Solo DESPUÉS de estar suscrito, user1 crea el offer
-      if (room.user1 === userId) {
-        // Limpiar señales viejas de esta room antes de crear nuevas
-        await supabase
-          .from("signals")
-          .delete()
-          .eq("room_id", room.id);
+      // ✅ 5. user1 crea el offer DESPUÉS de que ambos estén suscritos
+      if (isUser1) {
+        // Dar tiempo a user2 para suscribirse (500ms de delay + tiempo de suscripción)
+        await new Promise((res) => setTimeout(res, 800));
 
         const offer = await pc.current.createOffer();
         await pc.current.setLocalDescription(offer);
@@ -150,6 +189,8 @@ export default function VideoPlayer({ room }: { room: any }) {
           type: "offer",
           data: offer,
         });
+
+        console.log("📤 Offer enviado");
       }
     };
 
@@ -158,28 +199,16 @@ export default function VideoPlayer({ room }: { room: any }) {
     return () => {
       pc.current?.close();
       pc.current = null;
+      iceCandidateBuffer.current = [];
+      isConnected.current = false;
       if (channel) supabase.removeChannel(channel);
     };
   }, [room]);
 
   return (
     <div style={styles.container}>
-      {/* REMOTO — pantalla completa */}
-      <video
-        ref={remoteVideo}
-        autoPlay
-        playsInline
-        style={styles.remote}
-      />
-
-      {/* LOCAL — esquina inferior derecha */}
-      <video
-        ref={localVideo}
-        autoPlay
-        muted
-        playsInline
-        style={styles.local}
-      />
+      <video ref={remoteVideo} autoPlay playsInline style={styles.remote} />
+      <video ref={localVideo} autoPlay muted playsInline style={styles.local} />
     </div>
   );
 }
