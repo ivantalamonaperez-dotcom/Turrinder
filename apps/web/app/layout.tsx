@@ -1,13 +1,11 @@
 import "../styles/globals.css";
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="es">
+      <body style={{ margin: 0, background: "#080810" }}>
+        {children}
+      </body>
     </html>
   );
 }

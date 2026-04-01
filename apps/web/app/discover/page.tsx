@@ -11,8 +11,6 @@ import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
 
 import VideoPlayer from "@/components/video/VideoPlayer";
-import Controls from "@/components/video/Controls";
-import Searching from "@/components/ui/Searching";
 import MatchModal from "@/components/match/MatchModal";
 
 export default function DiscoverPage() {
@@ -35,19 +33,11 @@ export default function DiscoverPage() {
 
   const nextUser = async () => {
     if (!room) return;
-
-    // ✅ Limpiar señales WebRTC de la room antes de terminarla
     await supabase.from("signals").delete().eq("room_id", room.id);
-
     await supabase.from("rooms").update({ ended: true }).eq("id", room.id);
-
     await new Promise((res) => setTimeout(res, 300));
     window.location.reload();
   };
-
-  if (searching || !room) {
-    return <Searching />;
-  }
 
   return (
     <>
@@ -55,31 +45,34 @@ export default function DiscoverPage() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
 
         .discover-root {
-          height: 100vh;
+          height: 100vh; /* side nav no ocupa espacio abajo */
           display: flex;
           flex-direction: column;
-          background: #080810;
-          font-family: 'DM Sans', sans-serif;
-          position: relative;
+          background: #07070f;
           overflow: hidden;
+          position: relative;
         }
 
+        /* Header flotante — encima de los videos */
         .discover-header {
           position: absolute;
           top: 0; left: 0; right: 0;
-          z-index: 10;
+          z-index: 20;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 20px 24px;
-          background: linear-gradient(to bottom, rgba(8,8,16,0.9) 0%, transparent 100%);
+          padding: 14px 18px;
+          background: linear-gradient(to bottom, rgba(7,7,15,0.8) 0%, transparent 100%);
+          pointer-events: none;
         }
 
         .header-logo {
           font-family: 'Syne', sans-serif;
-          font-size: 20px;
+          font-size: 17px;
           font-weight: 800;
           color: white;
+          letter-spacing: -0.5px;
+          pointer-events: all;
         }
 
         .header-logo span {
@@ -91,57 +84,28 @@ export default function DiscoverPage() {
         .online-pill {
           display: flex;
           align-items: center;
-          gap: 7px;
+          gap: 6px;
           background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.08);
           border-radius: 100px;
-          padding: 6px 14px;
-          font-size: 13px;
-          color: rgba(255,255,255,0.7);
+          padding: 4px 11px;
+          font-size: 11px;
+          color: rgba(255,255,255,0.6);
+          font-family: 'DM Sans', sans-serif;
+          pointer-events: all;
         }
 
         .online-dot {
-          width: 7px; height: 7px;
+          width: 6px; height: 6px;
           border-radius: 50%;
           background: #22c55e;
           box-shadow: 0 0 6px #22c55e;
         }
 
-        .profile-btn {
-          width: 36px; height: 36px;
-          border-radius: 50%;
-          background: rgba(255,255,255,0.06);
-          color: rgba(255,255,255,0.7);
-          cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-        }
-
-        .video-area {
+        .discover-video {
           flex: 1;
-          position: relative;
-          min-height: 0;        /* ✅ fix flexbox para que no crezca infinito */
-          overflow: hidden;     /* ✅ contener el video dentro del área */
-        }
-
-        .controls-area {
-          position: relative;
-          z-index: 10;
-          background: linear-gradient(to top, rgba(8,8,16,1) 60%, transparent 100%);
-          padding-top: 20px;
-          flex-shrink: 0;       /* ✅ los controles nunca se comprimen */
-        }
-
-        .match-info {
-          position: absolute;
-          bottom: 110px;
-          left: 20px;
-          color: white;
-          font-size: 18px;
-          font-weight: 600;
-          background: rgba(0,0,0,0.5);
-          padding: 10px 16px;
-          border-radius: 12px;
-          backdrop-filter: blur(10px);
-          z-index: 20;
+          min-height: 0;
+          overflow: hidden;
         }
       `}</style>
 
@@ -153,35 +117,22 @@ export default function DiscoverPage() {
 
       <div className="discover-root">
         <header className="discover-header">
-          <div className="header-logo">
-            Turr<span>inder</span>
-          </div>
-
+          <div className="header-logo">Turr<span>inder</span></div>
           <div className="online-pill">
             <div className="online-dot" />
             En vivo
           </div>
-
-          <button
-            className="profile-btn"
-            onClick={() => router.push("/profile")}
-          >
-            👤
-          </button>
         </header>
 
-        <div className="video-area">
-          <VideoPlayer room={room} />
-
-          {matchUser && (
-            <div className="match-info">
-              {matchUser.name}, {matchUser.age}
-            </div>
-          )}
-        </div>
-
-        <div className="controls-area">
-          <Controls onNext={nextUser} onLike={likeUser} liked={liked} />
+        <div className="discover-video">
+          <VideoPlayer
+            room={room}
+            matchUser={matchUser}
+            onNext={nextUser}
+            onLike={likeUser}
+            liked={liked}
+            searching={searching}
+          />
         </div>
       </div>
     </>
