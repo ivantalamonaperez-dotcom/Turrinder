@@ -24,40 +24,65 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
   const [likeAnim,    setLikeAnim]    = useState(false);
   const [skipAnim,    setSkipAnim]    = useState(false);
 
-  // Cámara local — siempre activa
+  // ── Un único stream global para toda la vida del componente ──────────────
+  // Usamos una ref MODULE-level para que Strict Mode (doble montaje/desmontaje)
+  // no cierre la cámara entre el primer cleanup y el segundo montaje.
+  const localStream = useRef<MediaStream | null>(null);
+  const camStarted  = useRef(false);
+
+  // Cámara local — se abre una sola vez aunque Strict Mode monte dos veces
   useEffect(() => {
-    let stream: MediaStream;
-    const startCam = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    if (camStarted.current) return;          // ya corriendo, no abrir de nuevo
+    camStarted.current = true;
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then((stream) => {
+        localStream.current = stream;
         if (localVideo.current) localVideo.current.srcObject = stream;
-      } catch (err) {
-        console.error("❌ Cámara no disponible:", err);
-      }
+      })
+      .catch((err) => console.error("❌ Cámara no disponible:", err));
+
+    return () => {
+      // Solo detenemos al desmontar de verdad (no en el cleanup de Strict Mode)
+      // Strict Mode llama cleanup + re-mount sincrónicamente; el segundo montaje
+      // ve camStarted.current = true y no vuelve a pedir la cámara.
+      // El verdadero desmontaje llega cuando el componente sale del árbol.
     };
-    startCam();
-    return () => { stream?.getTracks().forEach(t => t.stop()); };
   }, []);
 
-  // WebRTC — solo cuando hay room
+  // Cleanup real de la cámara cuando el componente se destruye del todo
+  useEffect(() => {
+    return () => {
+      localStream.current?.getTracks().forEach(t => t.stop());
+      localStream.current = null;
+      camStarted.current  = false;
+    };
+  }, []);
+
+  // WebRTC — solo cuando hay room, reutiliza localStream sin volver a pedir cámara
   useEffect(() => {
     if (!room) return;
     let userId: string, channel: any, isUser1: boolean;
+    let cancelled = false;
 
     const start = async () => {
       const { data } = await supabase.auth.getUser();
-      if (!data.user) return;
+      if (!data.user || cancelled) return;
       userId = data.user.id;
       isUser1 = room.user1 === userId;
       isConn.current = false;
       iceBuf.current  = [];
 
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      } catch { return; }
-
-      if (localVideo.current) localVideo.current.srcObject = stream;
+      // Esperar hasta 3s a que la cámara esté lista (puede estar cargando)
+      let stream = localStream.current;
+      if (!stream) {
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          stream = localStream.current;
+          if (stream || cancelled) break;
+        }
+      }
+      if (!stream || cancelled) return;
 
       pc.current = new RTCPeerConnection({
         iceServers: [
@@ -149,6 +174,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
     start();
 
     return () => {
+      cancelled = true;
       pc.current?.close();
       pc.current = null;
       iceBuf.current = [];
@@ -468,11 +494,11 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         /* ── Barra de controles — siempre visible ── */
         .vp-controls {
           flex-shrink: 0;
+          height: 80px;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 16px;
-          padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
           background: rgba(7,7,15,0.95);
           border-top: 1px solid rgba(255,255,255,0.05);
           position: relative;

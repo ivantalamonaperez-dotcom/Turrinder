@@ -124,11 +124,13 @@ export const useLike = (room: any) => {
       .maybeSingle();
 
     if (otherLike) {
-      // ✅ MATCH MUTUAL — insertar sin room_id
-      const { error: matchError } = await supabase.from("matches").insert({
-        user1: myId,
-        user2: otherId,
-      });
+      // ✅ MATCH MUTUAL — upsert con ignoreDuplicates para que si ambos usuarios
+      // detectan el match al mismo tiempo y los dos intentan insertar,
+      // el segundo simplemente se ignore sin error 409.
+      const { error: matchError } = await supabase.from("matches").upsert(
+        { user1: myId, user2: otherId },
+        { onConflict: "user1,user2", ignoreDuplicates: true }
+      );
 
       if (!matchError) {
         setIsMatch(true);

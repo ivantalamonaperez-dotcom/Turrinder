@@ -3,16 +3,17 @@ import { supabase } from "@/services/supabase.client";
 export const matchingService = {
   joinQueue: async (userId: string) => {
     try {
-      // 🔥 1. LIMPIAR ESTADO VIEJO
+      // 🔥 1. LIMPIAR ESTADO VIEJO — solo queue y rooms YA terminadas
       await supabase.from("queue").delete().eq("user_id", userId);
 
-      // ✅ Borrar TODAS las rooms del usuario.
-      // El skip hace ended=true ANTES del reload, y el reload tarda ~500ms+,
-      // así que el realtime ya notificó al otro usuario antes de llegar acá.
+      // ✅ Solo borrar rooms terminadas. NO borrar rooms activas —
+      // el otro usuario puede estar en medio de WebRTC y si borramos
+      // su room antes de que arranque queda en "Conectando..." para siempre.
       await supabase
         .from("rooms")
         .delete()
-        .or(`user1.eq.${userId},user2.eq.${userId}`);
+        .or(`user1.eq.${userId},user2.eq.${userId}`)
+        .eq("ended", true);
 
       // 🔥 2. BUSCAR USUARIO DISPONIBLE (NO BLOQUEADO + ONLINE)
       const { data: queue, error } = await supabase
@@ -155,7 +156,7 @@ export const matchingService = {
     return room;
   },
 
-  listenForMatch: (userId: string, callback: (room: any) => void) => {
+  listenForMatch: (userId: string, callback: (room: any) => void, onSubscribed?: () => void) => {
     return supabase
       .channel("matchmaking-" + userId) // ✅ canal único por usuario (evita colisiones)
       .on(
@@ -173,6 +174,9 @@ export const matchingService = {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        // ✅ Notificar cuando el canal está listo — el caller puede hacer joinQueue recién ahora
+        if (status === "SUBSCRIBED") onSubscribed?.();
+      });
   },
 };

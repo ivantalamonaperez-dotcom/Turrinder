@@ -27,14 +27,18 @@ export const useMatchmaking = () => {
 
       userId = data.user.id;
 
-      // 🔥 1. ESCUCHAR MATCHES (REALTIME)
-      matchChannel = matchingService.listenForMatch(userId, (roomData) => {
-        console.log("🎯 MATCH (realtime):", roomData);
-        setRoomSync(roomData);
-        setSearching(false);
+      // 🔥 1. ESCUCHAR MATCHES (REALTIME) — primero suscribirse, DESPUÉS buscar match.
+      // Si hacemos joinQueue antes de que el canal esté SUBSCRIBED podemos perder
+      // el INSERT event y el usuario que espera queda pegado en "Conectando...".
+      await new Promise<void>((resolve) => {
+        matchChannel = matchingService.listenForMatch(userId, (roomData) => {
+          console.log("🎯 MATCH (realtime):", roomData);
+          setRoomSync(roomData);
+          setSearching(false);
+        }, resolve); // ← resolve se llama cuando el canal está SUBSCRIBED
       });
 
-      // 🔥 2. INTENTAR MATCHEAR DIRECTO
+      // 🔥 2. AHORA SÍ: intentar matchear directo (canal ya activo)
       const newRoom = await matchingService.joinQueue(userId);
 
       if (newRoom) {
