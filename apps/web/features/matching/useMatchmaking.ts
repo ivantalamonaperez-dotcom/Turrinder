@@ -55,12 +55,28 @@ export const useMatchmaking = () => {
           .from("rooms")
           .select("*")
           .or(`user1.eq.${userId},user2.eq.${userId}`)
-          .eq("ended", false) // ✅ ignorar rooms terminadas
+          .eq("ended", false)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
         if (existingRoom) {
+          // ✅ Verificar que el otro usuario esté online antes de aceptar la room
+          const otherId = existingRoom.user1 === userId ? existingRoom.user2 : existingRoom.user1;
+
+          const { data: otherProfile } = await supabase
+            .from("profiles")
+            .select("is_online")
+            .eq("id", otherId)
+            .single();
+
+          if (!otherProfile?.is_online) {
+            // El otro no está online — esta room es basura, borrarla
+            console.log("🗑️ Room con usuario offline, descartando...");
+            await supabase.from("rooms").delete().eq("id", existingRoom.id);
+            return;
+          }
+
           console.log("🔁 MATCH (polling):", existingRoom);
           setRoomSync(existingRoom);
           setSearching(false);

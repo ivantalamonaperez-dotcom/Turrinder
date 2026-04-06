@@ -6,14 +6,13 @@ export const matchingService = {
       // 🔥 1. LIMPIAR ESTADO VIEJO — solo queue y rooms YA terminadas
       await supabase.from("queue").delete().eq("user_id", userId);
 
-      // ✅ Solo borrar rooms terminadas. NO borrar rooms activas —
-      // el otro usuario puede estar en medio de WebRTC y si borramos
-      // su room antes de que arranque queda en "Conectando..." para siempre.
+      // ✅ Borrar TODAS las rooms del usuario — si está entrando a buscar
+      // es porque no está en ninguna conversación activa. El otro usuario
+      // ya fue notificado antes del reload (ended=true + 300ms delay).
       await supabase
         .from("rooms")
         .delete()
-        .or(`user1.eq.${userId},user2.eq.${userId}`)
-        .eq("ended", true);
+        .or(`user1.eq.${userId},user2.eq.${userId}`);
 
       // 🔥 2. BUSCAR USUARIO DISPONIBLE (NO BLOQUEADO + ONLINE)
       const { data: queue, error } = await supabase
