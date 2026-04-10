@@ -5,11 +5,10 @@ import { supabase } from "@/services/supabase.client";
 import { matchingService } from "./matching.service";
 
 export const useMatchmaking = () => {
-  const [room, setRoom] = useState<any>(null);
+  const [room, setRoom]         = useState<any>(null);
   const [searching, setSearching] = useState(true);
-
-  // ✅ ref para evitar stale closure en el polling
-  const roomRef = useRef<any>(null);
+  const roomRef   = useRef<any>(null);
+  const userIdRef = useRef<string>("");
 
   const setRoomSync = (data: any) => {
     roomRef.current = data;
@@ -18,40 +17,40 @@ export const useMatchmaking = () => {
 
   useEffect(() => {
     let matchChannel: any;
-    let interval: any;
-    let userId: string;
+    let interval:     NodeJS.Timeout;
 
     const start = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
+      const userId = data.user.id;
+      userIdRef.current = userId;
 
-      userId = data.user.id;
-
-      // 🔥 1. ESCUCHAR MATCHES (REALTIME) — primero suscribirse, DESPUÉS buscar match.
-      // Si hacemos joinQueue antes de que el canal esté SUBSCRIBED podemos perder
-      // el INSERT event y el usuario que espera queda pegado en "Conectando...".
+      // 1. Suscribirse al canal ANTES de joinQueue para no perder el INSERT
       await new Promise<void>((resolve) => {
-        matchChannel = matchingService.listenForMatch(userId, (roomData) => {
-          console.log("🎯 MATCH (realtime):", roomData);
-          setRoomSync(roomData);
-          setSearching(false);
-        }, resolve); // ← resolve se llama cuando el canal está SUBSCRIBED
+        matchChannel = matchingService.listenForMatch(
+          userId,
+          (roomData) => {
+            if (roomRef.current) return; // ya tengo room, ignorar
+            setRoomSync(roomData);
+            setSearching(false);
+          },
+          resolve,
+        );
       });
 
-      // 🔥 2. AHORA SÍ: intentar matchear directo (canal ya activo)
+      // 2. Intentar match directo
       const newRoom = await matchingService.joinQueue(userId);
-
       if (newRoom) {
-        console.log("🔥 MATCH (directo):", newRoom);
         setRoomSync(newRoom);
         setSearching(false);
+        return;
       }
 
-      // 🔥 3. POLLING (BACKUP para el usuario que espera en cola)
+      // 3. Polling de backup — por si el realtime pierde el INSERT
       interval = setInterval(async () => {
-        if (roomRef.current) return; // ✅ usa ref, no state
+        if (roomRef.current) return;
 
-        const { data: existingRoom } = await supabase
+        const { data: myRoom } = await supabase
           .from("rooms")
           .select("*")
           .or(`user1.eq.${userId},user2.eq.${userId}`)
@@ -60,27 +59,11 @@ export const useMatchmaking = () => {
           .limit(1)
           .maybeSingle();
 
-        if (existingRoom) {
-          // ✅ Verificar que el otro usuario esté online antes de aceptar la room
-          const otherId = existingRoom.user1 === userId ? existingRoom.user2 : existingRoom.user1;
+        if (!myRoom) return;
 
-          const { data: otherProfile } = await supabase
-            .from("profiles")
-            .select("is_online")
-            .eq("id", otherId)
-            .single();
-
-          if (!otherProfile?.is_online) {
-            // El otro no está online — esta room es basura, borrarla
-            console.log("🗑️ Room con usuario offline, descartando...");
-            await supabase.from("rooms").delete().eq("id", existingRoom.id);
-            return;
-          }
-
-          console.log("🔁 MATCH (polling):", existingRoom);
-          setRoomSync(existingRoom);
-          setSearching(false);
-        }
+        console.log("Match (polling):", myRoom);
+        setRoomSync(myRoom);
+        setSearching(false);
       }, 1500);
     };
 
@@ -88,41 +71,32 @@ export const useMatchmaking = () => {
 
     return () => {
       if (matchChannel) supabase.removeChannel(matchChannel);
-      if (interval) clearInterval(interval);
-
-      supabase.auth.getUser().then(({ data }) => {
-        if (!data.user) return;
-        supabase.from("queue").delete().eq("user_id", data.user.id);
-      });
+      if (interval)     clearInterval(interval);
+      // Limpiar cola al desmontar
+      const uid = userIdRef.current;
+      if (uid) supabase.from("queue").delete().eq("user_id", uid);
     };
   }, []);
 
-  // 🔥 4. ESCUCHAR CUANDO LA ROOM TERMINA (SKIP SINCRONIZADO)
+  // 4. Escuchar cuando la room termina — recargar para volver a buscar
   useEffect(() => {
     if (!room) return;
 
     const channel = supabase
-      .channel("room-end-" + room.id) // nombre único por room
+      .channel("room-end-" + room.id)
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "rooms",
-          filter: `id=eq.${room.id}`,
-        },
+        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
         (payload) => {
           if (payload.new.ended === true) {
-            console.log("⏭️ Room terminada, volviendo a buscar...");
+            console.log("Room terminada, volviendo a buscar...");
             window.location.reload();
           }
-        }
+        },
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [room]);
 
   return { room, searching };

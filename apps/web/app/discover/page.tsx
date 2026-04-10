@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 
+// Hooks y Servicios
 import { useProfile } from "@/hooks/useProfile";
 import { usePresence } from "@/hooks/usePresence";
 import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
+import { matchingService } from "@/features/matching/matching.service";
 
-import VideoPlayer from "@/components/video/VideoPlayer";
+// Componentes
 import MatchModal from "@/components/match/MatchModal";
+// ✅ IMPORTACIÓN AGREGADA: Asegúrate de que la ruta sea correcta
+import VideoPlayer from "@/components/video/VideoPlayer";
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -22,7 +26,7 @@ export default function DiscoverPage() {
       if (!data.user) router.push("/");
     };
     check();
-  }, []);
+  }, [router]);
 
   useProfile();
   usePresence();
@@ -33,8 +37,13 @@ export default function DiscoverPage() {
 
   const nextUser = async () => {
     if (!room) return;
-    await supabase.from("signals").delete().eq("room_id", room.id);
-    await supabase.from("rooms").update({ ended: true }).eq("id", room.id);
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) return;
+    
+    // El RPC end_room marca la sala como terminada y limpia señales
+    await matchingService.endRoom(room.id, data.user.id);
+    
+    // Pequeño delay para que la base de datos procese antes de recargar
     await new Promise((res) => setTimeout(res, 300));
     window.location.reload();
   };
@@ -45,7 +54,7 @@ export default function DiscoverPage() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
 
         .discover-root {
-          height: 100vh; /* side nav no ocupa espacio abajo */
+          height: 100vh;
           display: flex;
           flex-direction: column;
           background: #07070f;
@@ -53,7 +62,6 @@ export default function DiscoverPage() {
           position: relative;
         }
 
-        /* Header flotante — encima de los videos */
         .discover-header {
           position: absolute;
           top: 0; left: 0; right: 0;
