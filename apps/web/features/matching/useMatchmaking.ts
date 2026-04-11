@@ -45,16 +45,17 @@ export const useMatchmaking = () => {
       }
       inQueue = true;
 
-      // 3. Polling — dos responsabilidades:
-      //    A) Detectar si el otro nos creó una room (backup del realtime)
-      //    B) Reintentar joinQueue periódicamente para matchear con quien
-      //       entró a la cola DESPUÉS de nosotros
+      // 3. Polling con jitter aleatorio para evitar race conditions con 3+ usuarios
+      // Cada usuario tiene un offset distinto para que no intenten crear rooms al mismo tiempo
+      const jitter = Math.floor(Math.random() * 1000); // 0-1000ms de offset inicial
       let pollCount = 0;
+      await new Promise(r => setTimeout(r, jitter)); // esperar el jitter antes de empezar
+
       interval = setInterval(async () => {
         if (roomRef.current) return;
         pollCount++;
 
-        // A) Verificar si ya hay room para mí
+        // A) Verificar si ya hay room para mí (backup del realtime)
         const { data: existingRoom } = await supabase
           .from("rooms")
           .select("*")
@@ -80,10 +81,12 @@ export const useMatchmaking = () => {
           return;
         }
 
-        // B) Cada 3 ciclos (4.5s), reintentar joinQueue
-        //    Esto cubre el caso donde los dos están en cola pero
-        //    ninguno fue el "creador" del match
-        if (pollCount % 3 === 0) {
+        // B) Cada 4 ciclos (6s), reintentar joinQueue con jitter adicional
+        //    El jitter evita que 3 usuarios intenten crear rooms simultáneamente
+        if (pollCount % 4 === 0) {
+          // Pequeño delay aleatorio antes del retry para desincronizar usuarios
+          await new Promise(r => setTimeout(r, Math.floor(Math.random() * 500)));
+          if (roomRef.current) return; // revisar de nuevo después del delay
           const retryRoom = await matchingService.joinQueue(userId);
           if (retryRoom) {
             console.log("🔄 MATCH (retry polling):", retryRoom);
