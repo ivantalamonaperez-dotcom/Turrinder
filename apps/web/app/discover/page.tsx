@@ -1,21 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 
-// Hooks y Servicios
 import { useProfile } from "@/hooks/useProfile";
 import { usePresence } from "@/hooks/usePresence";
 import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
-import { matchingService } from "@/features/matching/matching.service";
 
-// Componentes
-import MatchModal from "@/components/match/MatchModal";
-// ✅ IMPORTACIÓN AGREGADA: Asegúrate de que la ruta sea correcta
 import VideoPlayer from "@/components/video/VideoPlayer";
+import MatchModal from "@/components/match/MatchModal";
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -26,7 +22,7 @@ export default function DiscoverPage() {
       if (!data.user) router.push("/");
     };
     check();
-  }, [router]);
+  }, []);
 
   useProfile();
   usePresence();
@@ -37,13 +33,13 @@ export default function DiscoverPage() {
 
   const nextUser = async () => {
     if (!room) return;
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) return;
-    
-    // El RPC end_room marca la sala como terminada y limpia señales
-    await matchingService.endRoom(room.id, data.user.id);
-    
-    // Pequeño delay para que la base de datos procese antes de recargar
+
+    // Limpiar signals y marcar room como terminada
+    // El realtime + polling notifica al otro usuario automáticamente
+    await supabase.from("signals").delete().eq("room_id", room.id);
+    await supabase.from("rooms").update({ ended: true }).eq("id", room.id);
+
+    // Esperar a que el realtime notifique al otro antes de recargar
     await new Promise((res) => setTimeout(res, 300));
     window.location.reload();
   };
@@ -54,7 +50,7 @@ export default function DiscoverPage() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
 
         .discover-root {
-          height: 100vh;
+          height: calc(100vh - 64px);
           display: flex;
           flex-direction: column;
           background: #07070f;

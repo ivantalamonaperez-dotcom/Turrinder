@@ -106,10 +106,11 @@ export const useMatchmaking = () => {
     };
   }, []);
 
-  // 4. Escuchar cuando la room termina
+  // 4. Escuchar cuando la room termina — realtime + polling de seguridad
   useEffect(() => {
     if (!room) return;
 
+    // Realtime: reacción inmediata cuando llega el evento
     const channel = supabase
       .channel("room-end-" + room.id)
       .on(
@@ -117,14 +118,33 @@ export const useMatchmaking = () => {
         { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
         (payload) => {
           if (payload.new.ended === true) {
-            console.log("⏭️ Room terminada");
+            console.log("⏭️ Room terminada (realtime)");
             window.location.reload();
           }
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Polling de seguridad: por si el realtime llega tarde o se pierde
+    // Chequea cada 800ms si la room fue terminada por el otro usuario
+    const roomPoll = setInterval(async () => {
+      const { data } = await supabase
+        .from("rooms")
+        .select("ended")
+        .eq("id", room.id)
+        .single();
+
+      if (data?.ended === true) {
+        console.log("⏭️ Room terminada (polling)");
+        clearInterval(roomPoll);
+        window.location.reload();
+      }
+    }, 800);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(roomPoll);
+    };
   }, [room]);
 
   return { room, searching };
