@@ -397,7 +397,7 @@ export default function HomePage() {
         <div className="hp-logo-block">
           <div className="hp-logo-icon">🔥</div>
           <div className="hp-logo-name">Turr<span>inder</span></div>
-          <div className="hp-logo-tagline">Tinder meets OmeTV</div>
+          <div className="hp-logo-tagline">Tinder meets OmeTV 2</div>
         </div>
 
         <div className="hp-card">
