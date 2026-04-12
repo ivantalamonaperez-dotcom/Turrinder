@@ -1,37 +1,15 @@
 import { Server, Socket } from "socket.io";
-import {
-  addToQueue,
-  removeFromQueue,
-  findMatch,
-} from "../handlers/matchmaking.handler";
-import { createSession } from "../../webrtc/webrtc.service";
+import { matchmakingHandler } from "../handlers/matchmaking.handler";
 
-export default function registerMatchmakingEvents(
-  io: Server,
-  socket: Socket
-) {
-  socket.on("joinQueue", () => {
-    console.log("➡️ joinQueue:", socket.id);
-
-    addToQueue(socket);
-
-    const match = findMatch();
-
-    if (match) {
-      const [user1, user2] = match;
-
-      createSession(user1.id, user2.id);
-
-      user1.emit("matchFound", { partnerId: user2.id });
-      user2.emit("matchFound", { partnerId: user1.id });
-    }
+export default function registerMatchmakingEvents(io: Server, socket: Socket) {
+  
+  // Cuando el usuario pulsa "Buscar" o "Next"
+  socket.on("find-match", () => {
+    matchmakingHandler.handleFindMatch(io, socket);
   });
 
-  socket.on("leaveQueue", () => {
-    removeFromQueue(socket);
-  });
-
-  socket.on("disconnect", () => {
-    removeFromQueue(socket);
+  // Cuando el usuario pulsa "Stop" o abandona la sección
+  socket.on("leave-matchmaking", () => {
+    matchmakingHandler.handleLeave(socket, io);
   });
 }

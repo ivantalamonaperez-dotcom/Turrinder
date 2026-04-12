@@ -8,25 +8,42 @@ export const useMatchUser = (room: any) => {
 
   useEffect(() => {
     const load = async () => {
-      if (!room) return;
+      // 1. Si no hay room o la room no tiene ID, limpiamos y salimos
+      if (!room || !room.id) {
+        setMatchUser(null);
+        return;
+      }
 
-      const { data: current } = await supabase.auth.getUser();
-      const myId = current.user?.id;
+      try {
+        /**
+         * NOTA: El objeto 'room' que viene de useMatchmaking ahora es { id: partnerId }.
+         * Por lo tanto, room.id YA es el ID de la otra persona.
+         */
+        const otherId = room.id;
 
-      const otherId =
-        room.user1 === myId ? room.user2 : room.user1;
+        console.log("📡 Cargando perfil de Supabase para el ID:", otherId);
 
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, name, age")
-        .eq("id", otherId)
-        .single();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, name, age, avatar_url") // Añadí avatar_url por si lo necesitas
+          .eq("id", otherId)
+          .single();
 
-      setMatchUser(data);
+        if (error) {
+          console.error("❌ Error al obtener perfil del match:", error.message);
+          return;
+        }
+
+        if (data) {
+          setMatchUser(data);
+        }
+      } catch (err) {
+        console.error("❌ Error inesperado cargando matchUser:", err);
+      }
     };
 
     load();
-  }, [room]);
+  }, [room]); // Reacciona cada vez que la sala cambia o se resetea a null
 
   return { matchUser };
 };

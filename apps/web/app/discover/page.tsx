@@ -9,6 +9,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
+import { matchingService } from "@/features/matching/matching.service";
 
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
@@ -22,26 +23,47 @@ export default function DiscoverPage() {
       if (!data.user) router.push("/");
     };
     check();
-  }, []);
+  }, [router]);
 
+  // Hooks de contexto y presencia
   useProfile();
   usePresence();
 
-  const { room, searching } = useMatchmaking();
+  /**
+   * NOTA: Asegúrate de que useMatchmaking devuelva 'setRoom' 
+   * en su bloque de 'return'.
+   */
+  const { room, searching, setRoom } = useMatchmaking();
+  
+  // Obtenemos los datos del usuario con el que estamos conectados
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
   const nextUser = async () => {
-    if (!room) return;
+    try {
+      const { data: me } = await supabase.auth.getUser();
+      if (!me.user) return;
 
-    // Limpiar signals y marcar room como terminada
-    // El realtime + polling notifica al otro usuario automáticamente
-    await supabase.from("signals").delete().eq("room_id", room.id);
-    await supabase.from("rooms").update({ ended: true }).eq("id", room.id);
+      console.log("⏭️ Intentando saltar al siguiente usuario...");
 
-    // Esperar a que el realtime notifique al otro antes de recargar
-    await new Promise((res) => setTimeout(res, 300));
-    window.location.reload();
+      if (room && room.id) {
+        // 1. Limpieza en Base de Datos
+        await matchingService.endRoom(room.id);
+      }
+      
+      // 2. Limpieza en el Cliente
+      // Esto dispara el useEffect de useMatchmaking para buscar nuevo match
+      if (typeof setRoom === "function") {
+        setRoom(null);
+      } else {
+        console.warn("⚠️ setRoom no está definido en useMatchmaking. Recargando...");
+        window.location.reload();
+      }
+
+    } catch (error) {
+      console.error("❌ Error al pasar de usuario:", error);
+      window.location.reload();
+    }
   };
 
   return (
@@ -80,7 +102,7 @@ export default function DiscoverPage() {
         }
 
         .header-logo span {
-          background: linear-gradient(135deg, #ff2d6b, #ff6b35);
+          background: linear-gradient(135deg, #22c55e, #16a34a);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
         }
