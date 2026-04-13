@@ -17,7 +17,6 @@ import MatchModal from "@/components/match/MatchModal";
 export default function DiscoverPage() {
   const router = useRouter();
 
-  // 1. Verificación de Autenticación
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -26,51 +25,24 @@ export default function DiscoverPage() {
     checkUser();
   }, [router]);
 
-  // 2. Hooks de Estado y Presencia (Se ejecutan siempre)
   useProfile();
   usePresence();
 
-  /**
-   * 3. Lógica de Matchmaking y Socket
-   * Extraemos 'findNewMatch' que es la encargada de reiniciar 
-   * el proceso de búsqueda tanto en UI como en el servidor.
-   */
   const { room, searching, findNewMatch } = useMatchmaking();
-  
-  // 4. Datos del Match actual y Lógica de Likes
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
-  /**
-   * nextUser: Gestiona la transición al siguiente usuario.
-   * Prioriza la fluidez de la interfaz (Radar inmediato).
-   */
   const nextUser = async () => {
     try {
-      console.log("⏭️ Saltando al siguiente usuario...");
-
-      // A. Guardamos referencia del room actual para limpiar DB después
       const currentRoomId = room?.id;
-
-      /**
-       * B. REINICIO DE BÚSQUEDA
-       * Llamamos a la función maestra del hook que:
-       * 1. Setea room a null.
-       * 2. Activa el estado 'searching'.
-       * 3. Emite 'find-match' al servidor.
-       */
       findNewMatch();
-
-      // C. LIMPIEZA EN DB (Background)
       if (currentRoomId) {
-        matchingService.endRoom(currentRoomId).catch(err => 
-          console.error("Error silencioso limpiando room en DB:", err)
+        matchingService.endRoom(currentRoomId).catch(err =>
+          console.error("Error limpiando room:", err)
         );
       }
-
     } catch (error) {
-      console.error("❌ Fallo crítico en el flujo de Next:", error);
-      // Recargamos solo si el estado se rompe, aunque findNewMatch es más seguro
+      console.error("❌ Error en nextUser:", error);
       window.location.reload();
     }
   };
@@ -78,69 +50,89 @@ export default function DiscoverPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
 
+        /* ── Ocupa exactamente el espacio sin la sidenav ── */
         .discover-root {
-          height: calc(100dvh - 64px); 
+          height: calc(100dvh - 64px);
           display: flex;
           flex-direction: column;
-          background: #07070f;
+          background: #04040c;
           overflow: hidden;
           position: relative;
         }
 
-        .discover-header {
-          position: absolute;
-          top: 0; left: 0; right: 0;
-          z-index: 20;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 14px 18px;
-          background: linear-gradient(to bottom, rgba(7,7,15,0.8) 0%, transparent 100%);
-          pointer-events: none;
-        }
-
-        .header-logo {
-          font-family: 'Syne', sans-serif;
-          font-size: 17px;
-          font-weight: 800;
-          color: white;
-          letter-spacing: -0.5px;
-          pointer-events: all;
-        }
-
-        .header-logo span {
-          background: linear-gradient(135deg, #22c55e, #16a34a);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-
-        .online-pill {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: rgba(255,255,255,0.06);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 100px;
-          padding: 4px 11px;
-          font-size: 11px;
-          color: rgba(255,255,255,0.6);
-          font-family: 'DM Sans', sans-serif;
-          pointer-events: all;
-        }
-
-        .online-dot {
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 6px #22c55e;
-        }
-
+        /* ── Video ocupa TODO el espacio disponible ── */
         .discover-video {
           flex: 1;
           min-height: 0;
           overflow: hidden;
+          position: relative;
+        }
+
+        /* ── Header flotante encima del video ── */
+        .discover-header {
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          z-index: 50;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 20px;
+          /* Gradiente descendente para que el header sea legible pero no tape el video */
+          background: linear-gradient(
+            to bottom,
+            rgba(4,4,12,0.75) 0%,
+            rgba(4,4,12,0.3)  60%,
+            transparent 100%
+          );
+          pointer-events: none;
+        }
+
+        /* ── Logo ── */
+        .header-logo {
+          font-family: 'Syne', sans-serif;
+          font-size: 18px;
+          font-weight: 900;
+          letter-spacing: -0.5px;
+          pointer-events: all;
+          line-height: 1;
+        }
+        /* "Turr" en blanco, "inder" con el degradado del divisor */
+        .header-logo-white { color: rgba(255,255,255,0.92); }
+        .header-logo-grad {
+          background: linear-gradient(135deg, #ff6b35 0%, #ff2d6b 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        /* ── Pill de estado ── */
+        .header-pill {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.08);
+          backdrop-filter: blur(10px);
+          border-radius: 100px;
+          padding: 5px 13px;
+          pointer-events: all;
+        }
+        .header-pill-dot {
+          width: 6px; height: 6px;
+          border-radius: 50%;
+          background: #22c55e;
+          box-shadow: 0 0 7px #22c55e;
+          animation: liveBlink 2.5s ease-in-out infinite;
+        }
+        @keyframes liveBlink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+        .header-pill-text {
+          font-family: 'DM Sans', sans-serif;
+          font-size: 11px;
+          font-weight: 500;
+          color: rgba(255,255,255,0.55);
+          letter-spacing: 0.5px;
         }
       `}</style>
 
@@ -151,14 +143,20 @@ export default function DiscoverPage() {
       />
 
       <div className="discover-root">
+
+        {/* Header flotante — vive SOBRE el video, sin ocupar espacio propio */}
         <header className="discover-header">
-          <div className="header-logo">Turr<span>inder</span></div>
-          <div className="online-pill">
-            <div className="online-dot" />
-            En vivo
+          <div className="header-logo">
+            <span className="header-logo-white">Turr</span>
+            <span className="header-logo-grad">inder</span>
+          </div>
+          <div className="header-pill">
+            <div className="header-pill-dot" />
+            <span className="header-pill-text">En vivo</span>
           </div>
         </header>
 
+        {/* Video ocupa todo — el header flota encima */}
         <div className="discover-video">
           <VideoPlayer
             room={room}
@@ -166,10 +164,10 @@ export default function DiscoverPage() {
             onNext={nextUser}
             onLike={likeUser}
             liked={liked}
-            // Muestra el radar si está buscando o si todavía no hay una sala asignada
             searching={searching || !room}
           />
         </div>
+
       </div>
     </>
   );
