@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
 
 interface Props {
-  room: { id: string } | null; // Añadida para que coincida con DiscoverPage
+  room: { id: string } | null;
   matchUser: any;
   onNext: () => void;
   onLike: () => void;
@@ -12,38 +12,38 @@ interface Props {
   searching?: boolean;
 }
 
-export default function VideoPlayer({ room,        // Recibimos room
+export default function VideoPlayer({ 
+  room, 
   matchUser, 
   onNext, 
   onLike, 
   liked, 
   searching 
 }: Props) {
-  // Extraemos isConnected y remoteStream del hook actualizado
-  const { localVideoRef, remoteVideoRef, partnerId, isConnected, remoteStream } = useWebRTC();
+  
+  // 1. Mantenemos el ID para la lógica de la UI (radar, etc.)
+  const targetPartnerId = room?.id || null;
+
+  // ✨ SOLUCIÓN AL ERROR: Ahora le pasamos targetPartnerId al hook.
+  // Esto permite que useWebRTC sepa exactamente cuándo la sala pasa a null 
+  // para destruir el video viejo antes de buscar uno nuevo.
+  const { localVideoRef, remoteVideoRef, isConnected, remoteStream } = useWebRTC(targetPartnerId);
 
   const [audioLocked, setAudioLocked] = useState(true);
   const [likeAnim, setLikeAnim] = useState(false);
   const [skipAnim, setSkipAnim] = useState(false);
 
-  /**
-   * LÓGICA DE VISIBILIDAD:
-   * El radar se quita si:
-   * 1. Ya recibimos el stream de video del otro (!!remoteStream)
-   * 2. O si el "cable" está conectado y tenemos un partner, 
-   * aunque el video falle (caso de cámara ocupada).
-   */
-  const remoteReady = !!remoteStream || (isConnected && !!partnerId);
+  // El radar se quita si hay stream real o si el cable WebRTC está conectado 
+  // y el componente padre (DiscoverPage) ya nos asignó una room.
+  const remoteReady = !!remoteStream || (isConnected && !!targetPartnerId);
 
-  // Resetear el estado del audio cuando cambia el partner
   useEffect(() => {
     setAudioLocked(true);
-  }, [partnerId]);
+  }, [targetPartnerId]);
 
   const unlockAudio = () => {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.muted = false;
-      // Intentar reproducir por si el navegador bloqueó el autoplay
       remoteVideoRef.current.play().catch(() => {});
       setAudioLocked(false);
     }
@@ -68,6 +68,7 @@ export default function VideoPlayer({ room,        // Recibimos room
   return (
     <>
       <style>{`
+        /* ... (tu CSS se mantiene igual) ... */
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
         .vp-root { width: 100%; height: 100%; display: flex; flex-direction: column; background: #07070f; overflow: hidden; cursor: pointer; }
         .vp-videos { flex: 1; display: flex; flex-direction: row; min-height: 0; gap: 3px; background: #07070f; }
@@ -101,18 +102,13 @@ export default function VideoPlayer({ room,        // Recibimos room
         .vp-ctrl-like.anim { transform: scale(1.3); }
         .vp-ctrl-like.liked { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; transform: none; }
       `}</style>
-
       <div className="vp-root" onClick={unlockAudio}>
         <div className="vp-videos">
-          {/* VIDEO LOCAL */}
           <div className="vp-local-wrap">
             <div className="vp-local-label"><div className="vp-rec-dot" /> Tú</div>
             <video ref={localVideoRef} autoPlay muted playsInline className="vp-local" />
           </div>
-
           <div className="vp-divider" />
-
-          {/* VIDEO REMOTO */}
           <div className="vp-remote-wrap">
             <video 
               ref={remoteVideoRef} 
@@ -122,7 +118,6 @@ export default function VideoPlayer({ room,        // Recibimos room
               style={{ opacity: remoteReady ? 1 : 0 }} 
             />
             
-            {/* RADAR: Se muestra si NO hay partnerId O si la conexión WebRTC no se ha completado/recibido video */}
             {!remoteReady && (
               <div className="vp-placeholder">
                 <div className="vp-radar">
@@ -135,11 +130,8 @@ export default function VideoPlayer({ room,        // Recibimos room
                 </div>
               </div>
             )}
-
-            {/* HINT DE AUDIO: Solo si hay conexión pero el audio está muteado por el navegador */}
             {remoteReady && audioLocked && <div className="vp-audio-hint">🔊 CLIC PARA ESCUCHAR</div>}
             
-            {/* INFO DEL MATCH */}
             {remoteReady && matchUser && (
               <div className="vp-match-info">
                 <div className="vp-match-name">{matchUser.name}, {matchUser.age}</div>
@@ -151,8 +143,6 @@ export default function VideoPlayer({ room,        // Recibimos room
             )}
           </div>
         </div>
-
-        {/* CONTROLES INFERIORES */}
         <div className="vp-controls">
           <div className="vp-ctrl-group">
             <button 

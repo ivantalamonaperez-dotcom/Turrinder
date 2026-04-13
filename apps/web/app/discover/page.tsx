@@ -17,51 +17,60 @@ import MatchModal from "@/components/match/MatchModal";
 export default function DiscoverPage() {
   const router = useRouter();
 
+  // 1. Verificación de Autenticación
   useEffect(() => {
-    const check = async () => {
+    const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) router.push("/");
     };
-    check();
+    checkUser();
   }, [router]);
 
-  // Hooks de contexto y presencia
+  // 2. Hooks de Estado y Presencia (Se ejecutan siempre)
   useProfile();
   usePresence();
 
   /**
-   * NOTA: Asegúrate de que useMatchmaking devuelva 'setRoom' 
-   * en su bloque de 'return'.
+   * 3. Lógica de Matchmaking y Socket
+   * Extraemos 'findNewMatch' que es la encargada de reiniciar 
+   * el proceso de búsqueda tanto en UI como en el servidor.
    */
-  const { room, searching, setRoom } = useMatchmaking();
+  const { room, searching, findNewMatch } = useMatchmaking();
   
-  // Obtenemos los datos del usuario con el que estamos conectados
+  // 4. Datos del Match actual y Lógica de Likes
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
+  /**
+   * nextUser: Gestiona la transición al siguiente usuario.
+   * Prioriza la fluidez de la interfaz (Radar inmediato).
+   */
   const nextUser = async () => {
     try {
-      const { data: me } = await supabase.auth.getUser();
-      if (!me.user) return;
+      console.log("⏭️ Saltando al siguiente usuario...");
 
-      console.log("⏭️ Intentando saltar al siguiente usuario...");
+      // A. Guardamos referencia del room actual para limpiar DB después
+      const currentRoomId = room?.id;
 
-      if (room && room.id) {
-        // 1. Limpieza en Base de Datos
-        await matchingService.endRoom(room.id);
-      }
-      
-      // 2. Limpieza en el Cliente
-      // Esto dispara el useEffect de useMatchmaking para buscar nuevo match
-      if (typeof setRoom === "function") {
-        setRoom(null);
-      } else {
-        console.warn("⚠️ setRoom no está definido en useMatchmaking. Recargando...");
-        window.location.reload();
+      /**
+       * B. REINICIO DE BÚSQUEDA
+       * Llamamos a la función maestra del hook que:
+       * 1. Setea room a null.
+       * 2. Activa el estado 'searching'.
+       * 3. Emite 'find-match' al servidor.
+       */
+      findNewMatch();
+
+      // C. LIMPIEZA EN DB (Background)
+      if (currentRoomId) {
+        matchingService.endRoom(currentRoomId).catch(err => 
+          console.error("Error silencioso limpiando room en DB:", err)
+        );
       }
 
     } catch (error) {
-      console.error("❌ Error al pasar de usuario:", error);
+      console.error("❌ Fallo crítico en el flujo de Next:", error);
+      // Recargamos solo si el estado se rompe, aunque findNewMatch es más seguro
       window.location.reload();
     }
   };
@@ -72,7 +81,7 @@ export default function DiscoverPage() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
 
         .discover-root {
-          height: calc(100vh - 64px);
+          height: calc(100dvh - 64px); 
           display: flex;
           flex-direction: column;
           background: #07070f;
@@ -157,7 +166,8 @@ export default function DiscoverPage() {
             onNext={nextUser}
             onLike={likeUser}
             liked={liked}
-            searching={searching}
+            // Muestra el radar si está buscando o si todavía no hay una sala asignada
+            searching={searching || !room}
           />
         </div>
       </div>

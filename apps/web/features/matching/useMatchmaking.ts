@@ -1,76 +1,80 @@
-// apps/web/features/matching/useMatchmaking.ts
-import { useEffect, useState, useCallback, useRef } from "react";
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSocket } from "@/hooks/useSocket";
 
 export const useMatchmaking = () => {
   const socket = useSocket();
-  
-  // Mantenemos el estado de 'room' para que DiscoverPage pueda leerlo y resetearlo
   const [room, setRoom] = useState<{ id: string } | null>(null);
-  const [isInitiator, setIsInitiator] = useState(false);
-  const [searching, setSearching] = useState(true);
+  const [searching, setSearching] = useState(false);
   
-  // Usamos una ref para evitar bucles infinitos en el useEffect
-  const hasJoinedQueue = useRef(false);
+  const isFindingMatch = useRef(false);
 
-  const startSearch = useCallback(() => {
-    if (!socket) return;
-    console.log("🔍 Buscando nuevo match...");
+  const findNewMatch = useCallback(() => {
+    if (!socket?.connected || isFindingMatch.current) return;
+    
+    console.log("[Matchmaking] 🔍 Iniciando búsqueda...");
+    isFindingMatch.current = true;
     setSearching(true);
-    setRoom(null);
-    setIsInitiator(false);
+    // Al poner esto en null, nuestro nuevo useWebRTC destruye la cámara vieja al instante
+    setRoom(null); 
     socket.emit("find-match");
   }, [socket]);
 
+  // EFECTO 1: Listeners de Socket
   useEffect(() => {
     if (!socket) return;
 
-    // Si no hay sala y no estamos buscando, iniciamos búsqueda
-    if (!room && !hasJoinedQueue.current) {
-      startSearch();
-      hasJoinedQueue.current = true;
-    }
+    // 🔥 EL ARREGLO ESTÁ AQUÍ: Usamos data.partnerId en lugar de roomId
+    const handleMatchFound = (data: { partnerId: string }) => {
+      console.log("[Matchmaking] ✅ Match encontrado con:", data.partnerId);
+      setRoom({ id: data.partnerId }); // ¡Ahora sí guarda un ID real!
+      setSearching(false);
+      isFindingMatch.current = false;
+    };
 
-    socket.on("match-found", ({ partnerId: newPartnerId, isInitiator: initiator }) => {
-      if (newPartnerId) {
-        console.log("🎯 Match encontrado con:", newPartnerId);
-        // Seteamos el objeto room para que useMatchUser(room) se dispare
-        setRoom({ id: newPartnerId }); 
-        setIsInitiator(initiator);
-        setSearching(false);
-        hasJoinedQueue.current = false;
-      } else {
-        setRoom(null);
-        setSearching(true);
-      }
-    });
-
-    socket.on("waiting", () => {
-      console.log("⏳ En cola de espera...");
-      setRoom(null);
+    const handleWaiting = () => {
+      console.log("[Matchmaking] ⏳ En cola de espera...");
       setSearching(true);
-    });
+      isFindingMatch.current = false;
+    };
 
-    socket.on("partner-left", () => {
-      console.log("👤 El compañero se fue");
-      setRoom(null);
-      setSearching(true);
-      // Re-intentar búsqueda automáticamente
-      setTimeout(() => startSearch(), 1000);
-    });
+    const handleError = (error: any) => {
+      console.error("[Matchmaking] ❌ Error:", error);
+      setSearching(false);
+      isFindingMatch.current = false;
+    };
+
+    const handlePartnerLeft = () => {
+      console.log("[Matchmaking] 💔 El compañero saltó o se desconectó.");
+      findNewMatch(); 
+    };
+
+    socket.on("match-found", handleMatchFound);
+    socket.on("waiting", handleWaiting);
+    socket.on("error", handleError);
+    socket.on("partner-left", handlePartnerLeft);
 
     return () => {
-      socket.off("match-found");
-      socket.off("waiting");
-      socket.off("partner-left");
+      socket.off("match-found", handleMatchFound);
+      socket.off("waiting", handleWaiting);
+      socket.off("error", handleError);
+      socket.off("partner-left", handlePartnerLeft);
     };
-  }, [socket, startSearch, room]);
+  }, [socket, findNewMatch]);
 
-  return { 
-    room,         // Ahora DiscoverPage recibe el objeto esperado
-    setRoom,      // Ahora nextUser puede hacer setRoom(null)
-    isInitiator, 
-    searching, 
-    startSearch 
+  // EFECTO 2: Disparador automático
+  useEffect(() => {
+    if (socket?.connected && !room && !searching && !isFindingMatch.current) {
+      console.log("[Matchmaking] 🚀 Disparando búsqueda inicial...");
+      findNewMatch();
+    }
+  }, [socket?.connected, room, searching, findNewMatch]);
+
+  return {
+    room,
+    searching,
+    setRoom,
+    findNewMatch,
   };
 };
