@@ -1,80 +1,114 @@
 "use client";
 
+/**
+ * useMatchmaking — CON DELAY EN SKIP
+ *
+ * CAMBIO: findNewMatch ahora acepta un parámetro `delayMs` (default 0).
+ * - nextUser en page.tsx puede llamar findNewMatch() sin delay.
+ * - handlePartnerLeft usa 1000ms de delay para que la transición sea suave.
+ * - El delay también evita que dos usuarios se "crucen" y ambos busquen
+ *   a la vez, terminando en cola en lugar de emparejarse entre sí.
+ */
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSocket } from "@/hooks/useSocket";
 
 export const useMatchmaking = () => {
-  const socket = useSocket();
-  const [room, setRoom] = useState<{ id: string } | null>(null);
+  const { socket, connectCount } = useSocket();
+  const [room,      setRoom]      = useState<{ id: string } | null>(null);
   const [searching, setSearching] = useState(false);
-  
   const isFindingMatch = useRef(false);
+  const searchTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const findNewMatch = useCallback(() => {
-    if (!socket?.connected || isFindingMatch.current) return;
-    
-    console.log("[Matchmaking] 🔍 Iniciando búsqueda...");
-    isFindingMatch.current = true;
-    setSearching(true);
-    // Al poner esto en null, nuestro nuevo useWebRTC destruye la cámara vieja al instante
-    setRoom(null); 
-    socket.emit("find-match");
+  const clearSearchTimeout = () => {
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+      searchTimeout.current = null;
+    }
+  };
+
+  const findNewMatch = useCallback((delayMs = 0) => {
+    if (!socket?.connected) {
+      console.warn("[Matchmaking] Socket no conectado.");
+      return;
+    }
+    if (isFindingMatch.current) return;
+
+    clearSearchTimeout();
+
+    const doSearch = () => {
+      if (!socket?.connected) return;
+      console.log("[Matchmaking] 🔍 Emitiendo find-match...");
+      isFindingMatch.current = true;
+      setSearching(true);
+      setRoom(null);
+      socket.emit("find-match");
+    };
+
+    if (delayMs > 0) {
+      // Mostrar el radar inmediatamente aunque la búsqueda tenga delay
+      setRoom(null);
+      setSearching(true);
+      searchTimeout.current = setTimeout(doSearch, delayMs);
+    } else {
+      doSearch();
+    }
   }, [socket]);
 
-  // EFECTO 1: Listeners de Socket
+  // ── Listeners ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    // 🔥 EL ARREGLO ESTÁ AQUÍ: Usamos data.partnerId en lugar de roomId
     const handleMatchFound = (data: { partnerId: string }) => {
-      console.log("[Matchmaking] ✅ Match encontrado con:", data.partnerId);
-      setRoom({ id: data.partnerId }); // ¡Ahora sí guarda un ID real!
+      clearSearchTimeout();
+      console.log("[Matchmaking] ✅ Match con:", data.partnerId);
+      setRoom({ id: data.partnerId });
       setSearching(false);
       isFindingMatch.current = false;
     };
 
     const handleWaiting = () => {
-      console.log("[Matchmaking] ⏳ En cola de espera...");
+      console.log("[Matchmaking] ⏳ En cola...");
       setSearching(true);
       isFindingMatch.current = false;
     };
 
-    const handleError = (error: any) => {
-      console.error("[Matchmaking] ❌ Error:", error);
+    const handleError = (err: any) => {
+      console.error("[Matchmaking] ❌ Error:", err);
       setSearching(false);
       isFindingMatch.current = false;
     };
 
     const handlePartnerLeft = () => {
-      console.log("[Matchmaking] 💔 El compañero saltó o se desconectó.");
-      findNewMatch(); 
+      console.log("[Matchmaking] 💔 Compañero se fue.");
+      isFindingMatch.current = false;
+      // 1 segundo de pausa antes de buscar — transición suave + evita cruce
+      findNewMatch(1000);
     };
 
-    socket.on("match-found", handleMatchFound);
-    socket.on("waiting", handleWaiting);
-    socket.on("error", handleError);
+    socket.on("match-found",  handleMatchFound);
+    socket.on("waiting",      handleWaiting);
+    socket.on("error",        handleError);
     socket.on("partner-left", handlePartnerLeft);
 
     return () => {
-      socket.off("match-found", handleMatchFound);
-      socket.off("waiting", handleWaiting);
-      socket.off("error", handleError);
+      socket.off("match-found",  handleMatchFound);
+      socket.off("waiting",      handleWaiting);
+      socket.off("error",        handleError);
       socket.off("partner-left", handlePartnerLeft);
+      clearSearchTimeout();
     };
   }, [socket, findNewMatch]);
 
-  // EFECTO 2: Disparador automático
+  // ── Disparador automático en cada conexión ───────────────────────────────
   useEffect(() => {
-    if (socket?.connected && !room && !searching && !isFindingMatch.current) {
-      console.log("[Matchmaking] 🚀 Disparando búsqueda inicial...");
+    if (connectCount === 0) return;
+    if (!room && !searching && !isFindingMatch.current) {
+      console.log(`[Matchmaking] 🚀 Búsqueda inicial (connectCount=${connectCount})...`);
       findNewMatch();
     }
-  }, [socket?.connected, room, searching, findNewMatch]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectCount]);
 
-  return {
-    room,
-    searching,
-    setRoom,
-    findNewMatch,
-  };
+  return { room, searching, setRoom, findNewMatch };
 };
