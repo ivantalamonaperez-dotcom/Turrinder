@@ -60,11 +60,21 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           width: 100%;
           height: 100%;
           display: flex;
-          flex-direction: row;
+          flex-direction: column;
           overflow: hidden;
           position: relative;
           background: #04040c;
           font-family: 'DM Sans', sans-serif;
+        }
+
+        /* ── ZONA DE VIDEO (ocupa todo menos la barra de controles) ── */
+        .vp-video-zone {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: row;
+          position: relative;
+          overflow: hidden;
         }
 
         /* ── PANELES 50/50 ── */
@@ -165,16 +175,30 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           50%      { box-shadow: 0 0 24px rgba(255,107,53,1),   0 0 60px rgba(255,45,107,0.5); transform: translate(-50%,-50%) scale(1.25); }
         }
 
-        /* ── CONTROLES FLOTANTES — encima del divisor ── */
+        /* ── BARRA DE CONTROLES — fija al fondo, fuera del video ── */
         .vp-controls {
-          position: absolute;
-          left: 50%;
-          bottom: 28px;
-          transform: translateX(-50%);
-          z-index: 40;
+          flex-shrink: 0;
           display: flex;
           align-items: center;
-          gap: 14px;
+          justify-content: center;
+          gap: 16px;
+          padding: 8px 24px calc(20px + env(safe-area-inset-bottom, 20px));
+          background: rgba(4, 4, 12, 0.95);
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          backdrop-filter: blur(12px);
+          z-index: 40;
+        }
+        /* Slots laterales: mismo ancho que el boton skip para centrar el corazon */
+        .vp-ctrl-slot {
+          width: 50px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .vp-ctrl-slot-center {
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .vp-ctrl {
@@ -380,7 +404,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         /* ── INFO OVERLAY (con video activo) ── */
         .vp-info {
           position: absolute;
-          bottom: 80px; /* sobre los controles */
+          bottom: 20px;
           left: 14px;
           z-index: 10;
           display: flex;
@@ -452,6 +476,9 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
       {likeFlash && <div className="vp-like-flash" />}
 
       <div className="vp-root" onClick={unlockAudio}>
+
+        {/* ════════════════ ZONA DE VIDEO ════════════════ */}
+        <div className="vp-video-zone">
 
         {/* ════════════════ PANEL IZQUIERDO — TÚ ════════════════ */}
         <div className="vp-panel vp-panel-local">
@@ -562,30 +589,43 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           <div className="vp-corner vp-corner-br" />
         </div>
 
-        {/* ════════════════ CONTROLES FLOTANTES ════════════════ */}
-        <div className="vp-controls">
-          <div style={{ position: "relative" }}>
-            <button
-              className={`vp-ctrl vp-ctrl-skip ${skipAnim ? "anim" : ""}`}
-              onClick={(e) => { e.stopPropagation(); handleSkip(); }}
-              title="Pasar"
-            >
-              ✕
-            </button>
-            <span className="vp-ctrl-label">Pasar</span>
+        </div>{/* fin vp-video-zone */}
+
+        {/* ════════════════ BARRA DE CONTROLES ════════════════ */}
+        <div className="vp-controls" onClick={(e) => e.stopPropagation()}>
+
+          {/* Slot izquierdo — Skip */}
+          <div className="vp-ctrl-slot">
+            <div style={{ position: "relative" }}>
+              <button
+                className={`vp-ctrl vp-ctrl-skip ${skipAnim ? "anim" : ""}`}
+                onClick={(e) => { e.stopPropagation(); handleSkip(); }}
+                title="Pasar"
+              >
+                ✕
+              </button>
+              <span className="vp-ctrl-label">Pasar</span>
+            </div>
           </div>
 
-          <div style={{ position: "relative" }}>
-            <button
-              className={`vp-ctrl vp-ctrl-like ${likeAnim ? "anim" : ""} ${liked ? "liked" : ""}`}
-              onClick={(e) => { e.stopPropagation(); handleLike(); }}
-              disabled={liked}
-              title="Like"
-            >
-              ♥
-            </button>
-            <span className="vp-ctrl-label">Like</span>
+          {/* Centro — Like (corazón) */}
+          <div className="vp-ctrl-slot-center">
+            <div style={{ position: "relative" }}>
+              <button
+                className={`vp-ctrl vp-ctrl-like ${likeAnim ? "anim" : ""} ${liked ? "liked" : ""}`}
+                onClick={(e) => { e.stopPropagation(); handleLike(); }}
+                disabled={liked}
+                title="Like"
+              >
+                ♥
+              </button>
+              <span className="vp-ctrl-label">Like</span>
+            </div>
           </div>
+
+          {/* Slot derecho — placeholder para tercer botón */}
+          <div className="vp-ctrl-slot" />
+
         </div>
 
       </div>

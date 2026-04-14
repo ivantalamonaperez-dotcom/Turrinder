@@ -52,9 +52,9 @@ export default function DiscoverPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
 
-        /* ── Ocupa exactamente el espacio sin la sidenav ── */
+        /* ── Ocupa exactamente el viewport completo ── */
         .discover-root {
-          height: calc(100dvh - 64px);
+          height: 100dvh;
           display: flex;
           flex-direction: column;
           background: #04040c;
@@ -68,6 +68,13 @@ export default function DiscoverPage() {
           min-height: 0;
           overflow: hidden;
           position: relative;
+        }
+
+        /* ── Asegura que nada quede debajo de la barra del sistema ── */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+          .discover-root {
+            padding-bottom: env(safe-area-inset-bottom);
+          }
         }
 
         /* ── Header flotante encima del video ── */
