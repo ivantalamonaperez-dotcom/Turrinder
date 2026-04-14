@@ -1,6 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+/**
+ * page.tsx — Discover con sistema de anuncios integrado
+ *
+ * CAMBIOS vs versión anterior:
+ * 1. Importa useAd y AdOverlay
+ * 2. nextUser ahora emite "skip" al servidor (no llama findNewMatch directamente)
+ *    El servidor decide si hacer matchmaking o mostrar anuncio.
+ * 3. AdOverlay se muestra cuando adMode === "AD_MODE"
+ * 4. El botón de skip en VideoPlayer queda bloqueado en AD_MODE
+ */
+
+import { useEffect, useCallback } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 
@@ -9,13 +20,17 @@ import { usePresence } from "@/hooks/usePresence";
 import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
+import { useAd } from "@/features/ads/useAd";           // ← NUEVO
+import { useSocket } from "@/hooks/useSocket";
 import { matchingService } from "@/features/matching/matching.service";
 
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
+import AdOverlay from "@/components/ads/AdOverlay";     // ← NUEVO
 
 export default function DiscoverPage() {
   const router = useRouter();
+  const { socket } = useSocket();
 
   useEffect(() => {
     const checkUser = async () => {
@@ -32,10 +47,33 @@ export default function DiscoverPage() {
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
-  const nextUser = async () => {
+  // ── Sistema de anuncios ───────────────────────────────────────────────────
+  const {
+    adMode,
+    skipInfo,
+    isBlocked,
+    adContainerRef,
+    reportAdCompleted,
+  } = useAd();
+
+  /**
+   * nextUser — CAMBIADO:
+   * Ya no llama findNewMatch() directamente.
+   * Emite "skip" al servidor. El servidor:
+   *   - Incrementa el contador
+   *   - Si < 8: hace matchmaking normal
+   *   - Si >= 8: emite "show-ad" al cliente
+   */
+  const nextUser = useCallback(async () => {
+    if (!socket || isBlocked) return; // Bloqueado en AD_MODE
+
     try {
       const currentRoomId = room?.id;
-      findNewMatch();
+
+      // Emitir skip al servidor (él maneja todo)
+      socket.emit("skip");
+
+      // Limpiar room en DB en background
       if (currentRoomId) {
         matchingService.endRoom(currentRoomId).catch(err =>
           console.error("Error limpiando room:", err)
@@ -45,39 +83,27 @@ export default function DiscoverPage() {
       console.error("❌ Error en nextUser:", error);
       window.location.reload();
     }
-  };
+  }, [socket, room, isBlocked]);
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
 
-        /* ── Ocupa exactamente el viewport completo ── */
         .discover-root {
-          height: 100dvh;
+          height: calc(100dvh - 64px);
           display: flex;
           flex-direction: column;
           background: #04040c;
           overflow: hidden;
           position: relative;
         }
-
-        /* ── Video ocupa TODO el espacio disponible ── */
         .discover-video {
           flex: 1;
           min-height: 0;
           overflow: hidden;
           position: relative;
         }
-
-        /* ── Asegura que nada quede debajo de la barra del sistema ── */
-        @supports (padding-bottom: env(safe-area-inset-bottom)) {
-          .discover-root {
-            padding-bottom: env(safe-area-inset-bottom);
-          }
-        }
-
-        /* ── Header flotante encima del video ── */
         .discover-header {
           position: absolute;
           top: 0; left: 0; right: 0;
@@ -86,35 +112,29 @@ export default function DiscoverPage() {
           align-items: center;
           justify-content: space-between;
           padding: 14px 20px;
-          /* Gradiente descendente para que el header sea legible pero no tape el video */
-          background: linear-gradient(
-            to bottom,
-            rgba(4,4,12,0.75) 0%,
-            rgba(4,4,12,0.3)  60%,
-            transparent 100%
-          );
+          background: linear-gradient(to bottom, rgba(4,4,12,0.75) 0%, rgba(4,4,12,0.3) 60%, transparent 100%);
           pointer-events: none;
         }
-
-        /* ── Logo ── */
         .header-logo {
           font-family: 'Syne', sans-serif;
           font-size: 18px;
           font-weight: 900;
           letter-spacing: -0.5px;
           pointer-events: all;
-          line-height: 1;
         }
-        /* "Turr" en blanco, "inder" con el degradado del divisor */
         .header-logo-white { color: rgba(255,255,255,0.92); }
         .header-logo-grad {
-          background: linear-gradient(135deg, #ff6b35 0%, #ff2d6b 100%);
+          background: linear-gradient(135deg, #ff6b35, #ff2d6b);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
-
-        /* ── Pill de estado ── */
+        .header-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          pointer-events: all;
+        }
         .header-pill {
           display: flex;
           align-items: center;
@@ -124,46 +144,104 @@ export default function DiscoverPage() {
           backdrop-filter: blur(10px);
           border-radius: 100px;
           padding: 5px 13px;
-          pointer-events: all;
         }
         .header-pill-dot {
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 7px #22c55e;
+          width: 6px; height: 6px; border-radius: 50%;
+          background: #22c55e; box-shadow: 0 0 7px #22c55e;
           animation: liveBlink 2.5s ease-in-out infinite;
         }
         @keyframes liveBlink { 0%,100%{opacity:1} 50%{opacity:0.35} }
         .header-pill-text {
           font-family: 'DM Sans', sans-serif;
+          font-size: 11px; font-weight: 500;
+          color: rgba(255,255,255,0.55); letter-spacing: 0.5px;
+        }
+
+        /* ── Skip counter pill ── */
+        .skip-counter {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(255,45,107,0.08);
+          border: 1px solid rgba(255,45,107,0.18);
+          backdrop-filter: blur(10px);
+          border-radius: 100px;
+          padding: 5px 12px;
+          font-family: 'DM Sans', sans-serif;
           font-size: 11px;
-          font-weight: 500;
-          color: rgba(255,255,255,0.55);
+          color: rgba(255,255,255,0.45);
           letter-spacing: 0.5px;
+          transition: all 0.3s ease;
+        }
+        .skip-counter.warning {
+          background: rgba(255,45,107,0.15);
+          border-color: rgba(255,45,107,0.35);
+          color: rgba(255,100,130,0.9);
+        }
+        .skip-counter-bar {
+          display: flex;
+          gap: 2px;
+          align-items: center;
+        }
+        .skip-dot {
+          width: 4px; height: 4px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.15);
+          transition: background 0.3s ease;
+        }
+        .skip-dot.filled {
+          background: #ff2d6b;
+          box-shadow: 0 0 4px rgba(255,45,107,0.7);
         }
       `}</style>
 
+      {/* ── Modal de match ── */}
       <MatchModal
         visible={isMatch}
         onClose={() => setIsMatch(false)}
         user={matchUser}
       />
 
-      <div className="discover-root">
+      {/* ── Overlay de anuncio (fullscreen, z-index alto) ── */}
+      <AdOverlay
+        visible={adMode === "AD_MODE"}
+        adContainerRef={adContainerRef}
+        onContinue={reportAdCompleted}
+        skipCount={skipInfo.count}
+        threshold={skipInfo.threshold}
+      />
 
-        {/* Header flotante — vive SOBRE el video, sin ocupar espacio propio */}
+      <div className="discover-root">
+        {/* Header flotante */}
         <header className="discover-header">
           <div className="header-logo">
             <span className="header-logo-white">Turr</span>
             <span className="header-logo-grad">inder</span>
           </div>
-          <div className="header-pill">
-            <div className="header-pill-dot" />
-            <span className="header-pill-text">En vivo</span>
+          <div className="header-right">
+            {/* Contador de skips visual */}
+            <div className={`skip-counter ${skipInfo.remaining <= 2 ? "warning" : ""}`}>
+              <div className="skip-counter-bar">
+                {Array.from({ length: skipInfo.threshold }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`skip-dot ${i < skipInfo.count ? "filled" : ""}`}
+                  />
+                ))}
+              </div>
+              {skipInfo.remaining <= 3 && (
+                <span>{skipInfo.remaining} restantes</span>
+              )}
+            </div>
+            {/* Pill de estado */}
+            <div className="header-pill">
+              <div className="header-pill-dot" />
+              <span className="header-pill-text">En vivo</span>
+            </div>
           </div>
         </header>
 
-        {/* Video ocupa todo — el header flota encima */}
+        {/* Video ocupa todo */}
         <div className="discover-video">
           <VideoPlayer
             room={room}
@@ -172,9 +250,9 @@ export default function DiscoverPage() {
             onLike={likeUser}
             liked={liked}
             searching={searching || !room}
+            skipBlocked={isBlocked} // ← nuevo prop para deshabilitar botón skip
           />
         </div>
-
       </div>
     </>
   );
