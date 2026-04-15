@@ -1,22 +1,31 @@
 "use client";
 
 /**
- * useAd.ts — Gestión de anuncios con Adsterra
+ * useAd.ts — Gestión de anuncios con Adsterra (Popunder)
  *
- * Flujo completo:
- *   Usuario hace skip → servidor emite "skip-count" + evalúa threshold
- *   Si llegó a 8 skips → servidor emite "show-ad" con token único
- *   Este hook activa AD_MODE → AdOverlay se muestra → Adsterra se carga
- *   Tras 15s el usuario puede hacer clic en "Continuar"
- *   → emitimos "ad-completed" con el token al servidor
- *   → servidor valida tiempo + token → emite "ad-done"
- *   → volvemos a IDLE, skips reseteados, matchmaking reanudado automáticamente
+ * BUGS CORREGIDOS:
+ *   1. El overlay se cerraba al instante porque "ad-done" llegaba antes
+ *      de que el usuario clicara "Continuar". Ahora el servidor emite
+ *      "ad-done" SOLO después de recibir "ad-completed" del frontend,
+ *      y el frontend solo emite "ad-completed" cuando el usuario hace clic.
+ *      → Se agrega un flag `adCompletedSentRef` para evitar doble emisión.
  *
- * Configuración de Adsterra (Social Bar — ya configurado):
- *   Zone ID : 29056188
- *   Formato : Social Bar  (script directo, no usa atOptions)
- *   El script se inyecta dinámicamente en <body> una sola vez.
- *   Para cambiar de zona, edita ADSTERRA_SOCIAL_BAR_SRC abajo.
+ *   2. Los skips no se reiniciaban sin recargar porque el estado local
+ *      `skipInfo` no se reseteaba si el flujo se cortaba. Ahora el reset
+ *      siempre ocurre al recibir "ad-done", independientemente del flujo.
+ *
+ *   3. Popunder: se abre con window.open() en el momento exacto en que
+ *      el servidor autoriza el anuncio ("show-ad"), no dentro del overlay.
+ *      El overlay muestra el countdown de 15s para dar tiempo a que el
+ *      popunder cargue en segundo plano.
+ *
+ * Flujo corregido:
+ *   skip × 8 → servidor emite "show-ad" con token
+ *   → hook abre popunder + activa AD_MODE → AdOverlay muestra 15s
+ *   → usuario hace clic "Continuar" → hook emite "ad-completed"
+ *   → servidor valida → emite "ad-done"
+ *   → hook recibe "ad-done" → resetea IDLE + skipInfo sin recargar
+ *   → matchmaking reanudado automáticamente
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -38,95 +47,107 @@ export interface UseAdReturn {
   reportAdCompleted: () => void;
 }
 
-// ─── Adsterra Social Bar ────────────────────────────────────────────────────
-// Copiado desde: publishers.adsterra.com → zona 29056188 → GET CODE
-// Pégalo justo antes del cierre de </body> (este hook lo inyecta dinámicamente).
-const ADSTERRA_SOCIAL_BAR_SRC =
+// ─── Adsterra Popunder ───────────────────────────────────────────────────────
+// Reemplaza con tu Direct Link real de Adsterra:
+// publishers.adsterra.com → tu zona Popunder → GET CODE → Direct Link
+const ADSTERRA_POPUNDER_URL =
   "https://pl29156687.profitablecpmratenetwork.com/cb/05/2a/cb052aa79584c606592ea803f507ff2c.js";
-
-// ID del <script> para evitar inyecciones duplicadas entre re-renders
-const SOCIAL_BAR_SCRIPT_ID = "adsterra-social-bar";
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Inyecta el script de Social Bar en <body> una única vez.
- * Si ya existe (por hot-reload o strict-mode) no lo duplica.
+ * Abre el popunder en segundo plano.
+ * Requiere que haya un gesto de usuario reciente en la cadena de llamadas
+ * (el "skip" viene de un click, así que generalmente pasa el bloqueo del browser).
+ * Si el browser lo bloquea igual, el overlay sigue funcionando con el countdown.
  */
-function injectSocialBar(): void {
-  if (document.getElementById(SOCIAL_BAR_SCRIPT_ID)) return;
-
-  const script = document.createElement("script");
-  script.id    = SOCIAL_BAR_SCRIPT_ID;
-  script.type  = "text/javascript";
-  script.src   = ADSTERRA_SOCIAL_BAR_SRC;
-  script.async = true;
-  script.setAttribute("data-cfasync", "false");
-
-  document.body.appendChild(script);
-  console.log("[Ad] 📺 Adsterra Social Bar inyectado.");
+function openPopunder(): void {
+  try {
+    const win = window.open(ADSTERRA_POPUNDER_URL, "_blank", "noopener,noreferrer");
+    if (win) {
+      win.blur();
+      window.focus();
+      console.log("[Ad] 📺 Popunder abierto.");
+    } else {
+      console.warn("[Ad] ⚠️ Browser bloqueó el popup — overlay activo de todos modos.");
+    }
+  } catch (e) {
+    console.error("[Ad] Error abriendo popunder:", e);
+  }
 }
 
 export function useAd(): UseAdReturn {
   const { socket } = useSocket();
   const [adMode,   setAdMode]   = useState<AdMode>("IDLE");
   const [skipInfo, setSkipInfo] = useState<SkipInfo>({ count: 0, threshold: 8, remaining: 8 });
-  const adTokenRef     = useRef<string | null>(null);
-  const adContainerRef = useRef<HTMLDivElement>(null!);
+
+  const adTokenRef          = useRef<string | null>(null);
+  // Evita emitir "ad-completed" más de una vez por ciclo de anuncio
+  const adCompletedSentRef  = useRef<boolean>(false);
+  // Ref del contenedor del banner secundario (optional, dentro del overlay)
+  const adContainerRef      = useRef<HTMLDivElement>(null!);
 
   /**
-   * loadAd — se llama cuando el servidor indica que hay que mostrar el anuncio.
-   *
-   * El Social Bar de Adsterra es un widget flotante global (barra inferior/lateral)
-   * que se gestiona a través del script inyectado en <body>; no necesita un
-   * contenedor específico en el DOM.
-   *
-   * Si en el futuro quieres añadir un banner adicional (300×250, etc.) dentro
-   * del overlay, puedes hacerlo aquí usando adContainerRef.
+   * Llamado por AdOverlay cuando el usuario hace clic en "Continuar".
+   * Solo emite una vez por ciclo gracias al flag.
    */
-  const loadAd = useCallback(() => {
-    // 1. Asegura que el Social Bar esté activo
-    injectSocialBar();
-
-    // 2. (Opcional) Banner secundario dentro del overlay — descomenta si lo necesitas:
-    // const container = adContainerRef.current;
-    // if (container) {
-    //   container.innerHTML = "";
-    //   const cfg = document.createElement("script");
-    //   cfg.text = `var atOptions = { 'key': 'OTRO_ZONE_ID', 'format': 'iframe', 'height': 250, 'width': 300, 'params': {} };`;
-    //   const inv = document.createElement("script");
-    //   inv.src   = "//www.highperformanceformat.com/OTRO_ZONE_ID/invoke.js";
-    //   inv.async = true;
-    //   container.appendChild(cfg);
-    //   container.appendChild(inv);
-    // }
-
-    console.log("[Ad] 🟢 Modo anuncio activado.");
-  }, []);
-
   const reportAdCompleted = useCallback(() => {
-    if (!socket?.connected || !adTokenRef.current) return;
+    if (!socket?.connected) {
+      console.warn("[Ad] reportAdCompleted: socket no conectado");
+      return;
+    }
+    if (!adTokenRef.current) {
+      console.warn("[Ad] reportAdCompleted: sin token");
+      return;
+    }
+    if (adCompletedSentRef.current) {
+      // BUG FIX: evita que un segundo render o doble-click cierre el overlay prematuramente
+      console.warn("[Ad] reportAdCompleted: ya emitido, ignorando duplicado");
+      return;
+    }
+
+    adCompletedSentRef.current = true;
     socket.emit("ad-completed", { token: adTokenRef.current });
-    adTokenRef.current = null;
+    console.log("[Ad] ✅ ad-completed enviado al servidor.");
   }, [socket]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handleShowAd = ({ token }: { token: string }) => {
-      adTokenRef.current = token;
+      console.log("[Ad] show-ad recibido");
+
+      // 1. Guardar token y resetear flag ANTES de abrir popup
+      adTokenRef.current         = token;
+      adCompletedSentRef.current = false;
+
+      // 2. Abrir popunder (en contexto de evento de socket, cercano al click del usuario)
+      openPopunder();
+
+      // 3. Mostrar overlay modal
       setAdMode("AD_MODE");
-      requestAnimationFrame(() => requestAnimationFrame(() => loadAd()));
     };
+
     const handleAdDone = () => {
+      // BUG FIX #1 y #2: este es el ÚNICO lugar donde se cierra el overlay
+      // y se resetean los skips — solo ocurre tras recibir "ad-done" del servidor,
+      // que a su vez solo llega tras "ad-completed" del usuario (clic en Continuar).
+      console.log("[Ad] ad-done recibido → reset completo");
+      adTokenRef.current         = null;
+      adCompletedSentRef.current = false;
       setAdMode("IDLE");
       setSkipInfo(prev => ({ ...prev, count: 0, remaining: prev.threshold }));
     };
-    const handleAdError = () => {
-      // En caso de error del servidor, igual mostramos el overlay para no
-      // dejar al usuario en un estado inconsistente.
-      setAdMode("AD_MODE");
-      requestAnimationFrame(() => loadAd());
+
+    const handleAdError = ({ message }: { message?: string } = {}) => {
+      console.warn("[Ad] ad-error:", message);
+      // Resetear para permitir un nuevo intento en el mismo ciclo
+      adCompletedSentRef.current = false;
+      adTokenRef.current         = null;
+      // Forzar re-mount del overlay para reiniciar el countdown
+      setAdMode("IDLE");
+      setTimeout(() => setAdMode("AD_MODE"), 50);
     };
+
     const handleSkipCount = (info: SkipInfo) => setSkipInfo(info);
 
     socket.on("show-ad",    handleShowAd);
@@ -140,7 +161,13 @@ export function useAd(): UseAdReturn {
       socket.off("ad-error",   handleAdError);
       socket.off("skip-count", handleSkipCount);
     };
-  }, [socket, loadAd]);
+  }, [socket]);
 
-  return { adMode, skipInfo, isBlocked: adMode === "AD_MODE", adContainerRef, reportAdCompleted };
+  return {
+    adMode,
+    skipInfo,
+    isBlocked: adMode === "AD_MODE",
+    adContainerRef,
+    reportAdCompleted,
+  };
 }
