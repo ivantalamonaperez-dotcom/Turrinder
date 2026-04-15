@@ -2,13 +2,6 @@
 
 /**
  * page.tsx — Discover con sistema de anuncios integrado
- *
- * CAMBIOS vs versión anterior:
- * 1. Importa useAd y AdOverlay
- * 2. nextUser ahora emite "skip" al servidor (no llama findNewMatch directamente)
- *    El servidor decide si hacer matchmaking o mostrar anuncio.
- * 3. AdOverlay se muestra cuando adMode === "AD_MODE"
- * 4. El botón de skip en VideoPlayer queda bloqueado en AD_MODE
  */
 
 import { useEffect, useCallback } from "react";
@@ -20,13 +13,13 @@ import { usePresence } from "@/hooks/usePresence";
 import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
-import { useAd } from "@/features/ads/useAd";           // ← NUEVO
+import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
 import { matchingService } from "@/features/matching/matching.service";
 
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
-import AdOverlay from "@/components/ads/AdOverlay";     // ← NUEVO
+import AdOverlay from "@/components/ads/AdOverlay";
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -57,23 +50,17 @@ export default function DiscoverPage() {
   } = useAd();
 
   /**
-   * nextUser — CAMBIADO:
-   * Ya no llama findNewMatch() directamente.
-   * Emite "skip" al servidor. El servidor:
-   *   - Incrementa el contador
-   *   - Si < 8: hace matchmaking normal
-   *   - Si >= 8: emite "show-ad" al cliente
+   * nextUser — emite "skip" al servidor.
+   * El servidor decide si hacer matchmaking normal o mostrar anuncio.
    */
   const nextUser = useCallback(async () => {
-    if (!socket || isBlocked) return; // Bloqueado en AD_MODE
+    if (!socket || isBlocked) return;
 
     try {
       const currentRoomId = room?.id;
 
-      // Emitir skip al servidor (él maneja todo)
       socket.emit("skip");
 
-      // Limpiar room en DB en background
       if (currentRoomId) {
         matchingService.endRoom(currentRoomId).catch(err =>
           console.error("Error limpiando room:", err)
@@ -134,27 +121,6 @@ export default function DiscoverPage() {
           align-items: center;
           gap: 10px;
           pointer-events: all;
-        }
-        .header-pill {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          backdrop-filter: blur(10px);
-          border-radius: 100px;
-          padding: 5px 13px;
-        }
-        .header-pill-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: #22c55e; box-shadow: 0 0 7px #22c55e;
-          animation: liveBlink 2.5s ease-in-out infinite;
-        }
-        @keyframes liveBlink { 0%,100%{opacity:1} 50%{opacity:0.35} }
-        .header-pill-text {
-          font-family: 'DM Sans', sans-serif;
-          font-size: 11px; font-weight: 500;
-          color: rgba(255,255,255,0.55); letter-spacing: 0.5px;
         }
 
         /* ── Skip counter pill ── */
@@ -233,11 +199,6 @@ export default function DiscoverPage() {
                 <span>{skipInfo.remaining} restantes</span>
               )}
             </div>
-            {/* Pill de estado */}
-            <div className="header-pill">
-              <div className="header-pill-dot" />
-              <span className="header-pill-text">En vivo</span>
-            </div>
           </div>
         </header>
 
@@ -250,7 +211,7 @@ export default function DiscoverPage() {
             onLike={likeUser}
             liked={liked}
             searching={searching || !room}
-            skipBlocked={isBlocked} // ← nuevo prop para deshabilitar botón skip
+            skipBlocked={isBlocked}
           />
         </div>
       </div>

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
+import UserChip from "@/components/user/UserChip";
+
 
 interface Props {
   room: { id: string } | null;
@@ -10,17 +12,19 @@ interface Props {
   onLike: () => void;
   liked: boolean;
   searching?: boolean;
+  skipBlocked?: boolean;
 }
 
-export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, searching }: Props) {
+export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, searching, skipBlocked }: Props) {
   const targetPartnerId = room?.id || null;
   const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
     useWebRTC(targetPartnerId);
 
-  const [audioLocked, setAudioLocked] = useState(true);
-  const [likeAnim,    setLikeAnim]    = useState(false);
-  const [skipAnim,    setSkipAnim]    = useState(false);
-  const [likeFlash,   setLikeFlash]   = useState(false);
+  const [audioLocked,   setAudioLocked]   = useState(true);
+  const [likeAnim,      setLikeAnim]      = useState(false);
+  const [skipAnim,      setSkipAnim]      = useState(false);
+  const [likeFlash,     setLikeFlash]     = useState(false);
+  const [streamerMode,  setStreamerMode]   = useState(false);
 
   const hasVideo    = !!remoteStream || (isConnected && !!targetPartnerId);
   const remoteReady = hasVideo || matchConfirmed;
@@ -46,6 +50,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
   };
 
   const handleSkip = () => {
+    if (skipBlocked) return;
     setSkipAnim(true);
     setTimeout(() => { setSkipAnim(false); onNext(); }, 350);
   };
@@ -67,7 +72,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           font-family: 'DM Sans', sans-serif;
         }
 
-        /* ── ZONA DE VIDEO (ocupa todo menos la barra de controles) ── */
+        /* ── ZONA DE VIDEO ── */
         .vp-video-zone {
           flex: 1;
           min-height: 0;
@@ -97,7 +102,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         .vp-video-local  { transform: scaleX(-1); }
         .vp-video-remote { transition: opacity 1s ease; }
 
-        /* ── VIGNETTE en cada panel ── */
+        /* ── VIGNETTE ── */
         .vp-panel::after {
           content: '';
           position: absolute;
@@ -105,6 +110,53 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           background: radial-gradient(ellipse at center, transparent 40%, rgba(4,4,12,0.55) 100%);
           pointer-events: none;
           z-index: 2;
+        }
+
+        /* ── MODO STREAMER: blur sobre el video local ── */
+        .vp-streamer-blur {
+          position: absolute;
+          inset: 0;
+          z-index: 5;
+          backdrop-filter: blur(28px) brightness(0.6);
+          -webkit-backdrop-filter: blur(28px) brightness(0.6);
+          transition: opacity 0.35s ease;
+          pointer-events: none;
+        }
+
+        /* ── MODO STREAMER: badge indicador ── */
+        .vp-streamer-badge {
+          position: absolute;
+          bottom: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 20;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(255, 45, 107, 0.12);
+          border: 1px solid rgba(255, 45, 107, 0.3);
+          backdrop-filter: blur(10px);
+          border-radius: 100px;
+          padding: 4px 12px;
+          font-size: 9px;
+          font-weight: 600;
+          color: rgba(255, 100, 130, 0.9);
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          white-space: nowrap;
+          animation: streamerBadgePulse 3s ease-in-out infinite;
+        }
+        .vp-streamer-badge-dot {
+          width: 5px; height: 5px;
+          border-radius: 50%;
+          background: #ff2d6b;
+          box-shadow: 0 0 5px #ff2d6b;
+          animation: recBlink 2s infinite;
+          flex-shrink: 0;
+        }
+        @keyframes streamerBadgePulse {
+          0%,100% { opacity: 1; }
+          50%      { opacity: 0.75; }
         }
 
         /* ── ETIQUETA LOCAL ── */
@@ -157,7 +209,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           );
           box-shadow: 0 0 12px rgba(255,70,80,0.5), 0 0 30px rgba(255,45,107,0.2);
         }
-        /* Punto central en el divisor */
         .vp-divider-gem {
           position: absolute;
           left: 50%;
@@ -175,7 +226,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           50%      { box-shadow: 0 0 24px rgba(255,107,53,1),   0 0 60px rgba(255,45,107,0.5); transform: translate(-50%,-50%) scale(1.25); }
         }
 
-        /* ── BARRA DE CONTROLES — fija al fondo, fuera del video ── */
+        /* ── BARRA DE CONTROLES ── */
         .vp-controls {
           flex-shrink: 0;
           display: flex;
@@ -188,7 +239,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           backdrop-filter: blur(12px);
           z-index: 40;
         }
-        /* Slots laterales: mismo ancho que el boton skip para centrar el corazon */
         .vp-ctrl-slot {
           width: 50px;
           display: flex;
@@ -221,8 +271,13 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           font-size: 17px;
           backdrop-filter: blur(10px);
         }
-        .vp-ctrl-skip:hover { background: rgba(255,255,255,0.13); transform: scale(1.06); }
-        .vp-ctrl-skip.anim  { transform: scale(0.82) rotate(-12deg); }
+        .vp-ctrl-skip:hover  { background: rgba(255,255,255,0.13); transform: scale(1.06); }
+        .vp-ctrl-skip.anim   { transform: scale(0.82) rotate(-12deg); }
+        .vp-ctrl-skip:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+          transform: none !important;
+        }
 
         .vp-ctrl-like {
           width: 62px; height: 62px;
@@ -234,6 +289,30 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         .vp-ctrl-like:hover  { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 28px rgba(255,45,107,0.55); }
         .vp-ctrl-like.anim   { transform: scale(1.35); box-shadow: 0 0 0 12px rgba(255,45,107,0); }
         .vp-ctrl-like.liked  { filter: grayscale(0.7); opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* ── BOTÓN STREAMER ── */
+        .vp-ctrl-streamer {
+          width: 50px; height: 50px;
+          background: rgba(255,255,255,0.07);
+          color: rgba(255,255,255,0.55);
+          border: 1.5px solid rgba(255,255,255,0.12);
+          font-size: 17px;
+          backdrop-filter: blur(10px);
+          transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+        }
+        .vp-ctrl-streamer:hover {
+          background: rgba(255,255,255,0.13);
+          transform: scale(1.06);
+        }
+        .vp-ctrl-streamer.active {
+          background: rgba(255, 45, 107, 0.18);
+          border-color: rgba(255, 45, 107, 0.45);
+          color: rgba(255, 100, 130, 0.95);
+          box-shadow: 0 0 14px rgba(255,45,107,0.3);
+        }
+        .vp-ctrl-streamer.active:hover {
+          background: rgba(255, 45, 107, 0.25);
+        }
 
         .vp-ctrl-label {
           position: absolute;
@@ -480,114 +559,121 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         {/* ════════════════ ZONA DE VIDEO ════════════════ */}
         <div className="vp-video-zone">
 
-        {/* ════════════════ PANEL IZQUIERDO — TÚ ════════════════ */}
-        <div className="vp-panel vp-panel-local">
-          <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
+          {/* ════════════════ PANEL IZQUIERDO — TÚ ════════════════ */}
+          <div className="vp-panel vp-panel-local">
+            <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
 
-          {cameraError && (
-            <div className="vp-no-cam">
-              <div className="vp-no-cam-icon">📷</div>
-              <div className="vp-no-cam-text">Sin cámara</div>
+            {/* Capa de blur para modo streamer — encima del video, debajo del resto de UI */}
+            {streamerMode && <div className="vp-streamer-blur" />}
+
+            {cameraError && (
+              <div className="vp-no-cam">
+                <div className="vp-no-cam-icon">📷</div>
+                <div className="vp-no-cam-text">Sin cámara</div>
+              </div>
+            )}
+
+            {/* Etiqueta "Tú" */}
+            <div className="vp-label" style={{ zIndex: 10 }}>
+              <div className="vp-rec-dot" /> Tú
             </div>
-          )}
 
-          {/* Etiqueta "Tú" */}
-          <div className="vp-label" style={{ zIndex: 10 }}>
-            <div className="vp-rec-dot" /> Tú
+            {/* Badge modo streamer */}
+            {streamerMode && (
+              <div className="vp-streamer-badge">
+                <div className="vp-streamer-badge-dot" />
+                Modo streamer
+              </div>
+            )}
+
+            {/* Corner brackets decorativos */}
+            <div className="vp-corner vp-corner-tl" />
+            <div className="vp-corner vp-corner-bl" />
           </div>
 
-          {/* Corner brackets decorativos */}
-          <div className="vp-corner vp-corner-tl" />
-          <div className="vp-corner vp-corner-bl" />
-        </div>
+          {/* ════════════════ DIVISOR CENTRAL ════════════════ */}
+          <div className="vp-divider">
+            <div className="vp-divider-gem" />
+          </div>
 
-        {/* ════════════════ DIVISOR CENTRAL ════════════════ */}
-        <div className="vp-divider">
-          <div className="vp-divider-gem" />
-        </div>
+          {/* ════════════════ PANEL DERECHO — PAREJA ════════════════ */}
+          <div className="vp-panel vp-panel-remote">
 
-        {/* ════════════════ PANEL DERECHO — PAREJA ════════════════ */}
-        <div className="vp-panel vp-panel-remote">
+            {/* Video remoto */}
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="vp-video vp-video-remote"
+              style={{ opacity: hasVideo ? 1 : 0 }}
+            />
 
-          {/* Video remoto */}
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="vp-video vp-video-remote"
-            style={{ opacity: hasVideo ? 1 : 0 }}
-          />
+            {/* Estado: buscando */}
+            {!remoteReady && (
+              <div className="vp-placeholder">
+                <div className="vp-radar">
+                  <div className="vp-radar-ring" style={{ animationDelay: "0s" }} />
+                  <div className="vp-radar-ring" style={{ animationDelay: "0.9s" }} />
+                  <div className="vp-radar-ring" style={{ animationDelay: "1.8s" }} />
+                  <div className="vp-radar-center">{searching ? "🔥" : "👤"}</div>
+                </div>
+                <div className="vp-radar-text">
+                  {searching ? "Buscando..." : "Enlazando..."}
+                </div>
+                <div className="vp-radar-sub">
+                  {searching ? "Encontrando tu pareja" : "Estableciendo conexión"}
+                </div>
+              </div>
+            )}
 
-          {/* Estado: buscando */}
-          {!remoteReady && (
-            <div className="vp-placeholder">
-              <div className="vp-radar">
-                <div className="vp-radar-ring" style={{ animationDelay: "0s" }} />
-                <div className="vp-radar-ring" style={{ animationDelay: "0.9s" }} />
-                <div className="vp-radar-ring" style={{ animationDelay: "1.8s" }} />
-                <div className="vp-radar-center">{searching ? "🔥" : "👤"}</div>
+            {/* Estado: match sin video — perfil */}
+            {remoteReady && !hasVideo && matchUser && (
+              <div className="vp-profile-card">
+                {matchUser.avatar_url
+                  ? <img src={matchUser.avatar_url} alt={matchUser.name} className="vp-avatar" />
+                  : <div className="vp-avatar-ph">{matchUser.name?.[0]?.toUpperCase() ?? "?"}</div>
+                }
+                <div className="vp-profile-name">
+                  {matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}
+                </div>
+                <div className="vp-profile-online">
+                  <div className="vp-online-dot" /> Conectado
+                </div>
+                <div className="vp-badge">
+                  {isConnected ? "Video en camino" : "Enlazando video"}
+                </div>
               </div>
-              <div className="vp-radar-text">
-                {searching ? "Buscando..." : "Enlazando..."}
-              </div>
-              <div className="vp-radar-sub">
-                {searching ? "Encontrando tu pareja" : "Estableciendo conexión"}
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Estado: match sin video — perfil */}
-          {remoteReady && !hasVideo && matchUser && (
-            <div className="vp-profile-card">
-              {matchUser.avatar_url
-                ? <img src={matchUser.avatar_url} alt={matchUser.name} className="vp-avatar" />
-                : <div className="vp-avatar-ph">{matchUser.name?.[0]?.toUpperCase() ?? "?"}</div>
-              }
-              <div className="vp-profile-name">
-                {matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}
+            {/* Estado: match sin video, sin perfil */}
+            {remoteReady && !hasVideo && !matchUser && (
+              <div className="vp-profile-card">
+                <div className="vp-avatar-ph">👤</div>
+                <div className="vp-profile-name" style={{ opacity: 0.5, fontSize: 15 }}>
+                  Cargando perfil...
+                </div>
+                <div className="vp-badge">Enlazando video</div>
               </div>
-              <div className="vp-profile-online">
-                <div className="vp-online-dot" /> Conectado
-              </div>
-              <div className="vp-badge">
-                {isConnected ? "Video en camino" : "Enlazando video"}
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Estado: match sin video, sin perfil */}
-          {remoteReady && !hasVideo && !matchUser && (
-            <div className="vp-profile-card">
-              <div className="vp-avatar-ph">👤</div>
-              <div className="vp-profile-name" style={{ opacity: 0.5, fontSize: 15 }}>
-                Cargando perfil...
-              </div>
-              <div className="vp-badge">Enlazando video</div>
-            </div>
-          )}
+            {/* Audio hint */}
+            {remoteReady && hasVideo && audioLocked && (
+              <div className="vp-audio-hint">🔊 Toca para escuchar</div>
+            )}
 
-          {/* Audio hint */}
-          {remoteReady && hasVideo && audioLocked && (
-            <div className="vp-audio-hint">🔊 Toca para escuchar</div>
-          )}
+            {/* Info overlay con video activo */}
+            {hasVideo && matchUser && (
+              <UserChip
+                user={matchUser}
+                isConnected={isConnected}
+                style={{ position: "absolute", bottom: 16, left: 16, zIndex: 20 }}
+              />
+            )}
 
-          {/* Info overlay con video activo */}
-          {hasVideo && matchUser && (
-            <div className="vp-info">
-              <div className="vp-info-name">
-                {matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}
-              </div>
-              <div className="vp-info-status">
-                <div className="vp-live-dot" />
-                <span className="vp-ice-badge">{isConnected ? "Estable" : "En vivo"}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Corner brackets */}
-          <div className="vp-corner vp-corner-tr" />
-          <div className="vp-corner vp-corner-br" />
-        </div>
+            {/* Corner brackets */}
+            <div className="vp-corner vp-corner-tr" />
+            <div className="vp-corner vp-corner-br" />
+          </div>
 
         </div>{/* fin vp-video-zone */}
 
@@ -600,6 +686,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
               <button
                 className={`vp-ctrl vp-ctrl-skip ${skipAnim ? "anim" : ""}`}
                 onClick={(e) => { e.stopPropagation(); handleSkip(); }}
+                disabled={!!skipBlocked}
                 title="Pasar"
               >
                 ✕
@@ -623,8 +710,33 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
             </div>
           </div>
 
-          {/* Slot derecho — placeholder para tercer botón */}
-          <div className="vp-ctrl-slot" />
+          {/* Slot derecho — Modo Streamer */}
+          <div className="vp-ctrl-slot">
+            <div style={{ position: "relative" }}>
+              <button
+                className={`vp-ctrl vp-ctrl-streamer ${streamerMode ? "active" : ""}`}
+                onClick={(e) => { e.stopPropagation(); setStreamerMode(prev => !prev); }}
+                title={streamerMode ? "Desactivar modo streamer" : "Activar modo streamer"}
+              >
+                {/* Icono: ojo tachado cuando activo, ojo normal cuando inactivo */}
+                {streamerMode ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                )}
+              </button>
+              <span className="vp-ctrl-label" style={{ color: streamerMode ? "rgba(255,100,130,0.7)" : undefined }}>
+                {streamerMode ? "Visible" : "Streamer"}
+              </span>
+            </div>
+          </div>
 
         </div>
 
