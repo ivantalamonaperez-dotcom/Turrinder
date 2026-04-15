@@ -1,29 +1,14 @@
 /**
  * ad.events.ts — Socket Events para el sistema de anuncios
  *
- * BUGS CORREGIDOS:
- *   1. "ad-done" ahora se emite SOLO después de "ad-completed" del cliente.
- *      Antes había un path donde matchmakingHandler.handleFindMatch() podía
- *      triggear "ad-done" indirectamente, cerrando el overlay antes de tiempo.
- *
- *   2. Los skips no se reiniciaban sin recargar: el servidor ya reseteaba
- *      skipCount en adManager, pero el frontend nunca recibía la confirmación
- *      limpia porque el flujo se cortaba. Ahora "ad-done" siempre llega.
- *
- *   3. El matchmaking post-anuncio se inicia automáticamente DESPUÉS de
- *      emitir "ad-done" (con un tick de delay para que el cliente procese
- *      el reset de estado primero).
- *
  * Eventos que escucha:
- *   "skip"          → Usuario hizo skip
- *   "ad-completed"  → Frontend confirma que el usuario esperó el anuncio
- *   "find-match"    → Bloqueado en AD_MODE (guard de último recurso)
+ *   "skip"          → Usuario hizo skip (reemplaza el find-match directo)
+ *   "ad-completed"  → Frontend dice que el anuncio terminó (con token)
  *
  * Eventos que emite:
- *   "show-ad"       → Muestra el overlay con token único
- *   "ad-done"       → Anuncio validado, overlay puede cerrarse
- *   "ad-error"      → Validación fallida, reintentar
- *   "skip-count"    → Contador actual para la UI
+ *   "show-ad"       → Decirle al frontend que muestre el anuncio (con token)
+ *   "ad-done"       → Anuncio validado, puede volver a matchmaking
+ *   "skip-count"    → Actualización del contador para la UI
  */
 
 import { Server, Socket } from "socket.io";
@@ -35,8 +20,11 @@ export default function registerAdEvents(io: Server, socket: Socket) {
   if (!supabaseId) return;
 
   /**
-   * "skip": el usuario presionó PASAR.
-   * Registra el skip y decide si mostrar anuncio o seguir con matchmaking.
+   * "skip": el usuario presionó el botón PASAR.
+   * 
+   * ANTES el frontend emitía directamente "find-match".
+   * AHORA emite "skip" y el servidor decide si hacer matchmaking
+   * o entrar en AD_MODE.
    */
   socket.on("skip", () => {
     console.log(`[AdEvents] ⏭️  Skip de ${supabaseId}`);
@@ -44,40 +32,32 @@ export default function registerAdEvents(io: Server, socket: Socket) {
     // Notificar al compañero actual que fue saltado
     matchmakingHandler.handleLeave(socket, io);
 
+    // Registrar el skip
     const result = adManager.recordSkip(supabaseId);
 
-    // Informar el contador actual al cliente
+    // Informar al usuario su contador actual
     socket.emit("skip-count", {
-      count:     result.skipCount,
+      count: result.skipCount,
       threshold: 8,
       remaining: Math.max(0, 8 - result.skipCount),
     });
 
     if (result.showAd) {
-      // ── MODO ANUNCIO ─────────────────────────────────────────────────
-      console.log(`[AdEvents] 📺 show-ad → ${supabaseId} (token: ${result.adToken?.slice(0, 8)}...)`);
+      // ── MODO ANUNCIO ──────────────────────────────────────────────────
+      console.log(`[AdEvents] 📺 Enviando show-ad a ${supabaseId}`);
       socket.emit("show-ad", {
-        token: result.adToken,
-        type:  "popunder",
+        token: result.adToken,  // El frontend DEBE devolver este token
+        type: "interstitial",   // Tipo de anuncio para el frontend
       });
-      // NO hacemos nada más aquí — esperamos "ad-completed" del cliente
     } else {
-      // ── MATCHMAKING NORMAL ───────────────────────────────────────────
+      // ── CONTINUAR MATCHMAKING ────────────────────────────────────────
       matchmakingHandler.handleFindMatch(io, socket);
     }
   });
 
   /**
-   * "ad-completed": el frontend confirma que el usuario vio el anuncio.
-   *
-   * FLUJO CORRECTO:
-   *   1. Validar token + tiempo mínimo
-   *   2. Emitir "ad-done" → cliente cierra overlay y resetea skipInfo
-   *   3. DESPUÉS (nextTick) iniciar matchmaking automáticamente
-   *
-   * El delay entre "ad-done" y handleFindMatch es intencional:
-   * el cliente necesita un tick para procesar el reset de estado
-   * antes de recibir "match-found" o "waiting".
+   * "ad-completed": el frontend reporta que el anuncio terminó.
+   * Validamos con el token y solo entonces habilitamos el matchmaking.
    */
   socket.on("ad-completed", ({ token }: { token: string }) => {
     console.log(`[AdEvents] 🏁 ad-completed de ${supabaseId}`);
@@ -85,34 +65,31 @@ export default function registerAdEvents(io: Server, socket: Socket) {
     const valid = adManager.validateAdCompleted(supabaseId, token);
 
     if (valid) {
-      // BUG FIX: emitir "ad-done" PRIMERO, SIEMPRE, antes de cualquier otra cosa
-      socket.emit("ad-done");
-      console.log(`[AdEvents] ✅ ad-done emitido a ${supabaseId}`);
-
-      // Iniciar matchmaking en el siguiente tick para dar tiempo al cliente
-      // de procesar "ad-done" y actualizar su estado antes de recibir
-      // "match-found" o "waiting"
-      setImmediate(() => {
-        matchmakingHandler.handleFindMatch(io, socket);
-      });
+      socket.emit("ad-done"); // ← El frontend puede volver a buscar
+      // Iniciar búsqueda automáticamente
+      matchmakingHandler.handleFindMatch(io, socket);
     } else {
-      // Validación fallida → forzar nuevo ciclo de anuncio
+      // Token inválido o tiempo insuficiente — forzar a mostrar otro anuncio
       console.warn(`[AdEvents] 🚨 Validación fallida para ${supabaseId}`);
       socket.emit("ad-error", { message: "El anuncio no fue completado correctamente." });
     }
   });
 
   /**
-   * Guard de último recurso: bloquear "find-match" directo en AD_MODE.
-   * Esto cubre cualquier bypass directo desde el cliente.
+   * Override: bloquear "find-match" directo si está en AD_MODE.
+   * Esto es la última línea de defensa contra bypass desde el frontend.
    */
   socket.on("find-match", () => {
     if (!adManager.canMatchmake(supabaseId)) {
-      console.warn(`[AdEvents] 🚫 find-match bloqueado — ${supabaseId} en AD_MODE`);
-      // Re-emitir show-ad sin token (el cliente mostrará el overlay desde cero)
-      socket.emit("show-ad", { token: null, type: "popunder" });
+      console.warn(`[AdEvents] 🚫 find-match bloqueado — ${supabaseId} está en AD_MODE`);
+      socket.emit("show-ad", {
+        // Si intenta bypass, re-enviamos el show-ad
+        token: null, // Sin token, forzará ver anuncio desde cero
+        type: "interstitial",
+      });
       return;
     }
+    // Si puede, delegar al matchmaking normal
     matchmakingHandler.handleFindMatch(io, socket);
   });
 }

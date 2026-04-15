@@ -3,22 +3,12 @@
 /**
  * AdOverlay.tsx — Overlay de pantalla completa para mostrar anuncios
  *
- * BUGS CORREGIDOS:
- *   - El overlay se cerraba al instante porque onContinue() llamaba
- *     reportAdCompleted() que emitía "ad-completed" → servidor respondía
- *     "ad-done" → setAdMode("IDLE") → visible=false, todo en < 1 frame.
- *
- *   SOLUCIÓN: El overlay ya NO se cierra solo. La prop `visible` es
- *   controlada 100% por el hook (useAd), que solo pasa a IDLE cuando
- *   recibe "ad-done" del servidor. El botón "Continuar" llama onContinue()
- *   y luego muestra un estado "Verificando..." para que el usuario sepa
- *   que está esperando la confirmación del servidor.
- *
  * Estados visuales:
- *   1. Countdown activo (15s)    → botón deshabilitado
- *   2. Countdown completado      → botón "Continuar →" habilitado
- *   3. Esperando servidor        → botón "Verificando..." con spinner
- *   4. visible=false (por hook)  → unmount con animación de salida
+ * 1. Cuenta regresiva activa (15s) → botón "Continuar" deshabilitado
+ * 2. Cuenta regresiva completada  → botón "Continuar" habilitado
+ * 3. Transición de salida          → animación de cierre
+ *
+ * Diseño: dark luxury / neon — coherente con el resto de la app
  */
 
 import { useState, useEffect, useRef, RefObject } from "react";
@@ -26,7 +16,7 @@ import { useState, useEffect, useRef, RefObject } from "react";
 interface Props {
   visible: boolean;
   adContainerRef: RefObject<HTMLDivElement>;
-  onContinue: () => void;
+  onContinue: () => void;     // Llamar cuando el usuario hace clic en Continuar
   skipCount: number;
   threshold: number;
 }
@@ -34,32 +24,23 @@ interface Props {
 const AD_WAIT_SECONDS = 15;
 
 export default function AdOverlay({ visible, adContainerRef, onContinue, skipCount, threshold }: Props) {
-  const [countdown,   setCountdown]   = useState(AD_WAIT_SECONDS);
-  const [canContinue, setCanContinue] = useState(false);
-  const [waiting,     setWaiting]     = useState(false); // esperando confirmación del servidor
-  const [exiting,     setExiting]     = useState(false);
+  const [countdown,    setCountdown]    = useState(AD_WAIT_SECONDS);
+  const [canContinue,  setCanContinue]  = useState(false);
+  const [exiting,      setExiting]      = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Cada vez que visible cambia a true → reiniciar todo el estado
+  // Reiniciar countdown cada vez que el overlay se hace visible
   useEffect(() => {
     if (!visible) {
-      // El hook cambió visible a false → disparar animación de salida
-      setExiting(true);
-      const t = setTimeout(() => {
-        setExiting(false);
-        setCountdown(AD_WAIT_SECONDS);
-        setCanContinue(false);
-        setWaiting(false);
-      }, 500);
+      setCountdown(AD_WAIT_SECONDS);
+      setCanContinue(false);
+      setExiting(false);
       if (intervalRef.current) clearInterval(intervalRef.current);
-      return () => clearTimeout(t);
+      return;
     }
 
-    // Nuevo ciclo de anuncio
     setCountdown(AD_WAIT_SECONDS);
     setCanContinue(false);
-    setWaiting(false);
-    setExiting(false);
 
     intervalRef.current = setInterval(() => {
       setCountdown(prev => {
@@ -76,29 +57,17 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
   }, [visible]);
 
   const handleContinue = () => {
-    if (!canContinue || waiting) return;
-    // Mostrar estado "verificando" — el overlay NO se cierra aquí.
-    // Se cerrará cuando el hook reciba "ad-done" del servidor (visible → false).
-    setWaiting(true);
-    onContinue(); // → reportAdCompleted() → emite "ad-completed" al servidor
+    if (!canContinue) return;
+    setExiting(true);
+    setTimeout(() => {
+      onContinue();
+      setExiting(false);
+    }, 500);
   };
 
-  // Mientras hace exiting animamos pero seguimos montados
-  if (!visible && !exiting) return null;
+  if (!visible) return null;
 
   const progress = ((AD_WAIT_SECONDS - countdown) / AD_WAIT_SECONDS) * 100;
-
-  const btnLabel = waiting
-    ? "Verificando..."
-    : canContinue
-    ? "Continuar →"
-    : `Espera ${countdown}s`;
-
-  const btnClass = waiting
-    ? "ad-btn ad-btn-waiting"
-    : canContinue
-    ? "ad-btn ad-btn-enabled"
-    : "ad-btn ad-btn-disabled";
 
   return (
     <>
@@ -130,6 +99,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           to   { opacity: 0; transform: scale(0.97); }
         }
 
+        /* ── Fondo de ruido/textura ── */
         .ad-overlay::before {
           content: '';
           position: absolute;
@@ -139,6 +109,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           opacity: 0.4;
         }
 
+        /* ── Header ── */
         .ad-header {
           display: flex;
           flex-direction: column;
@@ -168,6 +139,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           text-transform: uppercase;
         }
 
+        /* ── Contador de skips ── */
         .ad-skip-info {
           display: flex;
           align-items: center;
@@ -189,6 +161,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           box-shadow: 0 0 6px #ff2d6b;
         }
 
+        /* ── Contenedor del anuncio ── */
         .ad-content-wrap {
           position: relative;
           z-index: 1;
@@ -215,24 +188,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
         }
         .ad-placeholder-icon { font-size: 32px; opacity: 0.3; }
 
-        /* Mensaje de popunder activo */
-        .ad-popunder-badge {
-          position: relative;
-          z-index: 1;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: rgba(255,107,53,0.08);
-          border: 1px solid rgba(255,107,53,0.25);
-          border-radius: 10px;
-          padding: 10px 16px;
-          font-size: 12px;
-          color: rgba(255,107,53,0.85);
-          margin-bottom: 20px;
-          width: min(480px, 90vw);
-        }
-        .ad-popunder-icon { font-size: 14px; }
-
+        /* ── Barra de progreso ── */
         .ad-progress-wrap {
           width: min(480px, 90vw);
           position: relative;
@@ -261,6 +217,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           letter-spacing: 0.5px;
         }
 
+        /* ── Botón continuar ── */
         .ad-btn {
           position: relative;
           z-index: 1;
@@ -285,30 +242,19 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
         .ad-btn-enabled {
           background: linear-gradient(135deg, #ff6b35 0%, #ff2d6b 100%);
           color: white;
-          box-shadow: 0 4px 24px rgba(255,45,107,0.4);
+          box-shadow: 0 4px 24px rgba(255,45,107,0.4), 0 0 0 0 rgba(255,45,107,0.2);
           animation: btnReadyPulse 2s ease-in-out infinite;
         }
         .ad-btn-enabled:hover {
           transform: translateY(-2px) scale(1.04);
           box-shadow: 0 8px 32px rgba(255,45,107,0.55);
         }
-        /* Estado esperando servidor */
-        .ad-btn-waiting {
-          background: rgba(255,255,255,0.08);
-          color: rgba(255,255,255,0.4);
-          border: 1px solid rgba(255,255,255,0.12);
-          cursor: wait;
-          animation: waitingPulse 1.2s ease-in-out infinite;
-        }
-        @keyframes waitingPulse {
-          0%,100% { opacity: 0.6; }
-          50%      { opacity: 1; }
-        }
         @keyframes btnReadyPulse {
           0%,100% { box-shadow: 0 4px 24px rgba(255,45,107,0.4); }
           50%      { box-shadow: 0 4px 32px rgba(255,45,107,0.65), 0 0 0 8px rgba(255,45,107,0.05); }
         }
 
+        /* ── Mensaje legal ── */
         .ad-legal {
           position: relative;
           z-index: 1;
@@ -320,6 +266,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           max-width: 320px;
         }
 
+        /* ── Decoración de esquinas ── */
         .ad-corner {
           position: absolute;
           width: 28px; height: 28px;
@@ -330,6 +277,7 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
         .ad-corner-bl { bottom: 20px; left: 20px; border-bottom: 1px solid #ff2d6b; border-left: 1px solid #ff2d6b; }
         .ad-corner-br { bottom: 20px; right: 20px; border-bottom: 1px solid #ff2d6b; border-right: 1px solid #ff2d6b; }
 
+        /* ── Glow central de fondo ── */
         .ad-glow {
           position: absolute;
           width: 500px; height: 500px;
@@ -347,12 +295,14 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
       `}</style>
 
       <div className={`ad-overlay ${exiting ? "exiting" : ""}`}>
+        {/* Decoraciones */}
         <div className="ad-glow" />
         <div className="ad-corner ad-corner-tl" />
         <div className="ad-corner ad-corner-tr" />
         <div className="ad-corner ad-corner-bl" />
         <div className="ad-corner ad-corner-br" />
 
+        {/* Logo */}
         <div className="ad-header">
           <div className="ad-logo">
             <span className="ad-logo-white">Turr</span>
@@ -361,48 +311,43 @@ export default function AdOverlay({ visible, adContainerRef, onContinue, skipCou
           <div className="ad-title">Mensaje patrocinado</div>
         </div>
 
+        {/* Info de skips */}
         <div className="ad-skip-info">
           <div className="ad-skip-dot" />
           {skipCount} skips · Mira el anuncio para continuar
         </div>
 
-        {/* Badge indicando que se abrió una pestaña de anuncio */}
-        <div className="ad-popunder-badge">
-          <span className="ad-popunder-icon">↗</span>
-          Se abrió una pestaña con el anuncio en segundo plano
-        </div>
-
-        {/* Contenedor para banner secundario (opcional) */}
+        {/* Contenedor del anuncio de Adsterra */}
         <div className="ad-content-wrap">
-          <div
-            ref={adContainerRef}
-            style={{ width: "100%", minHeight: 250, display: "flex", alignItems: "center", justifyContent: "center" }}
-          >
+          <div ref={adContainerRef} style={{ width: "100%", minHeight: 250, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div className="ad-placeholder">
               <div className="ad-placeholder-icon">📺</div>
-              <div>Anuncio cargando en segundo plano</div>
+              <div>Cargando anuncio...</div>
             </div>
           </div>
         </div>
 
+        {/* Barra de progreso */}
         <div className="ad-progress-wrap">
           <div className="ad-progress-track">
             <div className="ad-progress-fill" style={{ width: `${progress}%` }} />
           </div>
           <div className="ad-progress-label">
-            <span>{canContinue ? (waiting ? "Verificando con el servidor..." : "¡Listo!") : `Espera ${countdown}s`}</span>
+            <span>{canContinue ? "¡Listo!" : `Espera ${countdown}s`}</span>
             <span>Anuncio 1 de 1</span>
           </div>
         </div>
 
+        {/* Botón continuar */}
         <button
-          className={btnClass}
+          className={`ad-btn ${canContinue ? "ad-btn-enabled" : "ad-btn-disabled"}`}
           onClick={handleContinue}
-          disabled={!canContinue || waiting}
+          disabled={!canContinue}
         >
-          {btnLabel}
+          {canContinue ? "Continuar →" : `Espera ${countdown}s`}
         </button>
 
+        {/* Legal */}
         <p className="ad-legal">
           Turrinder es gratuito gracias a nuestros anunciantes.<br />
           Un anuncio cada {threshold} skips.
