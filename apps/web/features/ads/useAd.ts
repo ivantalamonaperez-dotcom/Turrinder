@@ -1,20 +1,22 @@
 "use client";
 
 /**
- * useAd.ts — Integración con Adsterra Popunder real
+ * useAd.ts — Gestión de anuncios con Adsterra
  *
- * Zona: 29054734 (turrinder.vercel.app)
- * Tipo: Popunder
+ * Flujo completo:
+ *   Usuario hace skip → servidor emite "skip-count" + evalúa threshold
+ *   Si llegó a 8 skips → servidor emite "show-ad" con token único
+ *   Este hook activa AD_MODE → AdOverlay se muestra → Adsterra se carga
+ *   Tras 15s el usuario puede hacer clic en "Continuar"
+ *   → emitimos "ad-completed" con el token al servidor
+ *   → servidor valida tiempo + token → emite "ad-done"
+ *   → volvemos a IDLE, skips reseteados, matchmaking reanudado automáticamente
  *
- * Cómo funciona el Popunder:
- *   - Al dispararse, abre una nueva pestaña/ventana en segundo plano
- *   - No se puede detectar cuándo el usuario la cierra
- *   - Por eso usamos el timer de 15s en el overlay como confirmación
- *   - El script solo se dispara UNA VEZ por sesión de AD_MODE
- *
- * Flujo:
- *   "show-ad" → activar AD_MODE → disparar Popunder → mostrar AdOverlay con timer
- *   → usuario espera 15s → botón "Continuar" → emitir "ad-completed" → servidor valida → IDLE
+ * Configuración de Adsterra (Social Bar — ya configurado):
+ *   Zone ID : 29056188
+ *   Formato : Social Bar  (script directo, no usa atOptions)
+ *   El script se inyecta dinámicamente en <body> una sola vez.
+ *   Para cambiar de zona, edita ADSTERRA_SOCIAL_BAR_SRC abajo.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -36,85 +38,96 @@ export interface UseAdReturn {
   reportAdCompleted: () => void;
 }
 
-// ── Configuración real de Adsterra ────────────────────────────────────────────
-const ADSTERRA_SCRIPT_URL =
-  "https://pl29155233.profitablecpmratenetwork.com/18/d5/29/18d5299059da1c91673a62219c2825a0.js";
+// ─── Adsterra Social Bar ────────────────────────────────────────────────────
+// Copiado desde: publishers.adsterra.com → zona 29056188 → GET CODE
+// Pégalo justo antes del cierre de </body> (este hook lo inyecta dinámicamente).
+const ADSTERRA_SOCIAL_BAR_SRC =
+  "https://pl29156687.profitablecpmratenetwork.com/cb/05/2a/cb052aa79584c606592ea803f507ff2c.js";
 
-/** Inyecta el script del Popunder en el <head> una sola vez */
-let popunderLoaded = false;
+// ID del <script> para evitar inyecciones duplicadas entre re-renders
+const SOCIAL_BAR_SCRIPT_ID = "adsterra-social-bar";
+// ────────────────────────────────────────────────────────────────────────────
 
-function triggerPopunder() {
-  if (popunderLoaded) {
-    // El script ya está en el DOM — el Popunder se re-dispara
-    // automáticamente en el siguiente clic del usuario (comportamiento nativo)
-    console.log("[Ad] 🔁 Popunder ya cargado, se disparará en próxima interacción.");
-    return;
-  }
+/**
+ * Inyecta el script de Social Bar en <body> una única vez.
+ * Si ya existe (por hot-reload o strict-mode) no lo duplica.
+ */
+function injectSocialBar(): void {
+  if (document.getElementById(SOCIAL_BAR_SCRIPT_ID)) return;
 
   const script = document.createElement("script");
-  script.src = ADSTERRA_SCRIPT_URL;
+  script.id    = SOCIAL_BAR_SCRIPT_ID;
+  script.type  = "text/javascript";
+  script.src   = ADSTERRA_SOCIAL_BAR_SRC;
   script.async = true;
   script.setAttribute("data-cfasync", "false");
 
-  script.onload = () => {
-    popunderLoaded = true;
-    console.log("[Ad] ✅ Script Popunder cargado y disparado.");
-  };
-  script.onerror = () => {
-    console.warn("[Ad] ⚠️ No se pudo cargar el script de Adsterra (adblocker?).");
-  };
-
-  document.head.appendChild(script);
-  console.log("[Ad] 📺 Inyectando script Popunder de Adsterra...");
+  document.body.appendChild(script);
+  console.log("[Ad] 📺 Adsterra Social Bar inyectado.");
 }
 
 export function useAd(): UseAdReturn {
   const { socket } = useSocket();
   const [adMode,   setAdMode]   = useState<AdMode>("IDLE");
   const [skipInfo, setSkipInfo] = useState<SkipInfo>({ count: 0, threshold: 8, remaining: 8 });
-
   const adTokenRef     = useRef<string | null>(null);
-  // adContainerRef: para Popunder no necesitamos inyectar nada visible,
-  // pero lo mantenemos por compatibilidad con AdOverlay
   const adContainerRef = useRef<HTMLDivElement>(null!);
 
-  /** El usuario hizo clic en "Continuar" después del timer de 15s */
+  /**
+   * loadAd — se llama cuando el servidor indica que hay que mostrar el anuncio.
+   *
+   * El Social Bar de Adsterra es un widget flotante global (barra inferior/lateral)
+   * que se gestiona a través del script inyectado en <body>; no necesita un
+   * contenedor específico en el DOM.
+   *
+   * Si en el futuro quieres añadir un banner adicional (300×250, etc.) dentro
+   * del overlay, puedes hacerlo aquí usando adContainerRef.
+   */
+  const loadAd = useCallback(() => {
+    // 1. Asegura que el Social Bar esté activo
+    injectSocialBar();
+
+    // 2. (Opcional) Banner secundario dentro del overlay — descomenta si lo necesitas:
+    // const container = adContainerRef.current;
+    // if (container) {
+    //   container.innerHTML = "";
+    //   const cfg = document.createElement("script");
+    //   cfg.text = `var atOptions = { 'key': 'OTRO_ZONE_ID', 'format': 'iframe', 'height': 250, 'width': 300, 'params': {} };`;
+    //   const inv = document.createElement("script");
+    //   inv.src   = "//www.highperformanceformat.com/OTRO_ZONE_ID/invoke.js";
+    //   inv.async = true;
+    //   container.appendChild(cfg);
+    //   container.appendChild(inv);
+    // }
+
+    console.log("[Ad] 🟢 Modo anuncio activado.");
+  }, []);
+
   const reportAdCompleted = useCallback(() => {
     if (!socket?.connected || !adTokenRef.current) return;
-    console.log("[Ad] ✅ Reportando ad-completed al servidor.");
     socket.emit("ad-completed", { token: adTokenRef.current });
     adTokenRef.current = null;
-    // El estado vuelve a IDLE cuando el servidor responde "ad-done"
   }, [socket]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handleShowAd = ({ token }: { token: string }) => {
-      console.log("[Ad] 📺 show-ad recibido → entrando en AD_MODE");
       adTokenRef.current = token;
       setAdMode("AD_MODE");
-
-      // Disparar el Popunder de Adsterra
-      // El popunder abre en background; el AdOverlay bloquea la UI de Turrinder
-      triggerPopunder();
+      requestAnimationFrame(() => requestAnimationFrame(() => loadAd()));
     };
-
     const handleAdDone = () => {
-      console.log("[Ad] 🎉 ad-done → volviendo a IDLE");
       setAdMode("IDLE");
       setSkipInfo(prev => ({ ...prev, count: 0, remaining: prev.threshold }));
     };
-
-    const handleAdError = ({ message }: { message: string }) => {
-      console.error("[Ad] ❌ Error de validación:", message);
-      // Volver a mostrar el overlay para que el usuario espere de nuevo
+    const handleAdError = () => {
+      // En caso de error del servidor, igual mostramos el overlay para no
+      // dejar al usuario en un estado inconsistente.
       setAdMode("AD_MODE");
+      requestAnimationFrame(() => loadAd());
     };
-
-    const handleSkipCount = (info: SkipInfo) => {
-      setSkipInfo(info);
-    };
+    const handleSkipCount = (info: SkipInfo) => setSkipInfo(info);
 
     socket.on("show-ad",    handleShowAd);
     socket.on("ad-done",    handleAdDone);
@@ -127,13 +140,7 @@ export function useAd(): UseAdReturn {
       socket.off("ad-error",   handleAdError);
       socket.off("skip-count", handleSkipCount);
     };
-  }, [socket]);
+  }, [socket, loadAd]);
 
-  return {
-    adMode,
-    skipInfo,
-    isBlocked: adMode === "AD_MODE",
-    adContainerRef,
-    reportAdCompleted,
-  };
+  return { adMode, skipInfo, isBlocked: adMode === "AD_MODE", adContainerRef, reportAdCompleted };
 }
