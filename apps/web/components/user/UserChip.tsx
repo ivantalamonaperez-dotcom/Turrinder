@@ -19,8 +19,10 @@ export interface MatchUserProfile {
   age?: number;
   avatar_url?: string;
   bio?: string;
+  photos?: string[];
   interests?: string[];
-  location?: string;
+  looking_for?: string[];
+  gender?: string;
 }
 
 interface Props {

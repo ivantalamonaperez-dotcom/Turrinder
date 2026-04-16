@@ -2,30 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/services/supabase.client";
+import type { MatchUserProfile } from "@/components/user/UserChip";
 
 export const useMatchUser = (room: any) => {
-  const [matchUser, setMatchUser] = useState<any>(null);
+  const [matchUser, setMatchUser] = useState<MatchUserProfile | null>(null);
 
   useEffect(() => {
     const load = async () => {
-      // 1. Si no hay room o la room no tiene ID, limpiamos y salimos
       if (!room || !room.id) {
         setMatchUser(null);
         return;
       }
 
       try {
-        /**
-         * NOTA: El objeto 'room' que viene de useMatchmaking ahora es { id: partnerId }.
-         * Por lo tanto, room.id YA es el ID de la otra persona.
-         */
         const otherId = room.id;
-
         console.log("📡 Cargando perfil de Supabase para el ID:", otherId);
 
         const { data, error } = await supabase
           .from("profiles")
-          .select("id, name, age, avatar_url") // Añadí avatar_url por si lo necesitas
+          .select("id, name, age, avatar_url, bio, photos, interests, looking_for, gender")
           .eq("id", otherId)
           .single();
 
@@ -34,16 +29,14 @@ export const useMatchUser = (room: any) => {
           return;
         }
 
-        if (data) {
-          setMatchUser(data);
-        }
+        if (data) setMatchUser(data);
       } catch (err) {
         console.error("❌ Error inesperado cargando matchUser:", err);
       }
     };
 
     load();
-  }, [room]); // Reacciona cada vez que la sala cambia o se resetea a null
+  }, [room]);
 
   return { matchUser };
 };
