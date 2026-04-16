@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
+import UserChip from "@/components/user/UserChip";
+
 
 interface Props {
   room: { id: string } | null;
@@ -90,6 +92,58 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         .vp-panel-local  { background: #060610; }
         .vp-panel-remote { background: #08060e; }
 
+        /* ── MOBILE: apilado vertical ── */
+        @media (max-width: 768px) {
+          .vp-video-zone {
+            flex-direction: column;
+          }
+
+          /* La pareja va arriba y ocupa más espacio — es el foco */
+          .vp-panel-remote { order: -1; flex: 1.6; min-height: 0; }
+          .vp-panel-local  { order:  1; flex: 1;   min-height: 0; }
+
+          /* Divisor horizontal en mobile */
+          .vp-divider {
+            left: 0; right: 0;
+            top: 61.5%; bottom: auto;
+            width: auto; height: 2px;
+            transform: none;
+            background: linear-gradient(
+              to right,
+              transparent 0%,
+              rgba(255,45,107,0.0) 5%,
+              rgba(255,45,107,0.7) 20%,
+              rgba(255,107,53,1)   50%,
+              rgba(255,45,107,0.7) 80%,
+              rgba(255,45,107,0.0) 95%,
+              transparent 100%
+            );
+            box-shadow: 0 0 12px rgba(255,70,80,0.5), 0 0 30px rgba(255,45,107,0.2);
+          }
+
+          /* Gem centrado en el divisor horizontal */
+          .vp-divider-gem {
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+          }
+
+          /* Etiqueta "Tú" más compacta */
+          .vp-label {
+            top: 10px;
+            left: 10px;
+            padding: 3px 10px 3px 7px;
+            font-size: 9px;
+          }
+
+          /* Badge streamer centrado en mobile */
+          .vp-streamer-badge {
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+          }
+        }
+
         /* ── VIDEOS ── */
         .vp-video {
           width: 100%;
@@ -110,7 +164,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           z-index: 2;
         }
 
-        /* ── MODO STREAMER: blur sobre el video local ── */
+        /* ── MODO STREAMER: blur sobre el video remoto ── */
         .vp-streamer-blur {
           position: absolute;
           inset: 0;
@@ -661,15 +715,11 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
 
             {/* Info overlay con video activo */}
             {hasVideo && matchUser && (
-              <div className="vp-info">
-                <div className="vp-info-name">
-                  {matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}
-                </div>
-                <div className="vp-info-status">
-                  <div className="vp-live-dot" />
-                  <span className="vp-ice-badge">{isConnected ? "Estable" : "En vivo"}</span>
-                </div>
-              </div>
+              <UserChip
+                user={matchUser}
+                isConnected={isConnected}
+                style={{ position: "absolute", bottom: 16, left: 16, zIndex: 20 }}
+              />
             )}
 
             {/* Corner brackets */}
@@ -720,7 +770,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
                 onClick={(e) => { e.stopPropagation(); setStreamerMode(prev => !prev); }}
                 title={streamerMode ? "Desactivar modo streamer" : "Activar modo streamer"}
               >
-                {/* Icono: ojo tachado cuando activo, ojo normal cuando inactivo */}
                 {streamerMode ? (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
