@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
-import UserChip from "@/components/user/UserChip";
-
 
 interface Props {
   room: { id: string } | null;
@@ -563,9 +561,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           <div className="vp-panel vp-panel-local">
             <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
 
-            {/* Capa de blur para modo streamer — encima del video, debajo del resto de UI */}
-            {streamerMode && <div className="vp-streamer-blur" />}
-
             {cameraError && (
               <div className="vp-no-cam">
                 <div className="vp-no-cam-icon">📷</div>
@@ -577,14 +572,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
             <div className="vp-label" style={{ zIndex: 10 }}>
               <div className="vp-rec-dot" /> Tú
             </div>
-
-            {/* Badge modo streamer */}
-            {streamerMode && (
-              <div className="vp-streamer-badge">
-                <div className="vp-streamer-badge-dot" />
-                Modo streamer
-              </div>
-            )}
 
             {/* Corner brackets decorativos */}
             <div className="vp-corner vp-corner-tl" />
@@ -607,6 +594,17 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
               className="vp-video vp-video-remote"
               style={{ opacity: hasVideo ? 1 : 0 }}
             />
+
+            {/* Blur modo streamer — solo cuando hay video remoto activo */}
+            {streamerMode && hasVideo && <div className="vp-streamer-blur" />}
+
+            {/* Badge modo streamer */}
+            {streamerMode && hasVideo && (
+              <div className="vp-streamer-badge">
+                <div className="vp-streamer-badge-dot" />
+                Modo streamer
+              </div>
+            )}
 
             {/* Estado: buscando */}
             {!remoteReady && (
@@ -663,11 +661,15 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
 
             {/* Info overlay con video activo */}
             {hasVideo && matchUser && (
-              <UserChip
-                user={matchUser}
-                isConnected={isConnected}
-                style={{ position: "absolute", bottom: 16, left: 16, zIndex: 20 }}
-              />
+              <div className="vp-info">
+                <div className="vp-info-name">
+                  {matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}
+                </div>
+                <div className="vp-info-status">
+                  <div className="vp-live-dot" />
+                  <span className="vp-ice-badge">{isConnected ? "Estable" : "En vivo"}</span>
+                </div>
+              </div>
             )}
 
             {/* Corner brackets */}
