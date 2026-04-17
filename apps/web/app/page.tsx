@@ -1,485 +1,721 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/services/supabase.client";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-const TEST_ACCOUNTS = [
-  { email: "test1@test.com", password: "123456" },
-  { email: "test2@test.com", password: "123456" },
-  { email: "test3@test.com", password: "123456" },
-];
-
-const MARKETING_PHRASES = [
-  { text: "Conocé gente real", emoji: "✨" },
-  { text: "Video en vivo", emoji: "📹" },
-  { text: "Conexiones genuinas", emoji: "💫" },
-  { text: "Swipe. Match. Hablá.", emoji: "🔥" },
-  { text: "El amor está a un click", emoji: "❤️" },
-  { text: "Sin filtros", emoji: "⚡" },
-  { text: "Miles online ahora", emoji: "🌍" },
-  { text: "Tu próxima historia", emoji: "💬" },
-];
-
-interface Particle {
-  id: number; x: number; startY: number; size: number;
-  color: string; duration: number; delay: number; driftX: number; opacity: number;
+/* ─── TYPES ──────────────────────────────────────────────────── */
+interface Profile {
+  name: string;
+  age: number;
+  city: string;
+  img: string;
+  live: boolean;
 }
 
-interface FloatingTag {
-  id: number; x: number; startY: number;
-  phrase: { text: string; emoji: string }; duration: number; delay: number; driftX: number;
+/* ─── DATA ───────────────────────────────────────────────────── */
+const profiles: Profile[] = [
+  { name: "Valentina", age: 23, city: "Córdoba",      img: "https://randomuser.me/api/portraits/women/43.jpg", live: true  },
+  { name: "Lucía",     age: 26, city: "Buenos Aires", img: "https://randomuser.me/api/portraits/women/68.jpg", live: true  },
+  { name: "Martina",   age: 22, city: "Rosario",      img: "https://randomuser.me/api/portraits/women/90.jpg", live: false },
+  { name: "Agustín",   age: 28, city: "Mendoza",      img: "https://randomuser.me/api/portraits/men/32.jpg",   live: true  },
+  { name: "Sofía",     age: 25, city: "Montevideo",   img: "https://randomuser.me/api/portraits/women/33.jpg", live: true  },
+  { name: "Tomás",     age: 24, city: "Santiago",     img: "https://randomuser.me/api/portraits/men/75.jpg",   live: false },
+];
+
+const recentNames = [
+  "Valentina de Córdoba","Lucía de Bs As","Martina de Rosario",
+  "Agustín de Mendoza","Sofía de Montevideo","Diego de Santiago",
+  "Camila de Lima","Nicolás de Bogotá",
+];
+
+const marqueeItems = [
+  "📹 Video en vivo","💬 Chat en tiempo real","🔥 Matches al instante",
+  "🌍 Usuarios de 47 países","⚡ Sin registro obligatorio","🎯 IA de matcheo",
+  "📸 Perfiles verificados","🔒 100% privado","💫 Conexiones genuinas",
+  "🎲 Modo aleatorio","❤️ +2M de matches","🚀 Lanzamiento 2025",
+];
+
+const spAvatars = [
+  "https://randomuser.me/api/portraits/women/12.jpg",
+  "https://randomuser.me/api/portraits/men/22.jpg",
+  "https://randomuser.me/api/portraits/women/55.jpg",
+  "https://randomuser.me/api/portraits/men/66.jpg",
+];
+
+const particleColors = ["#ff2d6b","#ff6b35","#ffc947","#ff4488","#ff8c42","#e91e8c"];
+
+/* ─── STYLES ─────────────────────────────────────────────────── */
+const globalStyles = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --hot:#ff2d6b; --hot2:#ff6b35; --hot3:#ffc947;
+  --hot-glow:rgba(255,45,107,0.45);
+  --bg:#05050f; --bg2:#08081a; --bg3:#0d0d20;
+  --glass:rgba(255,255,255,0.03);
+  --glass-b:rgba(255,255,255,0.07);
+  --text:rgba(255,255,255,0.85);
+  --muted:rgba(255,255,255,0.32);
+  --subtle:rgba(255,255,255,0.08);
+}
+html,body{height:100%;background:var(--bg);color:var(--text);overflow-x:hidden}
+body{font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased}
+
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:0.35;pointer-events:none;z-index:0;
 }
 
-export default function HomePage() {
-  const router = useRouter();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [particles, setParticles] = useState<Particle[]>([]);
-  const [floatingTags, setFloatingTags] = useState<FloatingTag[]>([]);
+.aurora{
+  position:fixed;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 70% 55% at 15% 20%,rgba(255,45,107,0.18) 0%,transparent 60%),
+    radial-gradient(ellipse 55% 45% at 85% 75%,rgba(255,107,53,0.13) 0%,transparent 58%),
+    radial-gradient(ellipse 40% 40% at 70% 15%,rgba(255,68,136,0.09) 0%,transparent 55%),
+    radial-gradient(ellipse 50% 35% at 30% 90%,rgba(255,201,71,0.06) 0%,transparent 52%),
+    radial-gradient(ellipse 35% 30% at 50% 50%,rgba(255,45,107,0.05) 0%,transparent 60%);
+  animation:auroraAnim 18s ease-in-out infinite alternate;
+}
+@keyframes auroraAnim{
+  0%{opacity:.7;transform:scale(1) rotate(0deg)}
+  50%{opacity:1;transform:scale(1.06) rotate(0.5deg)}
+  100%{opacity:.85;transform:scale(1.1) rotate(-0.3deg)}
+}
 
+.page{
+  position:relative;z-index:1;
+  min-height:100vh;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:auto 1fr auto;
+  grid-template-areas:"nav nav" "left right" "strip strip";
+}
+
+nav{
+  grid-area:nav;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 48px;
+  border-bottom:1px solid var(--glass-b);
+  background:rgba(5,5,15,0.6);
+  backdrop-filter:blur(20px);
+  position:sticky;top:0;z-index:100;
+}
+.nav-logo{display:flex;align-items:center;gap:12px;cursor:pointer;}
+.nav-logo-icon{
+  width:40px;
+  height:40px;
+  object-fit:contain;
+  border-radius:10px;
+}
+@keyframes iconPulse{
+  from{box-shadow:0 0 18px rgba(255,45,107,0.4),0 0 36px rgba(255,45,107,0.12)}
+  to  {box-shadow:0 0 36px rgba(255,45,107,0.7),0 0 70px rgba(255,45,107,0.25)}
+}
+.nav-logo-name{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-0.5px;}
+.nav-logo-name span{
+  background:linear-gradient(135deg,var(--hot),var(--hot2),var(--hot3));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.nav-stats{display:flex;align-items:center;gap:24px;}
+.nav-stat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);}
+.dot-live{width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0;animation:livePulse 2s infinite;}
+@keyframes livePulse{
+  0%{box-shadow:0 0 0 0 rgba(34,197,94,0.6)}
+  70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}
+  100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}
+}
+.dot-live.orange{background:#f97316;animation:livePulseO 2s infinite}
+@keyframes livePulseO{
+  0%{box-shadow:0 0 0 0 rgba(249,115,22,0.6)}
+  70%{box-shadow:0 0 0 8px rgba(249,115,22,0)}
+  100%{box-shadow:0 0 0 0 rgba(249,115,22,0)}
+}
+.nav-stat strong{color:white;font-weight:700;font-size:14px}
+
+.hero{
+  grid-area:left;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:56px 48px;
+  border-right:1px solid var(--glass-b);
+  position:relative;overflow:hidden;
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,45,107,0.08);border:1px solid rgba(255,45,107,0.2);
+  border-radius:100px;padding:6px 14px;width:fit-content;margin-bottom:28px;
+  font-size:12px;color:rgba(255,100,150,0.9);font-weight:500;letter-spacing:0.5px;
+  animation:fadeSlideUp 0.6s 0.1s both;
+}
+.hero-title{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(42px,5.5vw,68px);
+  font-weight:800;line-height:1.0;
+  letter-spacing:-2px;
+  margin-bottom:22px;
+  animation:fadeSlideUp 0.7s 0.2s both;
+}
+.hero-title .line1{display:block;color:white}
+.hero-title .line2{
+  display:block;
+  background:linear-gradient(135deg,var(--hot) 0%,var(--hot2) 50%,var(--hot3) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hero-sub{
+  font-size:16px;color:var(--muted);line-height:1.7;max-width:400px;
+  margin-bottom:40px;font-weight:300;
+  animation:fadeSlideUp 0.7s 0.3s both;
+}
+
+.card-stack{position:relative;width:320px;height:200px;margin-bottom:44px;animation:fadeSlideUp 0.8s 0.4s both;}
+.profile-card{
+  position:absolute;border-radius:22px;overflow:hidden;
+  border:1px solid rgba(255,255,255,0.1);
+  box-shadow:0 20px 60px rgba(0,0,0,0.6);
+  cursor:pointer;transition:transform 0.3s ease;
+}
+.profile-card:hover{transform:scale(1.03)!important}
+.pc1{width:130px;height:185px;top:0;left:0;z-index:3;transform:rotate(-3deg)}
+.pc2{width:130px;height:185px;top:10px;left:105px;z-index:2;transform:rotate(1.5deg)}
+.pc3{width:115px;height:165px;top:20px;left:200px;z-index:1;transform:rotate(5deg)}
+.profile-card img{width:100%;height:100%;object-fit:cover;display:block}
+.pc-overlay{
+  position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,0.85) 0%,transparent 55%);
+  display:flex;flex-direction:column;justify-content:flex-end;padding:10px;
+}
+.pc-name{font-size:13px;font-weight:700;color:white;line-height:1.2}
+.pc-age{font-size:11px;color:rgba(255,255,255,0.55)}
+.pc-live-badge{
+  position:absolute;top:8px;left:8px;
+  background:rgba(255,45,107,0.9);border-radius:100px;
+  padding:2px 8px;font-size:10px;font-weight:700;color:white;letter-spacing:0.5px;
+  display:flex;align-items:center;gap:4px;
+}
+.pc-live-dot{width:5px;height:5px;border-radius:50%;background:white;animation:livePulse 1.5s infinite}
+
+.feat-pills{display:flex;gap:10px;flex-wrap:wrap;animation:fadeSlideUp 0.8s 0.5s both;}
+.fp{
+  display:flex;align-items:center;gap:7px;
+  background:var(--glass);border:1px solid var(--glass-b);
+  border-radius:100px;padding:8px 14px;
+  font-size:12px;color:rgba(255,255,255,0.5);
+  transition:all 0.2s;cursor:default;
+}
+.fp:hover{background:rgba(255,45,107,0.07);border-color:rgba(255,45,107,0.2);color:rgba(255,180,200,0.8)}
+.fp-icon{font-size:14px}
+
+@keyframes fadeSlideUp{
+  from{opacity:0;transform:translateY(24px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.auth-panel{
+  grid-area:right;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:56px 48px;
+  background:rgba(5,5,18,0.3);
+  animation:fadeSlideUp 0.9s 0.2s both;
+}
+.auth-heading{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:white;margin-bottom:6px;}
+.auth-sub{font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.6}
+
+.tabs{
+  display:flex;gap:4px;
+  background:rgba(255,255,255,0.03);border:1px solid var(--glass-b);
+  border-radius:16px;padding:4px;margin-bottom:28px;
+}
+.tab{
+  flex:1;padding:11px;border:none;border-radius:13px;
+  font-family:'Syne',sans-serif;font-size:13px;font-weight:700;
+  letter-spacing:0.3px;cursor:pointer;
+  transition:all 0.25s cubic-bezier(0.16,1,0.3,1);
+  color:var(--muted);background:transparent;
+}
+.tab.active{background:linear-gradient(135deg,var(--hot),#c9193e);color:white;box-shadow:0 4px 18px rgba(255,45,107,0.4);}
+.tab:not(.active):hover{color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.04)}
+
+.field{display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
+.label{font-size:10px;font-weight:500;letter-spacing:1.6px;text-transform:uppercase;color:rgba(255,255,255,0.22)}
+.input{
+  width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--glass-b);
+  border-radius:13px;padding:14px 16px;font-size:15px;color:white;
+  font-family:'DM Sans',sans-serif;outline:none;
+  transition:all 0.2s ease;
+}
+.input::placeholder{color:rgba(255,255,255,0.15)}
+.input:focus{border-color:rgba(255,45,107,0.5);background:rgba(255,45,107,0.04);box-shadow:0 0 0 3px rgba(255,45,107,0.1);}
+.fields-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+.btn-primary{
+  width:100%;padding:15px;
+  background:linear-gradient(135deg,var(--hot) 0%,#c9193e 100%);
+  border:none;border-radius:13px;color:white;
+  font-family:'Syne',sans-serif;font-size:15px;font-weight:700;
+  letter-spacing:0.3px;cursor:pointer;margin-top:6px;
+  position:relative;overflow:hidden;
+  transition:all 0.25s cubic-bezier(0.16,1,0.3,1);
+  box-shadow:0 8px 28px rgba(255,45,107,0.4);
+}
+.btn-primary::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.15),transparent 50%);}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(255,45,107,0.55)}
+.btn-primary:active{transform:translateY(0)}
+
+.divider{display:flex;align-items:center;gap:12px;margin:18px 0}
+.divider-line{flex:1;height:1px;background:rgba(255,255,255,0.05)}
+.divider-text{font-size:11px;color:rgba(255,255,255,0.15);letter-spacing:1px}
+
+.btn-ghost{
+  width:100%;padding:14px;
+  background:rgba(255,255,255,0.03);border:1px solid var(--glass-b);
+  border-radius:13px;color:rgba(255,255,255,0.4);
+  font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;
+  transition:all 0.2s ease;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.btn-ghost:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.12)}
+
+.social-proof{
+  margin-top:20px;padding:14px 18px;
+  background:var(--glass);border:1px solid var(--glass-b);
+  border-radius:14px;display:flex;align-items:center;gap:14px;
+}
+.sp-avatars{display:flex}
+.sp-av{width:30px;height:30px;border-radius:50%;border:2px solid var(--bg);overflow:hidden;margin-left:-8px;}
+.sp-av:first-child{margin-left:0}
+.sp-av img{width:100%;height:100%;object-fit:cover}
+.sp-text{flex:1;font-size:12px;color:rgba(255,255,255,0.4);line-height:1.5}
+.sp-text strong{color:rgba(255,255,255,0.75);font-weight:600}
+
+.terms-text{margin-top:14px;font-size:10px;color:rgba(255,255,255,0.15);text-align:center;letter-spacing:0.3px;line-height:1.8;}
+
+.reg-perks{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.reg-perk{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;
+  background:var(--glass);border:1px solid var(--glass-b);
+  border-radius:12px;font-size:13px;color:rgba(255,255,255,0.5);
+}
+.reg-perk-icon{font-size:18px;flex-shrink:0}
+
+.strip{
+  grid-area:strip;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 48px;
+  border-top:1px solid var(--glass-b);
+  background:rgba(5,5,15,0.7);
+  backdrop-filter:blur(20px);
+}
+.strip-left{display:flex;align-items:center;gap:24px}
+.strip-stat{display:flex;flex-direction:column}
+.strip-stat-num{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:white;line-height:1;}
+.strip-stat-num span{
+  background:linear-gradient(135deg,var(--hot),var(--hot2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.strip-stat-label{font-size:10px;color:var(--muted);letter-spacing:0.5px;margin-top:2px}
+.strip-divider{width:1px;height:32px;background:var(--glass-b)}
+.strip-features{display:flex;align-items:center;gap:20px}
+.sf{display:flex;align-items:center;gap:6px;font-size:12px;color:rgba(255,255,255,0.3)}
+.sf-dot{width:6px;height:6px;border-radius:50%;background:var(--hot);opacity:0.7}
+.strip-right{font-size:11px;color:rgba(255,255,255,0.12);letter-spacing:0.3px}
+
+.particle{position:fixed;border-radius:50%;pointer-events:none;z-index:1;filter:blur(0.5px);}
+@keyframes particleFloat{
+  0%{transform:translate(0,0) scale(0.5);opacity:0}
+  8%{opacity:var(--op,0.4)}
+  50%{transform:translate(var(--dx,0),calc(var(--dy,0) * -0.5)) scale(1.2);opacity:var(--op,0.4)}
+  92%{opacity:0.05}
+  100%{transform:translate(var(--dx,0),var(--dy,0)) scale(0.3);opacity:0}
+}
+
+.marquee-wrap{
+  overflow:hidden;white-space:nowrap;
+  border-bottom:1px solid var(--glass-b);
+  background:rgba(5,5,15,0.5);padding:10px 0;position:relative;z-index:1;
+}
+.marquee-inner{display:inline-block;animation:marquee 30s linear infinite;}
+.marquee-inner:hover{animation-play-state:paused}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.marquee-item{
+  display:inline-flex;align-items:center;gap:6px;
+  margin-right:40px;font-size:12px;color:rgba(255,255,255,0.2);letter-spacing:0.5px;
+}
+.marquee-item .m-dot{width:4px;height:4px;border-radius:50%;background:var(--hot);opacity:0.6;display:inline-block}
+
+#particles{position:fixed;inset:0;pointer-events:none;z-index:1;}
+
+@media(max-width:900px){
+  .page{grid-template-columns:1fr;grid-template-areas:"nav""right""left""strip"}
+  nav{padding:16px 24px}
+  .nav-stats{gap:14px}
+  .hero{padding:40px 24px;border-right:none;border-top:1px solid var(--glass-b)}
+  .auth-panel{padding:40px 24px}
+  .strip{padding:14px 24px;flex-direction:column;gap:12px;align-items:flex-start}
+  .strip-features{flex-wrap:wrap;gap:12px}
+}
+@media(max-width:560px){
+  .nav-stats{display:none}
+  .hero-title{font-size:36px;letter-spacing:-1.5px}
+  .card-stack{width:100%;height:160px}
+  .pc1{width:110px;height:155px}
+  .pc2{width:110px;height:155px}
+  .pc3{width:95px;height:140px}
+  .fields-row{grid-template-columns:1fr}
+}
+`;
+
+/* ─── HOOKS ──────────────────────────────────────────────────── */
+function useCountUp(target: number, suffix = "", triggerRef: React.RefObject<Element | null>) {
+  const [value, setValue] = useState("0");
   useEffect(() => {
-    setMounted(true);
-    const colors = ["#ff2d6b", "#ff6b35", "#ffc947", "#ff4488", "#ff8c42"];
-    const pts: Particle[] = Array.from({ length: 24 }, (_, i) => ({
-      id: i, x: Math.random() * 100, startY: 85 + Math.random() * 20,
-      size: 2 + Math.random() * 5, color: colors[Math.floor(Math.random() * colors.length)],
-      duration: 14 + Math.random() * 16, delay: Math.random() * 12,
-      driftX: (Math.random() - 0.5) * 180, opacity: 0.4 + Math.random() * 0.5,
-    }));
-    setParticles(pts);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          const start = performance.now();
+          const duration = 2200;
+          const tick = (now: number) => {
+            const progress = Math.min((now - start) / duration, 1);
+            const ease = 1 - Math.pow(1 - progress, 3);
+            setValue(Math.floor(ease * target).toLocaleString("es-AR") + suffix);
+            if (progress < 1) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.3 }
+    );
+    if (triggerRef.current) observer.observe(triggerRef.current);
+    return () => observer.disconnect();
+  }, [target, suffix, triggerRef]);
+  return value;
+}
 
-    const tags: FloatingTag[] = MARKETING_PHRASES.map((phrase, i) => ({
-      id: i, x: i % 2 === 0 ? 1 + Math.random() * 16 : 72 + Math.random() * 20,
-      startY: 90 + Math.random() * 20, phrase,
-      duration: 18 + Math.random() * 14, delay: i * 1.8 + Math.random() * 2,
-      driftX: (Math.random() - 0.5) * 80,
-    }));
-    setFloatingTags(tags);
-  }, []);
+function useFluctuate(base: number, range: number) {
+  const [value, setValue] = useState(base);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setValue(base + Math.floor((Math.random() - 0.5) * range * 2));
+    }, 3000 + Math.random() * 2000);
+    return () => clearInterval(interval);
+  }, [base, range]);
+  return value.toLocaleString("es-AR");
+}
 
-  const login = async () => {
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { alert(error.message); setLoading(false); return; }
-    router.push("/discover");
-  };
-
-  const testLogin = async () => {
-    setLoading(true);
-    const acc = TEST_ACCOUNTS[Math.floor(Math.random() * TEST_ACCOUNTS.length)];
-    const { error } = await supabase.auth.signInWithPassword({ email: acc.email, password: acc.password });
-    if (error) { alert("Cuentas de prueba no encontradas."); setLoading(false); return; }
-    router.push("/discover");
-  };
-
-  // ✅ El tab "Registrarse" ahora redirige al flujo multi-paso
-  const goToRegister = () => router.push("/auth/register");
-
+/* ─── COMPONENTS ─────────────────────────────────────────────── */
+function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+    const t = setTimeout(() => {
+      setVisible(false);
+      setTimeout(onDone, 400);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [onDone]);
   return (
-    <div className="hp-root">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+    <div style={{
+      position: "fixed", bottom: 80, left: "50%",
+      transform: visible ? "translateX(-50%) translateY(0)" : "translateX(-50%) translateY(10px)",
+      background: "linear-gradient(135deg,#ff2d6b,#c9193e)",
+      color: "white", padding: "14px 24px", borderRadius: 100,
+      fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700,
+      boxShadow: "0 8px 32px rgba(255,45,107,0.5)",
+      zIndex: 9999, whiteSpace: "nowrap",
+      opacity: visible ? 1 : 0,
+      transition: "all 0.4s cubic-bezier(0.16,1,0.3,1)",
+    }}>
+      {message}
+    </div>
+  );
+}
 
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { height: 100%; background: #060610; }
+function Particles() {
+  useEffect(() => {
+    const container = document.getElementById("particles");
+    if (!container) return;
+    for (let i = 0; i < 20; i++) {
+      const p = document.createElement("div");
+      p.className = "particle";
+      const size = 2 + Math.random() * 5;
+      const color = particleColors[Math.floor(Math.random() * particleColors.length)];
+      const op = 0.3 + Math.random() * 0.5;
+      const dur = 16 + Math.random() * 18;
+      const delay = Math.random() * 15;
+      const dx = (Math.random() - 0.5) * 200;
+      const startX = Math.random() * 100;
+      p.style.cssText = `
+        width:${size}px;height:${size}px;background:${color};
+        box-shadow:0 0 ${size * 3}px ${color};
+        left:${startX}%;bottom:-2%;
+        --op:${op};--dx:${dx}px;--dy:-110vh;
+        animation:particleFloat ${dur}s ${delay}s linear infinite;
+      `;
+      container.appendChild(p);
+    }
+    return () => { if (container) container.innerHTML = ""; };
+  }, []);
+  return <div id="particles" />;
+}
 
-        .hp-root {
-          width: 100vw; min-height: 100vh; background: #060610;
-          display: grid; place-items: center;
-          font-family: 'DM Sans', sans-serif;
-          position: relative; overflow-x: hidden; overflow-y: auto;
-          padding: 48px 16px;
-        }
-
-        .hp-aurora {
-          position: fixed; inset: 0;
-          background:
-            radial-gradient(ellipse 60% 50% at 18% 22%, rgba(255,45,107,0.20) 0%, transparent 58%),
-            radial-gradient(ellipse 50% 40% at 82% 78%, rgba(255,107,53,0.14) 0%, transparent 58%),
-            radial-gradient(ellipse 40% 35% at 68% 18%, rgba(255,68,136,0.10) 0%, transparent 52%),
-            radial-gradient(ellipse 55% 45% at 30% 90%, rgba(255,201,71,0.06) 0%, transparent 50%);
-          animation: auroraShift 14s ease-in-out infinite alternate;
-          pointer-events: none; z-index: 0;
-        }
-
-        @keyframes auroraShift {
-          0%   { opacity: 0.65; transform: scale(1); }
-          50%  { opacity: 0.85; transform: scale(1.04); }
-          100% { opacity: 1;    transform: scale(1.08); }
-        }
-
-        .hp-particle {
-          position: fixed; bottom: -2%; border-radius: 50%;
-          pointer-events: none; z-index: 1; filter: blur(0.8px);
-        }
-
-        @keyframes particleRise {
-          0%   { transform: translate(0, 0) scale(0.6);                          opacity: 0; }
-          6%   { opacity: var(--op); }
-          50%  { transform: translate(calc(var(--dx) * 0.5), -55vh) scale(1.3); opacity: var(--op); }
-          94%  { opacity: 0.08; }
-          100% { transform: translate(var(--dx), -108vh) scale(0.4);             opacity: 0; }
-        }
-
-        .hp-tag {
-          position: fixed; display: flex; align-items: center; gap: 6px;
-          background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07);
-          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-          border-radius: 100px; padding: 7px 14px 7px 10px;
-          font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 400;
-          color: rgba(255,255,255,0.42); white-space: nowrap;
-          pointer-events: none; z-index: 2;
-          bottom: var(--tag-start, -10%); top: auto !important;
-        }
-
-        .hp-tag-emoji { font-size: 13px; line-height: 1; }
-
-        @keyframes tagRise {
-          0%   { transform: translate(0, 0);                                  opacity: 0; }
-          7%   { opacity: 0.72; }
-          50%  { transform: translate(calc(var(--tdx) * 0.4), -52vh);        opacity: 0.6; }
-          93%  { opacity: 0.08; }
-          100% { transform: translate(var(--tdx), -110vh);                    opacity: 0; }
-        }
-
-        .hp-wrapper {
-          position: relative; z-index: 10;
-          display: flex; flex-direction: column; align-items: center; gap: 24px;
-          opacity: 0;
-          animation: wrapperIn 0.9s 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes wrapperIn {
-          from { opacity: 0; transform: translateY(28px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-
-        .hp-logo-block { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-
-        .hp-logo-icon {
-          width: 58px; height: 58px; border-radius: 17px;
-          background: linear-gradient(135deg, #ff2d6b 0%, #ff6b35 60%, #ffc947 100%);
-          display: flex; align-items: center; justify-content: center; font-size: 27px;
-          box-shadow: 0 0 0 1px rgba(255,45,107,0.3), 0 0 36px rgba(255,45,107,0.45),
-            0 0 72px rgba(255,45,107,0.18), inset 0 1px 0 rgba(255,255,255,0.22);
-          animation: iconGlow 3s ease-in-out infinite alternate;
-        }
-
-        @keyframes iconGlow {
-          from { box-shadow: 0 0 0 1px rgba(255,45,107,0.3), 0 0 28px rgba(255,45,107,0.4), 0 0 60px rgba(255,45,107,0.14), inset 0 1px 0 rgba(255,255,255,0.22); }
-          to   { box-shadow: 0 0 0 1px rgba(255,45,107,0.55), 0 0 52px rgba(255,45,107,0.6), 0 0 95px rgba(255,45,107,0.24), inset 0 1px 0 rgba(255,255,255,0.28); }
-        }
-
-        .hp-logo-name {
-          font-family: 'Syne', sans-serif; font-size: 34px; font-weight: 800;
-          letter-spacing: -1px; color: white; line-height: 1;
-        }
-
-        .hp-logo-name span {
-          background: linear-gradient(135deg, #ff2d6b, #ff6b35, #ffc947);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-
-        .hp-logo-tagline {
-          font-size: 11px; color: rgba(255,255,255,0.28); letter-spacing: 2.8px;
-          text-transform: uppercase; font-weight: 300; margin-top: -2px;
-        }
-
-        .hp-card {
-          width: 500px;
-          background: rgba(10,10,22,0.88); border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 32px; padding: 52px 52px 48px;
-          backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
-          box-shadow: 0 0 0 1px rgba(255,45,107,0.04), 0 28px 60px rgba(0,0,0,0.55),
-            0 0 70px rgba(255,45,107,0.07), inset 0 1px 0 rgba(255,255,255,0.05);
-        }
-
-        .hp-tabs {
-          display: flex; gap: 4px;
-          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-          border-radius: 14px; padding: 4px; margin-bottom: 32px;
-        }
-
-        .hp-tab {
-          flex: 1; padding: 12px; border: none; border-radius: 11px;
-          font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-          letter-spacing: 0.3px; cursor: pointer;
-          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-          color: rgba(255,255,255,0.3); background: transparent;
-        }
-
-        .hp-tab.active {
-          background: linear-gradient(135deg, #ff2d6b 0%, #c9193e 100%);
-          color: white; box-shadow: 0 4px 16px rgba(255,45,107,0.4);
-        }
-
-        .hp-tab:not(.active):hover { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.04); }
-
-        /* ── Register CTA — se muestra cuando mode=register ── */
-        .hp-register-cta {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 20px;
-          padding: 16px 0 8px;
-          text-align: center;
-        }
-
-        .hp-register-icon {
-          font-size: 48px;
-          animation: iconGlow 3s ease-in-out infinite alternate;
-          filter: drop-shadow(0 0 16px rgba(255,45,107,0.5));
-        }
-
-        .hp-register-title {
-          font-family: 'Syne', sans-serif;
-          font-size: 22px; font-weight: 800;
-          color: white; letter-spacing: -0.5px;
-        }
-
-        .hp-register-sub {
-          font-size: 14px; color: rgba(255,255,255,0.35);
-          line-height: 1.65; max-width: 280px;
-        }
-
-        .hp-register-features {
-          display: flex; flex-direction: column; gap: 10px;
-          width: 100%; margin: 4px 0;
-        }
-
-        .hp-register-feature {
-          display: flex; align-items: center; gap: 12px;
-          padding: 12px 16px;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.06);
-          border-radius: 12px;
-          font-size: 13px; color: rgba(255,255,255,0.55);
-          text-align: left;
-        }
-
-        .hp-register-feature-icon { font-size: 18px; flex-shrink: 0; }
-
-        .hp-field {
-          display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;
-        }
-
-        .hp-label {
-          font-size: 10px; font-weight: 500; letter-spacing: 1.5px;
-          text-transform: uppercase; color: rgba(255,255,255,0.25);
-        }
-
-        .hp-input {
-          width: 100%;
-          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 14px; padding: 15px 18px; font-size: 16px; color: white;
-          font-family: 'DM Sans', sans-serif; outline: none;
-          transition: all 0.2s ease; -webkit-appearance: none;
-        }
-
-        .hp-input::placeholder { color: rgba(255,255,255,0.15); }
-
-        .hp-input:focus {
-          border-color: rgba(255,45,107,0.5); background: rgba(255,45,107,0.04);
-          box-shadow: 0 0 0 3px rgba(255,45,107,0.1);
-        }
-
-        .hp-btn-primary {
-          width: 100%; padding: 16px;
-          background: linear-gradient(135deg, #ff2d6b 0%, #c9193e 100%);
-          border: none; border-radius: 14px; color: white;
-          font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
-          letter-spacing: 0.3px; cursor: pointer;
-          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-          margin-top: 8px; overflow: hidden; position: relative;
-          box-shadow: 0 8px 28px rgba(255,45,107,0.4);
-        }
-
-        .hp-btn-primary::before {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent 50%);
-          pointer-events: none;
-        }
-
-        .hp-btn-primary::after {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
-          transform: translateX(-100%); transition: transform 0.6s ease;
-        }
-
-        .hp-btn-primary:hover::after { transform: translateX(100%); }
-        .hp-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(255,45,107,0.55); }
-        .hp-btn-primary:active { transform: translateY(0); }
-        .hp-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
-
-        .hp-divider {
-          display: flex; align-items: center; gap: 12px; margin: 22px 0;
-        }
-
-        .hp-divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
-        .hp-divider-text { font-size: 11px; color: rgba(255,255,255,0.15); letter-spacing: 1px; }
-
-        .hp-btn-ghost {
-          width: 100%; padding: 15px;
-          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-          border-radius: 14px; color: rgba(255,255,255,0.4);
-          font-family: 'DM Sans', sans-serif; font-size: 15px; cursor: pointer;
-          transition: all 0.2s ease;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-
-        .hp-btn-ghost:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.1); }
-        .hp-btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
-
-        .hp-pulse {
-          width: 7px; height: 7px; border-radius: 50%; background: #22c55e;
-          animation: pulse 2s infinite; flex-shrink: 0;
-        }
-
-        @keyframes pulse {
-          0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
-          70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
-          100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-        }
-
-        .hp-footer { font-size: 10px; color: rgba(255,255,255,0.1); text-align: center; letter-spacing: 0.4px; }
-
-        @media (max-width: 560px) {
-          .hp-root { padding: 32px 0; place-items: start center; }
-          .hp-tag { display: none; }
-          .hp-wrapper { width: 100%; gap: 20px; padding: 0 20px; }
-          .hp-logo-icon { width: 52px; height: 52px; font-size: 24px; border-radius: 15px; }
-          .hp-logo-name { font-size: 28px; }
-          .hp-logo-tagline { font-size: 10px; letter-spacing: 2px; }
-          .hp-card { width: 100%; border-radius: 24px; padding: 32px 24px 28px; }
-          .hp-tabs { margin-bottom: 24px; }
-          .hp-tab { padding: 11px; font-size: 13px; }
-          .hp-field { margin-bottom: 16px; gap: 7px; }
-          .hp-input { padding: 14px 16px; font-size: 16px; border-radius: 13px; }
-          .hp-btn-primary { padding: 15px; font-size: 15px; border-radius: 13px; }
-          .hp-divider { margin: 18px 0; }
-          .hp-btn-ghost { padding: 14px; font-size: 14px; border-radius: 13px; }
-        }
-
-        @media (min-width: 561px) and (max-width: 700px) {
-          .hp-tag { display: none; }
-          .hp-card { width: 460px; padding: 44px 40px; }
-        }
-      `}</style>
-
-      <div className="hp-aurora" />
-
-      {mounted && particles.map((p) => (
-        <div key={p.id} className="hp-particle" style={{
-          left: `${p.x}%`, width: `${p.size}px`, height: `${p.size}px`,
-          background: p.color, boxShadow: `0 0 ${p.size * 3}px ${p.color}`,
-          "--op": p.opacity, "--dx": `${p.driftX}px`,
-          animation: `particleRise ${p.duration}s ${p.delay}s linear infinite`,
-        } as React.CSSProperties} />
-      ))}
-
-      {mounted && floatingTags.map((tag) => (
-        <div key={tag.id} className="hp-tag" style={{
-          left: `${tag.x}%`,
-          "--tag-start": `${-(5 + Math.abs(tag.driftX) * 0.05)}%`,
-          "--tdx": `${tag.driftX}px`,
-          animation: `tagRise ${tag.duration}s ${tag.delay}s linear infinite`,
-        } as React.CSSProperties}>
-          <span className="hp-tag-emoji">{tag.phrase.emoji}</span>
-          {tag.phrase.text}
+function ProfileCard({ profile, className }: { profile: Profile; className: string }) {
+  return (
+    <div className={`profile-card ${className}`}>
+      {profile.live && (
+        <div className="pc-live-badge">
+          <div className="pc-live-dot" />
+          LIVE
         </div>
-      ))}
-
-      <div className="hp-wrapper">
-        <div className="hp-logo-block">
-          <div className="hp-logo-icon">🔥</div>
-          <div className="hp-logo-name">Turr<span>inder</span></div>
-          <div className="hp-logo-tagline">Tinder meets OmeTV 2</div>
-        </div>
-
-        <div className="hp-card">
-          {/* Tabs */}
-          <div className="hp-tabs">
-            <button className={`hp-tab ${mode === "login" ? "active" : ""}`} onClick={() => setMode("login")}>
-              Entrar
-            </button>
-            <button className={`hp-tab ${mode === "register" ? "active" : ""}`} onClick={() => setMode("register")}>
-              Registrarse
-            </button>
-          </div>
-
-          {/* ── LOGIN ── */}
-          {mode === "login" && (
-            <>
-              <div className="hp-field">
-                <label className="hp-label">Email</label>
-                <input className="hp-input" type="email" placeholder="tu@email.com"
-                  value={email} onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && login()} />
-              </div>
-
-              <div className="hp-field">
-                <label className="hp-label">Contraseña</label>
-                <input className="hp-input" type="password" placeholder="••••••••"
-                  value={password} onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && login()} />
-              </div>
-
-              <button className="hp-btn-primary" onClick={login} disabled={loading}>
-                {loading ? "Cargando..." : "Iniciar sesión →"}
-              </button>
-
-              <div className="hp-divider">
-                <div className="hp-divider-line" />
-                <span className="hp-divider-text">o</span>
-                <div className="hp-divider-line" />
-              </div>
-
-              <button className="hp-btn-ghost" onClick={testLogin} disabled={loading}>
-                <div className="hp-pulse" />
-                Entrar como invitado
-              </button>
-            </>
-          )}
-
-          {/* ── REGISTER — redirige al flujo multi-paso ── */}
-          {mode === "register" && (
-            <div className="hp-register-cta">
-              <div className="hp-register-icon">✨</div>
-              <div className="hp-register-title">Creá tu perfil completo</div>
-              <p className="hp-register-sub">
-                El registro tarda 2 minutos y te ayuda a conectar con las personas correctas.
-              </p>
-
-              <div className="hp-register-features">
-                <div className="hp-register-feature">
-                  <span className="hp-register-feature-icon">📸</span>
-                  Subí hasta 4 fotos de perfil
-                </div>
-                <div className="hp-register-feature">
-                  <span className="hp-register-feature-icon">🎯</span>
-                  Elegí qué estás buscando
-                </div>
-                <div className="hp-register-feature">
-                  <span className="hp-register-feature-icon">🔥</span>
-                  Agregá tus intereses y gustos
-                </div>
-              </div>
-
-              <button className="hp-btn-primary" style={{ marginTop: 4 }} onClick={goToRegister}>
-                Empezar registro →
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="hp-footer">
-          Al continuar aceptás los términos de uso · Turrinder © 2025
-        </div>
+      )}
+      <img
+        src={profile.img}
+        alt={profile.name}
+        loading="lazy"
+        onError={(e) => {
+          (e.target as HTMLImageElement).src =
+            "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='300'><rect width='200' height='300' fill='%231a1a2e'/><text x='50%' y='50%' text-anchor='middle' fill='%23ff2d6b' font-size='40'>👤</text></svg>";
+        }}
+      />
+      <div className="pc-overlay">
+        <div className="pc-name">{profile.name}, {profile.age}</div>
+        <div className="pc-age">{profile.city}</div>
       </div>
     </div>
+  );
+}
+
+function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const handleLogin = () => {
+    if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
+    onToast("¡Bienvenido/a! Redirigiendo... 🚀");
+    
+  };
+  const router = useRouter();
+
+  const goToRegister = () => {
+  router.push("/auth/register");
+  };
+  
+  return (
+    
+    <div>
+      <div className="field">
+        <label className="label">Email</label>
+        <input className="input" type="email" placeholder="tu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+      </div>
+      <div className="field">
+        <label className="label">Contraseña</label>
+        <input className="input" type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleLogin()} />
+      </div>
+      <button className="btn-primary" onClick={handleLogin}>
+  Iniciar sesión →
+</button>
+      <div className="divider">
+        <div style={{ marginTop: 16, textAlign: "center" }}>
+  <span style={{ color: "var(--muted)", fontSize: 13 }}>
+    ¿No tenés cuenta?{" "}
+  </span>
+  <button
+    onClick={goToRegister}
+    style={{
+      background: "none",
+      border: "none",
+      color: "#ff2d6b",
+      cursor: "pointer",
+      fontWeight: 600,
+      fontSize: 13,
+    }}
+  >
+    Registrate
+  </button>
+</div>
+        <div className="divider-line" /><span className="divider-text">o</span><div className="divider-line" />
+      </div>
+      <button className="btn-ghost" onClick={() => onToast("Entrando como invitado... ⚡")}>
+        <div className="dot-live" />
+        Entrar como invitado (sin cuenta)
+      </button>
+    </div>
+  );
+}
+
+function RegisterForm({ goToRegister }: { goToRegister: () => void }) {
+  return (
+    <div>
+      <div className="fields-row">
+        <div className="field">
+          <label className="label">Nombre</label>
+          <input className="input" type="text" placeholder="Tu nombre" />
+        </div>
+        <div className="field">
+          <label className="label">Edad</label>
+          <input
+  className="input"
+  type="number"
+  placeholder="25"
+  min={18}
+  max={99}
+  onChange={(e) => {
+    const value = Number(e.target.value);
+    if (value < 18) e.target.value = "18";
+  }}
+/>
+        </div>
+      </div>
+
+      <div className="field">
+        <label className="label">Email</label>
+        <input className="input" type="email" placeholder="tu@email.com" />
+      </div>
+
+      <div className="field">
+        <label className="label">Contraseña</label>
+        <input className="input" type="password" placeholder="Mínimo 6 caracteres" />
+      </div>
+
+      
+
+      <button
+  className="btn-primary"
+  style={{ marginTop: 10 }}
+  onClick={goToRegister}
+>
+        Crear cuenta gratis →
+      </button>
+    </div>
+  );
+}
+
+/* ─── MAIN COMPONENT ─────────────────────────────────────────── */
+export default function Turrinder() {
+  const [tab, setTab] = useState<"login" | "register">("login");
+  const [toast, setToast] = useState<string | null>(null);
+  const [spIdx, setSpIdx] = useState(0);
+  const [spCount, setSpCount] = useState(2847);
+  const [spVisible, setSpVisible] = useState(true);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  const onlineCount = useFluctuate(8342, 120);
+  const videoCount = useFluctuate(1204, 60);
+  const s1 = useCountUp(284700, "+", stripRef);
+  const s2 = useCountUp(1820000, "+", stripRef);
+  const s3 = useCountUp(430000, "+", stripRef);
+
+  
+
+  
+
+  // Social proof ticker
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSpVisible(false);
+      setTimeout(() => {
+        setSpIdx(i => (i + 1) % recentNames.length);
+        setSpCount(c => c + Math.floor(Math.random() * 3 + 1));
+        setSpVisible(true);
+      }, 300);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const marqueeText = [...marqueeItems, ...marqueeItems, ...marqueeItems, ...marqueeItems]
+    .map(t => `<span class="marquee-item"><span class="m-dot"></span>${t}</span>`)
+    .join("");
+
+  return (
+    <>
+      <style>{globalStyles}</style>
+      <div className="aurora" />
+      <Particles />
+
+      <div className="page">
+        {/* NAV */}
+        <nav>
+          <div className="nav-logo">
+            <img src="logo.png" className="nav-logo-icon" />
+            <div className="nav-logo-name">Turr<span>inder</span></div>
+          </div>
+          <div className="nav-stats">
+            <div className="nav-stat">
+              <div className="dot-live" />
+              <strong>{onlineCount}</strong>&nbsp;online ahora
+            </div>
+            <div className="nav-stat">
+              <div className="dot-live orange" />
+              <strong>{videoCount}</strong>&nbsp;en video
+            </div>
+            <div className="nav-stat" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 16 }}>🌍</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}><strong style={{ color: "white" }}>47</strong> países</span>
+            </div>
+          </div>
+        </nav>
+
+        {/* HERO */}
+        <section className="hero">
+          <div className="hero-badge">
+            <div className="dot-live" />
+            En vivo · <span>238 matches en la última hora</span>
+          </div>
+          <h1 className="hero-title">
+            <span className="line1">Swipe. Matcheá.</span>
+            <span className="line2">Hablá en vivo.</span>
+          </h1>
+          <p className="hero-sub">
+            Descubrí una nueva forma de conectar: perfiles reales, conversaciones en vivo y matches que pasan al instante.
+          </p>
+
+          <div className="card-stack">
+            <ProfileCard profile={profiles[0]} className="pc1" />
+            <ProfileCard profile={profiles[1]} className="pc2" />
+            <ProfileCard profile={profiles[2]} className="pc3" />
+          </div>
+        </section>
+
+        {/* AUTH PANEL */}
+        <section className="auth-panel">
+          <h2 className="auth-heading">Empezá ahora</h2>
+          <p className="auth-sub">En 60 segundos ya estás conociendo gente.</p>
+
+          
+
+          {tab === "login"
+            ? <LoginForm onToast={setToast} />
+            : <RegisterForm goToRegister={goToRegister} />
+          }
+
+          <div className="social-proof">
+            <div className="sp-avatars">
+              {spAvatars.map((src, i) => (
+                <div key={i} className="sp-av">
+                  <img src={src} alt="" loading="lazy" />
+                </div>
+              ))}
+            </div>
+            <div className="sp-text">
+              <strong>{spCount.toLocaleString("es-AR")}</strong> personas se registraron hoy.<br />
+              <span style={{ opacity: spVisible ? 1 : 0, transition: "opacity 0.4s" }}>
+                {recentNames[spIdx]}
+              </span> se unió hace 3 minutos.
+            </div>
+          </div>
+
+          <div className="terms-text">
+            Al continuar aceptás los términos de uso y la política de privacidad.<br />
+            Turrinder © 2025 · Para mayores de 18 años.
+          </div>
+        </section>
+
+        
+
+      </div>
+
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+    </>
   );
 }
