@@ -109,10 +109,6 @@ export default function DiscoverPage() {
               </div>
               {skipInfo.remaining <= 3 && <span>{skipInfo.remaining} restantes</span>}
             </div>
-            <div className="header-pill">
-              <div className="header-pill-dot" />
-              <span className="header-pill-text">En vivo</span>
-            </div>
           </div>
         </header>
 
