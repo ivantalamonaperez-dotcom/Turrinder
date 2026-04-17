@@ -654,7 +654,7 @@ export default function Turrinder() {
         {/* NAV */}
         <nav>
           <div className="nav-logo">
-            <img src="{img}" className="nav-logo-icon" />
+            <img src={img.src} className="nav-logo-icon" />
             <div className="nav-logo-name">Turr<span>inder</span></div>
           </div>
           <div className="nav-stats">
