@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
+import img from "../Images/logo.png";
+
 /* ─── TYPES ──────────────────────────────────────────────────── */
 interface Profile {
   name: string;
@@ -637,7 +639,7 @@ export default function Turrinder() {
         {/* NAV */}
         <nav>
           <div className="nav-logo">
-            <img src="logo.png" className="nav-logo-icon" />
+            <img src="{img}" className="nav-logo-icon" />
             <div className="nav-logo-name">Turr<span>inder</span></div>
           </div>
           <div className="nav-stats">
