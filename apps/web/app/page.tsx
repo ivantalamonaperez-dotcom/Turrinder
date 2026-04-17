@@ -491,12 +491,26 @@ function ProfileCard({ profile, className }: { profile: Profile; className: stri
 function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
-  const handleLogin = () => {
-    if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
-    onToast("¡Bienvenido/a! Redirigiendo... 🚀");
-    
-  };
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const handleLogin = async () => {
+    if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
+    setLoading(true);
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) {
+      onToast("Email o contraseña incorrectos ❌");
+      setLoading(false);
+      return;
+    }
+    onToast("¡Bienvenido/a! Redirigiendo... 🚀");
+    setTimeout(() => router.push("/discover"), 1200);
+  };
 
   const goToRegister = () => {
   router.push("/auth/register");
@@ -514,9 +528,10 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
         <input className="input" type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)}
           onKeyDown={e => e.key === "Enter" && handleLogin()} />
       </div>
-      <button className="btn-primary" onClick={handleLogin}>
-  Iniciar sesión →
-</button>
+      <button className="btn-primary" onClick={handleLogin} disabled={loading}
+        style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
+        {loading ? "Ingresando..." : "Iniciar sesión →"}
+      </button>
       <div className="divider">
         <div style={{ marginTop: 16, textAlign: "center" }}>
   <span style={{ color: "var(--muted)", fontSize: 13 }}>
