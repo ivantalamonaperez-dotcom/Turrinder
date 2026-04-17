@@ -1,18 +1,18 @@
 "use client";
 
 /**
- * useAd.ts — Banner 300x250 de Adsterra embebido en el modal
+ * useAd.ts — Corregido: atOptions en window global
  *
- * Key: ee96ab70d34ae8fe14b97603f3c84b9b
- * Zona: 29069525 (Banner 300x250 - turrinder.vercel.app)
+ * CAUSA DEL "Cargando anuncio..." permanente:
+ *   El invoke.js de Adsterra busca `window.atOptions` al ejecutarse.
+ *   Al inyectar atOptions como innerText de un <script> dentro de un div,
+ *   algunos navegadores lo ejecutan en scope local → window.atOptions = undefined
+ *   → Adsterra no renderiza nada.
  *
- * Cómo funciona:
- *   1. Servidor emite "show-ad" con token
- *   2. adMode → AD_MODE → AdOverlay se muestra
- *   3. loadBannerAd() inyecta el script de Adsterra en el div del modal
- *   4. El iframe del banner aparece dentro del overlay
- *   5. Tras AD_WAIT_SECONDS el botón "Continuar" se habilita
- *   6. Usuario hace clic → reportAdCompleted() → servidor valida → IDLE
+ * SOLUCIÓN:
+ *   1. Asignar `window.atOptions` directamente desde JS antes de cargar el script.
+ *   2. Cargar invoke.js solo UNA vez (evitar duplicados en re-renders).
+ *   3. Si ya estaba cargado, forzar re-render del slot eliminando y recreando el div.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -34,9 +34,11 @@ export interface UseAdReturn {
   reportAdCompleted: () => void;
 }
 
-// ── Configuración real de Adsterra ────────────────────────────────────────────
 const ADSTERRA_KEY = "ee96ab70d34ae8fe14b97603f3c84b9b";
 const ADSTERRA_SRC = `https://www.highperformanceformat.com/${ADSTERRA_KEY}/invoke.js`;
+
+// Track si el script ya fue agregado al DOM (singleton)
+let invokeScriptLoaded = false;
 
 export function useAd(): UseAdReturn {
   const { socket }     = useSocket();
@@ -45,45 +47,57 @@ export function useAd(): UseAdReturn {
   const adTokenRef     = useRef<string | null>(null);
   const adContainerRef = useRef<HTMLDivElement>(null!);
 
-  /**
-   * Inyecta el banner de Adsterra en el div del modal.
-   * Limpia el contenido anterior antes de inyectar para evitar duplicados.
-   */
   const loadBannerAd = useCallback(() => {
     const container = adContainerRef.current;
     if (!container) {
-      console.warn("[Ad] ⚠️ Contenedor no disponible aún.");
+      console.warn("[Ad] ⚠️ Contenedor no disponible.");
       return;
     }
 
-    // Limpiar inyección anterior
+    // Limpiar contenido anterior
     container.innerHTML = "";
 
-    // Script de configuración (debe ir ANTES del invoke.js)
-    const configScript = document.createElement("script");
-    configScript.type = "text/javascript";
-    configScript.text = `
-      atOptions = {
-        'key': '${ADSTERRA_KEY}',
-        'format': 'iframe',
-        'height': 250,
-        'width': 300,
-        'params': {}
+    // ── CLAVE: asignar atOptions a window ANTES de cargar el script ──────
+    (window as any).atOptions = {
+      key: ADSTERRA_KEY,
+      format: "iframe",
+      height: 250,
+      width: 300,
+      params: {},
+    };
+    console.log("[Ad] ✅ window.atOptions asignado:", (window as any).atOptions);
+
+    if (!invokeScriptLoaded) {
+      // Primera vez: agregar el script al <head>
+      const script = document.createElement("script");
+      script.src = ADSTERRA_SRC;
+      script.async = true;
+      script.setAttribute("data-cfasync", "false");
+
+      script.onload = () => {
+        invokeScriptLoaded = true;
+        console.log("[Ad] ✅ invoke.js cargado.");
       };
-    `;
+      script.onerror = () => {
+        console.warn("[Ad] ⚠️ invoke.js no cargó (¿adblocker?).");
+      };
 
-    // Script que carga el banner
-    const invokeScript = document.createElement("script");
-    invokeScript.type = "text/javascript";
-    invokeScript.src = ADSTERRA_SRC;
-    invokeScript.async = true;
+      // Agregar al head para que corra en scope global
+      document.head.appendChild(script);
+      console.log("[Ad] 📺 invoke.js agregado al head.");
+    } else {
+      // Ya cargado: Adsterra busca el div con atOptions y lo renderiza.
+      // Forzamos que lo detecte creando un script inline que llama invoke de nuevo.
+      console.log("[Ad] 🔁 invoke.js ya cargado, forzando re-render del slot...");
 
-    invokeScript.onload = () => console.log("[Ad] ✅ Banner Adsterra cargado.");
-    invokeScript.onerror = () => console.warn("[Ad] ⚠️ Error cargando banner (¿adblocker?).");
-
-    container.appendChild(configScript);
-    container.appendChild(invokeScript);
-    console.log("[Ad] 📺 Inyectando banner 300x250...");
+      // Adsterra re-renderiza si encuentra el div vacío con atOptions en window.
+      // Creamos un script inline mínimo para triggear la lógica interna.
+      const reloadScript = document.createElement("script");
+      reloadScript.setAttribute("data-cfasync", "false");
+      reloadScript.src = ADSTERRA_SRC + "?t=" + Date.now(); // cache bust
+      reloadScript.async = true;
+      document.head.appendChild(reloadScript);
+    }
   }, []);
 
   const reportAdCompleted = useCallback(() => {
@@ -105,8 +119,7 @@ export function useAd(): UseAdReturn {
       console.log("[Ad] 📺 show-ad recibido.");
       adTokenRef.current = (token && token.trim() !== "") ? token : null;
       setAdMode("AD_MODE");
-
-      // Dos frames para asegurar que React renderizó el contenedor antes de inyectar
+      // Esperar dos frames para que React renderice el contenedor
       requestAnimationFrame(() =>
         requestAnimationFrame(() => loadBannerAd())
       );
@@ -119,8 +132,7 @@ export function useAd(): UseAdReturn {
     };
 
     const handleAdError = () => {
-      // Mantener en AD_MODE — el overlay sigue visible
-      console.error("[Ad] ❌ Error de validación del servidor.");
+      console.error("[Ad] ❌ Error del servidor, manteniendo AD_MODE.");
     };
 
     const handleSkipCount = (info: SkipInfo) => setSkipInfo(info);
