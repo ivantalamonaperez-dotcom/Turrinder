@@ -65,7 +65,7 @@ export default function DiscoverPage() {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
-        .discover-root{height:calc(100dvh - 64px);display:flex;flex-direction:column;background:#04040c;overflow:hidden;position:relative;}
+        .discover-root{height: 100vh;display:flex;flex-direction:column;background:#04040c;overflow:hidden;position:relative;}
         .discover-video{flex:1;min-height:0;overflow:hidden;position:relative;}
         .discover-header{position:absolute;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:linear-gradient(to bottom,rgba(4,4,12,0.75) 0%,rgba(4,4,12,0.3) 60%,transparent 100%);pointer-events:none;}
         .header-logo{font-family:'Syne',sans-serif;font-size:18px;font-weight:900;letter-spacing:-0.5px;pointer-events:all;}
@@ -108,10 +108,6 @@ export default function DiscoverPage() {
                 ))}
               </div>
               {skipInfo.remaining <= 3 && <span>{skipInfo.remaining} restantes</span>}
-            </div>
-            <div className="header-pill">
-              <div className="header-pill-dot" />
-              <span className="header-pill-text">En vivo</span>
             </div>
           </div>
         </header>
