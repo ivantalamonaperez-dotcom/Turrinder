@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
 import UserChip from "@/components/user/UserChip";
 
-
 interface Props {
   room: { id: string } | null;
   matchUser: any;
@@ -20,11 +19,11 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
   const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
     useWebRTC(targetPartnerId);
 
-  const [audioLocked,   setAudioLocked]   = useState(true);
-  const [likeAnim,      setLikeAnim]      = useState(false);
-  const [skipAnim,      setSkipAnim]      = useState(false);
-  const [likeFlash,     setLikeFlash]     = useState(false);
-  const [streamerMode,  setStreamerMode]   = useState(false);
+  const [audioLocked,  setAudioLocked]  = useState(true);
+  const [likeAnim,     setLikeAnim]     = useState(false);
+  const [skipAnim,     setSkipAnim]     = useState(false);
+  const [likeFlash,    setLikeFlash]    = useState(false);
+  const [streamerMode, setStreamerMode] = useState(false);
 
   const hasVideo    = !!remoteStream || (isConnected && !!targetPartnerId);
   const remoteReady = hasVideo || matchConfirmed;
@@ -60,6 +59,20 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
+        /* ── TOKENS (mismos que TurrinderPage) ── */
+        .vp-root {
+          --sky:      #54c7f8;
+          --sky2:     #3b9eda;
+          --sky3:     #1a6fa8;
+          --sky-glow: rgba(84,199,248,0.38);
+          --w:        #f5f8ff;
+          --bg:       #030a14;
+          --bg2:      #050f1e;
+          --glass:    rgba(84,199,248,0.04);
+          --glass-b:  rgba(84,199,248,0.12);
+          --muted:    rgba(180,215,240,0.45);
+        }
+
         /* ── ROOT ── */
         .vp-root {
           width: 100%;
@@ -68,7 +81,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           flex-direction: column;
           overflow: hidden;
           position: relative;
-          background: #04040c;
+          background: var(--bg);
           font-family: 'DM Sans', sans-serif;
         }
 
@@ -89,16 +102,12 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           overflow: hidden;
           min-width: 0;
         }
-        .vp-panel-local  { background: #060610; }
-        .vp-panel-remote { background: #08060e; }
+        .vp-panel-local  { background: #040c18; }
+        .vp-panel-remote { background: #050f1e; }
 
         /* ── MOBILE: apilado vertical ── */
         @media (max-width: 768px) {
-          .vp-video-zone {
-            flex-direction: column;
-          }
-
-          /* La pareja va arriba y ocupa más espacio — es el foco */
+          .vp-video-zone { flex-direction: column; }
           .vp-panel-remote { order: -1; flex: 1.6; min-height: 0; }
           .vp-panel-local  { order:  1; flex: 1;   min-height: 0; }
 
@@ -111,32 +120,28 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
             background: linear-gradient(
               to right,
               transparent 0%,
-              rgba(255,45,107,0.0) 5%,
-              rgba(255,45,107,0.7) 20%,
-              rgba(255,107,53,1)   50%,
-              rgba(255,45,107,0.7) 80%,
-              rgba(255,45,107,0.0) 95%,
+              rgba(84,199,248,0.0) 5%,
+              rgba(84,199,248,0.7) 20%,
+              rgba(84,199,248,1)   50%,
+              rgba(84,199,248,0.7) 80%,
+              rgba(84,199,248,0.0) 95%,
               transparent 100%
             );
-            box-shadow: 0 0 12px rgba(255,70,80,0.5), 0 0 30px rgba(255,45,107,0.2);
+            box-shadow: 0 0 12px rgba(84,199,248,0.45), 0 0 30px rgba(84,199,248,0.18);
           }
 
-          /* Gem centrado en el divisor horizontal */
           .vp-divider-gem {
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
           }
 
-          /* Etiqueta "Tú" más compacta */
           .vp-label {
-            top: 10px;
-            left: 10px;
+            top: 10px; left: 10px;
             padding: 3px 10px 3px 7px;
             font-size: 9px;
           }
 
-          /* Badge streamer centrado en mobile */
           .vp-streamer-badge {
             bottom: 10px;
             left: 50%;
@@ -146,10 +151,8 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
 
         /* ── VIDEOS ── */
         .vp-video {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
+          width: 100%; height: 100%;
+          object-fit: cover; display: block;
         }
         .vp-video-local  { transform: scaleX(-1); }
         .vp-video-remote { transition: opacity 1s ease; }
@@ -157,83 +160,67 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         /* ── VIGNETTE ── */
         .vp-panel::after {
           content: '';
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(ellipse at center, transparent 40%, rgba(4,4,12,0.55) 100%);
+          position: absolute; inset: 0;
+          background: radial-gradient(ellipse at center, transparent 40%, rgba(3,10,20,0.6) 100%);
           pointer-events: none;
           z-index: 2;
         }
 
-        /* ── MODO STREAMER: blur sobre el video remoto ── */
+        /* ── MODO STREAMER: blur ── */
         .vp-streamer-blur {
-          position: absolute;
-          inset: 0;
-          z-index: 5;
-          backdrop-filter: blur(28px) brightness(0.6);
-          -webkit-backdrop-filter: blur(28px) brightness(0.6);
+          position: absolute; inset: 0; z-index: 5;
+          backdrop-filter: blur(28px) brightness(0.55);
+          -webkit-backdrop-filter: blur(28px) brightness(0.55);
           transition: opacity 0.35s ease;
           pointer-events: none;
         }
 
-        /* ── MODO STREAMER: badge indicador ── */
+        /* ── MODO STREAMER: badge ── */
         .vp-streamer-badge {
           position: absolute;
-          bottom: 16px;
-          left: 50%;
+          bottom: 16px; left: 50%;
           transform: translateX(-50%);
           z-index: 20;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: rgba(255, 45, 107, 0.12);
-          border: 1px solid rgba(255, 45, 107, 0.3);
+          display: flex; align-items: center; gap: 6px;
+          background: rgba(84,199,248,0.10);
+          border: 1px solid rgba(84,199,248,0.28);
           backdrop-filter: blur(10px);
           border-radius: 100px;
           padding: 4px 12px;
-          font-size: 9px;
-          font-weight: 600;
-          color: rgba(255, 100, 130, 0.9);
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          white-space: nowrap;
+          font-size: 9px; font-weight: 600;
+          color: rgba(143,212,255,0.9);
+          letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap;
           animation: streamerBadgePulse 3s ease-in-out infinite;
         }
         .vp-streamer-badge-dot {
-          width: 5px; height: 5px;
-          border-radius: 50%;
-          background: #ff2d6b;
-          box-shadow: 0 0 5px #ff2d6b;
+          width: 5px; height: 5px; border-radius: 50%;
+          background: var(--sky);
+          box-shadow: 0 0 5px var(--sky);
           animation: recBlink 2s infinite;
           flex-shrink: 0;
         }
         @keyframes streamerBadgePulse {
           0%,100% { opacity: 1; }
-          50%      { opacity: 0.75; }
+          50%      { opacity: 0.72; }
         }
 
-        /* ── ETIQUETA LOCAL ── */
+        /* ── ETIQUETA "TÚ" ── */
         .vp-label {
           position: absolute;
-          top: 16px;
-          left: 16px;
+          top: 16px; left: 16px;
           z-index: 10;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.07);
+          display: flex; align-items: center; gap: 7px;
+          background: rgba(3,10,20,0.5);
+          border: 1px solid var(--glass-b);
           backdrop-filter: blur(8px);
           border-radius: 100px;
           padding: 4px 12px 4px 8px;
-          font-size: 10px;
-          font-weight: 500;
-          color: rgba(255,255,255,0.5);
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
+          font-size: 10px; font-weight: 500;
+          color: var(--muted);
+          letter-spacing: 1.5px; text-transform: uppercase;
         }
         .vp-rec-dot {
-          width: 5px; height: 5px;
-          border-radius: 50%;
+          width: 5px; height: 5px; border-radius: 50%;
           background: #22c55e;
           box-shadow: 0 0 6px #22c55e;
           animation: recBlink 2s infinite;
@@ -244,195 +231,142 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         /* ── DIVISOR CENTRAL ── */
         .vp-divider {
           position: absolute;
-          left: 50%;
-          top: 0; bottom: 0;
+          left: 50%; top: 0; bottom: 0;
           transform: translateX(-50%);
-          width: 2px;
-          z-index: 30;
+          width: 2px; z-index: 30;
           background: linear-gradient(
             to bottom,
             transparent 0%,
-            rgba(255,45,107,0.0) 5%,
-            rgba(255,45,107,0.7) 20%,
-            rgba(255,107,53,1)   50%,
-            rgba(255,45,107,0.7) 80%,
-            rgba(255,45,107,0.0) 95%,
+            rgba(84,199,248,0.0) 5%,
+            rgba(84,199,248,0.7) 20%,
+            rgba(84,199,248,1)   50%,
+            rgba(84,199,248,0.7) 80%,
+            rgba(84,199,248,0.0) 95%,
             transparent 100%
           );
-          box-shadow: 0 0 12px rgba(255,70,80,0.5), 0 0 30px rgba(255,45,107,0.2);
+          box-shadow: 0 0 12px rgba(84,199,248,0.4), 0 0 30px rgba(84,199,248,0.15);
         }
         .vp-divider-gem {
           position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          width: 10px; height: 10px;
-          border-radius: 50%;
-          background: radial-gradient(circle, #ff6b35 0%, #ff2d6b 100%);
-          box-shadow: 0 0 16px rgba(255,45,107,0.9), 0 0 40px rgba(255,45,107,0.4);
+          left: 50%; top: 50%;
+          transform: translate(-50%,-50%);
+          width: 10px; height: 10px; border-radius: 50%;
+          background: radial-gradient(circle, #a8e6ff 0%, var(--sky) 55%, var(--sky2) 100%);
+          box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.35);
           z-index: 31;
           animation: gemPulse 3s ease-in-out infinite;
         }
         @keyframes gemPulse {
-          0%,100% { box-shadow: 0 0 16px rgba(255,45,107,0.9), 0 0 40px rgba(255,45,107,0.3); transform: translate(-50%,-50%) scale(1); }
-          50%      { box-shadow: 0 0 24px rgba(255,107,53,1),   0 0 60px rgba(255,45,107,0.5); transform: translate(-50%,-50%) scale(1.25); }
+          0%,100% { box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.3); transform: translate(-50%,-50%) scale(1); }
+          50%      { box-shadow: 0 0 24px rgba(84,199,248,1),   0 0 60px rgba(84,199,248,0.5); transform: translate(-50%,-50%) scale(1.25); }
         }
 
         /* ── BARRA DE CONTROLES ── */
         .vp-controls {
           flex-shrink: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          display: flex; align-items: center; justify-content: center;
           gap: 16px;
           padding: 8px 24px calc(20px + env(safe-area-inset-bottom, 20px));
-          background: rgba(4, 4, 12, 0.95);
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
-          backdrop-filter: blur(12px);
+          background: rgba(3,10,20,0.97);
+          border-top: 1px solid var(--glass-b);
+          backdrop-filter: blur(16px);
           z-index: 40;
         }
         .vp-ctrl-slot {
           width: 50px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          display: flex; align-items: center; justify-content: center;
         }
         .vp-ctrl-slot-center {
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          display: flex; align-items: center; justify-content: center;
         }
-
         .vp-ctrl {
-          border-radius: 50%;
-          border: none;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          border-radius: 50%; border: none; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
           transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease;
           position: relative;
           -webkit-tap-highlight-color: transparent;
         }
 
+        /* Skip */
         .vp-ctrl-skip {
           width: 50px; height: 50px;
-          background: rgba(255,255,255,0.07);
-          color: rgba(255,255,255,0.7);
-          border: 1.5px solid rgba(255,255,255,0.12);
+          background: rgba(84,199,248,0.05);
+          color: var(--muted);
+          border: 1.5px solid var(--glass-b);
           font-size: 17px;
           backdrop-filter: blur(10px);
         }
-        .vp-ctrl-skip:hover  { background: rgba(255,255,255,0.13); transform: scale(1.06); }
+        .vp-ctrl-skip:hover  { background: rgba(84,199,248,0.10); transform: scale(1.06); }
         .vp-ctrl-skip.anim   { transform: scale(0.82) rotate(-12deg); }
-        .vp-ctrl-skip:disabled {
-          opacity: 0.3;
-          cursor: not-allowed;
-          transform: none !important;
-        }
+        .vp-ctrl-skip:disabled { opacity: 0.3; cursor: not-allowed; transform: none !important; }
 
+        /* Like */
         .vp-ctrl-like {
           width: 62px; height: 62px;
-          background: linear-gradient(135deg, #ff2d6b 0%, #c9193e 100%);
-          color: white;
+          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
+          color: #02080f;
           font-size: 24px;
-          box-shadow: 0 4px 20px rgba(255,45,107,0.4), 0 0 0 0 rgba(255,45,107,0.3);
+          box-shadow: 0 4px 20px rgba(84,199,248,0.45), 0 0 0 0 rgba(84,199,248,0.3);
         }
-        .vp-ctrl-like:hover  { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 28px rgba(255,45,107,0.55); }
-        .vp-ctrl-like.anim   { transform: scale(1.35); box-shadow: 0 0 0 12px rgba(255,45,107,0); }
-        .vp-ctrl-like.liked  { filter: grayscale(0.7); opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+        .vp-ctrl-like:hover  { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 28px rgba(84,199,248,0.6); }
+        .vp-ctrl-like.anim   { transform: scale(1.35); box-shadow: 0 0 0 14px rgba(84,199,248,0); }
+        .vp-ctrl-like.liked  { filter: grayscale(0.6); opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
 
-        /* ── BOTÓN STREAMER ── */
+        /* Streamer */
         .vp-ctrl-streamer {
           width: 50px; height: 50px;
-          background: rgba(255,255,255,0.07);
-          color: rgba(255,255,255,0.55);
-          border: 1.5px solid rgba(255,255,255,0.12);
+          background: rgba(84,199,248,0.05);
+          color: rgba(143,212,255,0.5);
+          border: 1.5px solid var(--glass-b);
           font-size: 17px;
           backdrop-filter: blur(10px);
-          transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+          transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, background 0.25s, border-color 0.25s, color 0.25s;
         }
-        .vp-ctrl-streamer:hover {
-          background: rgba(255,255,255,0.13);
-          transform: scale(1.06);
-        }
+        .vp-ctrl-streamer:hover { background: rgba(84,199,248,0.10); transform: scale(1.06); }
         .vp-ctrl-streamer.active {
-          background: rgba(255, 45, 107, 0.18);
-          border-color: rgba(255, 45, 107, 0.45);
-          color: rgba(255, 100, 130, 0.95);
-          box-shadow: 0 0 14px rgba(255,45,107,0.3);
+          background: rgba(84,199,248,0.15);
+          border-color: rgba(84,199,248,0.42);
+          color: rgba(143,212,255,0.95);
+          box-shadow: 0 0 14px rgba(84,199,248,0.28);
         }
-        .vp-ctrl-streamer.active:hover {
-          background: rgba(255, 45, 107, 0.25);
-        }
+        .vp-ctrl-streamer.active:hover { background: rgba(84,199,248,0.22); }
 
         .vp-ctrl-label {
           position: absolute;
-          bottom: -18px;
-          left: 50%;
+          bottom: -18px; left: 50%;
           transform: translateX(-50%);
-          font-size: 9px;
-          font-weight: 500;
-          color: rgba(255,255,255,0.3);
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          white-space: nowrap;
+          font-size: 9px; font-weight: 500;
+          color: rgba(143,212,255,0.28);
+          letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap;
         }
 
         /* ── LIKE FLASH ── */
         .vp-like-flash {
-          position: absolute;
-          inset: 0;
-          z-index: 50;
-          pointer-events: none;
-          background: radial-gradient(ellipse at center, rgba(255,45,107,0.18) 0%, transparent 70%);
+          position: absolute; inset: 0; z-index: 50; pointer-events: none;
+          background: radial-gradient(ellipse at center, rgba(84,199,248,0.16) 0%, transparent 70%);
           animation: likeFlash 0.6s ease-out forwards;
         }
-        @keyframes likeFlash {
-          0%   { opacity: 1; }
-          100% { opacity: 0; }
-        }
+        @keyframes likeFlash { 0%{opacity:1} 100%{opacity:0} }
 
         /* ── SIN CÁMARA ── */
         .vp-no-cam {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          background: #060610;
-          z-index: 3;
+          position: absolute; inset: 0;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+          background: #040c18; z-index: 3;
         }
-        .vp-no-cam-icon { font-size: 28px; opacity: 0.25; }
-        .vp-no-cam-text {
-          font-size: 10px;
-          color: rgba(255,255,255,0.2);
-          text-transform: uppercase;
-          letter-spacing: 2px;
-        }
+        .vp-no-cam-icon { font-size: 28px; opacity: 0.22; }
+        .vp-no-cam-text { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
 
         /* ── RADAR (buscando) ── */
         .vp-placeholder {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 20px;
-          z-index: 5;
-          background: #08060e;
+          position: absolute; inset: 0;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+          z-index: 5; background: #050f1e;
         }
-        .vp-radar {
-          position: relative;
-          width: 80px; height: 80px;
-        }
+        .vp-radar { position: relative; width: 80px; height: 80px; }
         .vp-radar-ring {
-          position: absolute;
-          border-radius: 50%;
-          border: 1px solid rgba(255,45,107,0.35);
+          position: absolute; border-radius: 50%;
+          border: 1px solid rgba(84,199,248,0.3);
           top: 50%; left: 50%;
           transform: translate(-50%,-50%);
           animation: radarExpand 2.6s ease-out infinite;
@@ -442,79 +376,58 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           100% { width: 110px; height: 110px; opacity: 0; }
         }
         .vp-radar-center {
-          position: absolute;
-          top: 50%; left: 50%;
+          position: absolute; top: 50%; left: 50%;
           transform: translate(-50%,-50%);
-          width: 42px; height: 42px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          width: 42px; height: 42px; border-radius: 50%;
+          background: linear-gradient(135deg, var(--sky), var(--sky2));
+          display: flex; align-items: center; justify-content: center;
           font-size: 20px;
-          box-shadow: 0 0 24px rgba(255,45,107,0.7);
+          box-shadow: 0 0 24px rgba(84,199,248,0.7);
           animation: radarCenterPulse 2.6s ease-in-out infinite;
         }
         @keyframes radarCenterPulse {
-          0%,100% { box-shadow: 0 0 24px rgba(255,45,107,0.7); }
-          50%      { box-shadow: 0 0 40px rgba(255,45,107,1), 0 0 70px rgba(255,45,107,0.3); }
+          0%,100% { box-shadow: 0 0 24px rgba(84,199,248,0.7); }
+          50%      { box-shadow: 0 0 40px rgba(84,199,248,1), 0 0 70px rgba(84,199,248,0.3); }
         }
         .vp-radar-text {
           font-family: 'Syne', sans-serif;
-          font-size: 11px;
-          font-weight: 700;
-          color: #ff2d6b;
-          letter-spacing: 3px;
-          text-transform: uppercase;
-          opacity: 0.9;
+          font-size: 11px; font-weight: 700;
+          color: var(--sky);
+          letter-spacing: 3px; text-transform: uppercase; opacity: 0.9;
         }
         .vp-radar-sub {
-          font-size: 10px;
-          color: rgba(255,255,255,0.2);
-          letter-spacing: 1px;
-          margin-top: -12px;
+          font-size: 10px; color: var(--muted);
+          letter-spacing: 1px; margin-top: -12px;
         }
 
         /* ── PERFIL FALLBACK ── */
         .vp-profile-card {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 12px;
+          position: absolute; inset: 0;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
           z-index: 4;
-          background: radial-gradient(ellipse at 50% 40%, rgba(255,45,107,0.06) 0%, #08060e 60%);
+          background: radial-gradient(ellipse at 50% 40%, rgba(84,199,248,0.06) 0%, #050f1e 60%);
         }
         .vp-avatar {
-          width: 84px; height: 84px;
-          border-radius: 50%;
-          object-fit: cover;
-          border: 2px solid rgba(255,45,107,0.5);
-          box-shadow: 0 0 0 4px rgba(255,45,107,0.1), 0 0 30px rgba(255,45,107,0.25);
+          width: 84px; height: 84px; border-radius: 50%; object-fit: cover;
+          border: 2px solid rgba(84,199,248,0.45);
+          box-shadow: 0 0 0 4px rgba(84,199,248,0.08), 0 0 30px rgba(84,199,248,0.2);
         }
         .vp-avatar-ph {
-          width: 84px; height: 84px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #180a12, #280d1e);
-          border: 2px solid rgba(255,45,107,0.35);
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          width: 84px; height: 84px; border-radius: 50%;
+          background: linear-gradient(135deg, #060f1e, #0a1a2e);
+          border: 2px solid rgba(84,199,248,0.3);
+          display: flex; align-items: center; justify-content: center;
           font-size: 34px;
-          box-shadow: 0 0 0 4px rgba(255,45,107,0.07);
+          box-shadow: 0 0 0 4px rgba(84,199,248,0.06);
         }
         .vp-profile-name {
           font-family: 'Syne', sans-serif;
-          font-size: 20px;
-          font-weight: 800;
-          color: white;
-          text-align: center;
+          font-size: 20px; font-weight: 800;
+          color: var(--w); text-align: center;
         }
         .vp-profile-online {
           display: flex; align-items: center; gap: 6px;
-          font-size: 11px; color: rgba(255,255,255,0.4);
+          font-size: 11px; color: var(--muted);
         }
         .vp-online-dot {
           width: 6px; height: 6px; border-radius: 50%;
@@ -522,67 +435,23 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           animation: recBlink 2s infinite;
         }
         .vp-badge {
-          background: rgba(255,45,107,0.1);
-          border: 1px solid rgba(255,45,107,0.25);
-          border-radius: 100px;
-          padding: 3px 12px;
-          font-size: 9px;
-          color: rgba(255,45,107,0.8);
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-        }
-
-        /* ── INFO OVERLAY (con video activo) ── */
-        .vp-info {
-          position: absolute;
-          bottom: 20px;
-          left: 14px;
-          z-index: 10;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          pointer-events: none;
-        }
-        .vp-info-name {
-          font-family: 'Syne', sans-serif;
-          font-size: 17px;
-          font-weight: 800;
-          color: white;
-          text-shadow: 0 2px 12px rgba(0,0,0,0.9);
-        }
-        .vp-info-status {
-          display: flex; align-items: center; gap: 5px;
-          font-size: 10px; color: rgba(255,255,255,0.6);
-          letter-spacing: 0.5px;
-        }
-        .vp-live-dot {
-          width: 5px; height: 5px; border-radius: 50%;
-          background: #22c55e; box-shadow: 0 0 5px #22c55e;
-        }
-        .vp-ice-badge {
-          font-size: 9px;
-          background: rgba(34,197,94,0.15);
-          border: 1px solid rgba(34,197,94,0.25);
-          color: rgba(34,197,94,0.9);
-          border-radius: 100px;
-          padding: 1px 8px;
-          letter-spacing: 1px;
-          text-transform: uppercase;
+          background: rgba(84,199,248,0.08);
+          border: 1px solid rgba(84,199,248,0.22);
+          border-radius: 100px; padding: 3px 12px;
+          font-size: 9px; color: rgba(143,212,255,0.8);
+          letter-spacing: 1.5px; text-transform: uppercase;
         }
 
         /* ── AUDIO HINT ── */
         .vp-audio-hint {
           position: absolute;
           top: 14px; right: 14px;
-          background: rgba(255,45,107,0.85);
+          background: rgba(84,199,248,0.82);
           backdrop-filter: blur(8px);
-          color: white;
-          padding: 5px 13px;
-          border-radius: 100px;
-          font-size: 10px;
-          font-weight: 600;
-          z-index: 20;
-          letter-spacing: 0.5px;
+          color: #020d18;
+          padding: 5px 13px; border-radius: 100px;
+          font-size: 10px; font-weight: 600;
+          z-index: 20; letter-spacing: 0.5px;
           animation: audioPulse 2s ease-in-out infinite;
         }
         @keyframes audioPulse {
@@ -594,13 +463,12 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         .vp-corner {
           position: absolute;
           width: 20px; height: 20px;
-          z-index: 10;
-          opacity: 0.35;
+          z-index: 10; opacity: 0.3;
         }
-        .vp-corner-tl { top: 10px; left: 10px; border-top: 1.5px solid #ff2d6b; border-left: 1.5px solid #ff2d6b; }
-        .vp-corner-tr { top: 10px; right: 10px; border-top: 1.5px solid #ff2d6b; border-right: 1.5px solid #ff2d6b; }
-        .vp-corner-bl { bottom: 10px; left: 10px; border-bottom: 1.5px solid #ff2d6b; border-left: 1.5px solid #ff2d6b; }
-        .vp-corner-br { bottom: 10px; right: 10px; border-bottom: 1.5px solid #ff2d6b; border-right: 1.5px solid #ff2d6b; }
+        .vp-corner-tl { top: 10px; left: 10px;   border-top: 1.5px solid var(--sky); border-left:  1.5px solid var(--sky); }
+        .vp-corner-tr { top: 10px; right: 10px;  border-top: 1.5px solid var(--sky); border-right: 1.5px solid var(--sky); }
+        .vp-corner-bl { bottom: 10px; left: 10px;  border-bottom: 1.5px solid var(--sky); border-left:  1.5px solid var(--sky); }
+        .vp-corner-br { bottom: 10px; right: 10px; border-bottom: 1.5px solid var(--sky); border-right: 1.5px solid var(--sky); }
       `}</style>
 
       {/* Like flash overlay */}
@@ -611,7 +479,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         {/* ════════════════ ZONA DE VIDEO ════════════════ */}
         <div className="vp-video-zone">
 
-          {/* ════════════════ PANEL IZQUIERDO — TÚ ════════════════ */}
+          {/* ════ PANEL IZQUIERDO — TÚ ════ */}
           <div className="vp-panel vp-panel-local">
             <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
 
@@ -622,25 +490,22 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
               </div>
             )}
 
-            {/* Etiqueta "Tú" */}
             <div className="vp-label" style={{ zIndex: 10 }}>
               <div className="vp-rec-dot" /> Tú
             </div>
 
-            {/* Corner brackets decorativos */}
             <div className="vp-corner vp-corner-tl" />
             <div className="vp-corner vp-corner-bl" />
           </div>
 
-          {/* ════════════════ DIVISOR CENTRAL ════════════════ */}
+          {/* ════ DIVISOR CENTRAL ════ */}
           <div className="vp-divider">
             <div className="vp-divider-gem" />
           </div>
 
-          {/* ════════════════ PANEL DERECHO — PAREJA ════════════════ */}
+          {/* ════ PANEL DERECHO — PAREJA ════ */}
           <div className="vp-panel vp-panel-remote">
 
-            {/* Video remoto */}
             <video
               ref={remoteVideoRef}
               autoPlay
@@ -649,10 +514,8 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
               style={{ opacity: hasVideo ? 1 : 0 }}
             />
 
-            {/* Blur modo streamer — solo cuando hay video remoto activo */}
             {streamerMode && hasVideo && <div className="vp-streamer-blur" />}
 
-            {/* Badge modo streamer */}
             {streamerMode && hasVideo && (
               <div className="vp-streamer-badge">
                 <div className="vp-streamer-badge-dot" />
@@ -722,7 +585,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
               />
             )}
 
-            {/* Corner brackets */}
             <div className="vp-corner vp-corner-tr" />
             <div className="vp-corner vp-corner-br" />
           </div>
@@ -747,7 +609,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
             </div>
           </div>
 
-          {/* Centro — Like (corazón) */}
+          {/* Centro — Like */}
           <div className="vp-ctrl-slot-center">
             <div style={{ position: "relative" }}>
               <button
@@ -783,7 +645,10 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
                   </svg>
                 )}
               </button>
-              <span className="vp-ctrl-label" style={{ color: streamerMode ? "rgba(255,100,130,0.7)" : undefined }}>
+              <span
+                className="vp-ctrl-label"
+                style={{ color: streamerMode ? "rgba(143,212,255,0.7)" : undefined }}
+              >
                 {streamerMode ? "Visible" : "Streamer"}
               </span>
             </div>
