@@ -636,10 +636,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
         </div>
         <div className="divider-line" /><span className="divider-text">o</span><div className="divider-line" />
       </div>
-      <button className="btn-ghost" onClick={() => onToast("Entrando como invitado... ⚡")}>
-        <div className="dot-sky" />
-        Entrar como invitado (sin cuenta)
-      </button>
     </div>
   );
 }
