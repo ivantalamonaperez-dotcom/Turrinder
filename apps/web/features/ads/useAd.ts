@@ -1,18 +1,19 @@
 "use client";
 
 /**
- * useAd.ts — Corregido: atOptions en window global
+ * useAd.ts — Corregido: script inyectado en el body (dentro del div del modal)
  *
- * CAUSA DEL "Cargando anuncio..." permanente:
- *   El invoke.js de Adsterra busca `window.atOptions` al ejecutarse.
- *   Al inyectar atOptions como innerText de un <script> dentro de un div,
- *   algunos navegadores lo ejecutan en scope local → window.atOptions = undefined
- *   → Adsterra no renderiza nada.
+ * CORRECCIÓN PRINCIPAL:
+ *   Adsterra Banner requiere que el código esté en el BODY, no en el <head>.
+ *   La versión anterior inyectaba invoke.js en document.head → el script
+ *   no encontraba el div destino → anuncio nunca aparecía.
  *
- * SOLUCIÓN:
- *   1. Asignar `window.atOptions` directamente desde JS antes de cargar el script.
- *   2. Cargar invoke.js solo UNA vez (evitar duplicados en re-renders).
- *   3. Si ya estaba cargado, forzar re-render del slot eliminando y recreando el div.
+ *   Ahora: tanto atOptions como invoke.js se inyectan DENTRO del
+ *   adContainerRef (que está en el body del modal).
+ *
+ * DETECCIÓN DE ADBLOCKER:
+ *   Si invoke.js falla (onerror), adBlockDetected = true → AdOverlay
+ *   puede mostrar un mensaje pidiendo desactivarlo.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -31,22 +32,25 @@ export interface UseAdReturn {
   skipInfo: SkipInfo;
   isBlocked: boolean;
   adContainerRef: React.RefObject<HTMLDivElement>;
+  adBlockDetected: boolean;
   reportAdCompleted: () => void;
 }
 
 const ADSTERRA_KEY = "ee96ab70d34ae8fe14b97603f3c84b9b";
 const ADSTERRA_SRC = `https://www.highperformanceformat.com/${ADSTERRA_KEY}/invoke.js`;
 
-// Track si el script ya fue agregado al DOM (singleton)
-let invokeScriptLoaded = false;
-
 export function useAd(): UseAdReturn {
   const { socket }     = useSocket();
-  const [adMode,   setAdMode]   = useState<AdMode>("IDLE");
-  const [skipInfo, setSkipInfo] = useState<SkipInfo>({ count: 0, threshold: 8, remaining: 8 });
+  const [adMode,         setAdMode]         = useState<AdMode>("IDLE");
+  const [skipInfo,       setSkipInfo]       = useState<SkipInfo>({ count: 0, threshold: 8, remaining: 8 });
+  const [adBlockDetected, setAdBlockDetected] = useState(false);
   const adTokenRef     = useRef<string | null>(null);
   const adContainerRef = useRef<HTMLDivElement>(null!);
 
+  /**
+   * Inyecta atOptions + invoke.js DENTRO del contenedor del modal (body).
+   * Adsterra renderiza el iframe en el mismo div donde encuentra el script.
+   */
   const loadBannerAd = useCallback(() => {
     const container = adContainerRef.current;
     if (!container) {
@@ -54,10 +58,11 @@ export function useAd(): UseAdReturn {
       return;
     }
 
-    // Limpiar contenido anterior
+    // Limpiar inyecciones anteriores
     container.innerHTML = "";
+    setAdBlockDetected(false);
 
-    // ── CLAVE: asignar atOptions a window ANTES de cargar el script ──────
+    // 1. Asignar atOptions a window (requerido por invoke.js)
     (window as any).atOptions = {
       key: ADSTERRA_KEY,
       format: "iframe",
@@ -65,39 +70,41 @@ export function useAd(): UseAdReturn {
       width: 300,
       params: {},
     };
-    console.log("[Ad] ✅ window.atOptions asignado:", (window as any).atOptions);
 
-    if (!invokeScriptLoaded) {
-      // Primera vez: agregar el script al <head>
-      const script = document.createElement("script");
-      script.src = ADSTERRA_SRC;
-      script.async = true;
-      script.setAttribute("data-cfasync", "false");
-
-      script.onload = () => {
-        invokeScriptLoaded = true;
-        console.log("[Ad] ✅ invoke.js cargado.");
+    // 2. Script de configuración inline DENTRO del container (body)
+    const configScript = document.createElement("script");
+    configScript.type = "text/javascript";
+    configScript.text = `
+      atOptions = {
+        'key': '${ADSTERRA_KEY}',
+        'format': 'iframe',
+        'height': 250,
+        'width': 300,
+        'params': {}
       };
-      script.onerror = () => {
-        console.warn("[Ad] ⚠️ invoke.js no cargó (¿adblocker?).");
-      };
+    `;
+    container.appendChild(configScript);
 
-      // Agregar al head para que corra en scope global
-      document.head.appendChild(script);
-      console.log("[Ad] 📺 invoke.js agregado al head.");
-    } else {
-      // Ya cargado: Adsterra busca el div con atOptions y lo renderiza.
-      // Forzamos que lo detecte creando un script inline que llama invoke de nuevo.
-      console.log("[Ad] 🔁 invoke.js ya cargado, forzando re-render del slot...");
+    // 3. invoke.js DENTRO del container (no en head)
+    const invokeScript = document.createElement("script");
+    invokeScript.type = "text/javascript";
+    invokeScript.src = ADSTERRA_SRC;
+    // Cache-bust para forzar re-carga en cada sesión de ad
+    invokeScript.src += "?cb=" + Date.now();
+    invokeScript.async = false; // sync para que corra en orden con el config
 
-      // Adsterra re-renderiza si encuentra el div vacío con atOptions en window.
-      // Creamos un script inline mínimo para triggear la lógica interna.
-      const reloadScript = document.createElement("script");
-      reloadScript.setAttribute("data-cfasync", "false");
-      reloadScript.src = ADSTERRA_SRC + "?t=" + Date.now(); // cache bust
-      reloadScript.async = true;
-      document.head.appendChild(reloadScript);
-    }
+    invokeScript.onload = () => {
+      console.log("[Ad] ✅ Banner cargado correctamente.");
+      setAdBlockDetected(false);
+    };
+
+    invokeScript.onerror = () => {
+      console.warn("[Ad] ⚠️ invoke.js bloqueado (adblocker o DNS).");
+      setAdBlockDetected(true);
+    };
+
+    container.appendChild(invokeScript);
+    console.log("[Ad] 📺 Banner inyectado en el modal (body).");
   }, []);
 
   const reportAdCompleted = useCallback(() => {
@@ -107,9 +114,9 @@ export function useAd(): UseAdReturn {
       console.warn("[Ad] ⚠️ Sin token válido.");
       return;
     }
-    console.log("[Ad] ✅ Reportando ad-completed.");
     socket.emit("ad-completed", { token });
     adTokenRef.current = null;
+    console.log("[Ad] ✅ ad-completed reportado.");
   }, [socket]);
 
   useEffect(() => {
@@ -119,20 +126,21 @@ export function useAd(): UseAdReturn {
       console.log("[Ad] 📺 show-ad recibido.");
       adTokenRef.current = (token && token.trim() !== "") ? token : null;
       setAdMode("AD_MODE");
-      // Esperar dos frames para que React renderice el contenedor
+
+      // Esperar dos frames para que React renderice el contenedor del modal
       requestAnimationFrame(() =>
         requestAnimationFrame(() => loadBannerAd())
       );
     };
 
     const handleAdDone = () => {
-      console.log("[Ad] 🎉 ad-done → IDLE.");
       setAdMode("IDLE");
+      setAdBlockDetected(false);
       setSkipInfo(prev => ({ ...prev, count: 0, remaining: prev.threshold }));
     };
 
     const handleAdError = () => {
-      console.error("[Ad] ❌ Error del servidor, manteniendo AD_MODE.");
+      console.error("[Ad] ❌ Error de validación del servidor.");
     };
 
     const handleSkipCount = (info: SkipInfo) => setSkipInfo(info);
@@ -155,6 +163,7 @@ export function useAd(): UseAdReturn {
     skipInfo,
     isBlocked: adMode === "AD_MODE",
     adContainerRef,
+    adBlockDetected,
     reportAdCompleted,
   };
 }
