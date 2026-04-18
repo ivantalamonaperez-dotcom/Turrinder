@@ -36,13 +36,21 @@ export default function DiscoverPage() {
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
-  const { adMode, skipInfo, isBlocked, adReady, reportAdCompleted } = useAd();
+  // Direct Link: todo frontend, sin eventos de socket para ads
+  const { adMode, skipInfo, isBlocked, adReady, reportSkip, reportAdCompleted } = useAd();
 
   const nextUser = useCallback(async () => {
-    if (!socket || isBlocked) return;
+    if (isBlocked) return;
     try {
       const currentRoomId = room?.id;
-      socket.emit("skip");
+
+      // 1. Contar el skip (useAd decide si mostrar anuncio)
+      reportSkip();
+
+      // 2. Reiniciar matchmaking
+      findNewMatch();
+
+      // 3. Limpiar room en DB
       if (currentRoomId) {
         matchingService.endRoom(currentRoomId).catch(err =>
           console.error("Error limpiando room:", err)
@@ -52,7 +60,7 @@ export default function DiscoverPage() {
       console.error("❌ Error en nextUser:", error);
       window.location.reload();
     }
-  }, [socket, room, isBlocked]);
+  }, [room, isBlocked, reportSkip, findNewMatch]);
 
   return (
     <>
@@ -79,7 +87,7 @@ export default function DiscoverPage() {
       <MatchModal visible={isMatch} onClose={() => setIsMatch(false)} user={matchUser} />
 
       <AdOverlay
-        visible={adMode === "AD_MODE"}
+        visible={adMode === "AD_THANKS"}
         onContinue={reportAdCompleted}
         skipCount={skipInfo.count}
         threshold={skipInfo.threshold}
