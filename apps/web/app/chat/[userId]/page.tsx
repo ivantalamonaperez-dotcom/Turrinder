@@ -131,14 +131,56 @@ export default function ConversationPage() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* ── TOKENS (espejados desde ChatPage) ── */
         .cv-root {
-            height: calc(100vh - 64px); /* ✅ restar altura del BottomNav */
-            display: flex;
-            flex-direction: column;
-            background: #080810;
-            font-family: 'DM Sans', sans-serif;
-            overflow: hidden;
-            }
+          --sky:      #54c7f8;
+          --sky2:     #3b9eda;
+          --sky3:     #1a6fa8;
+          --sky-glow: rgba(84,199,248,0.38);
+          --w:        #f5f8ff;
+          --bg:       #030a14;
+          --bg2:      #050f1e;
+          --glass:    rgba(84,199,248,0.04);
+          --glass-b:  rgba(84,199,248,0.12);
+          --muted:    rgba(180,215,240,0.45);
+        }
+
+        .cv-root {
+          height: calc(100vh - 64px);
+          display: flex;
+          flex-direction: column;
+          background: var(--bg);
+          font-family: 'DM Sans', sans-serif;
+          overflow: hidden;
+          -webkit-font-smoothing: antialiased;
+          position: relative;
+        }
+
+        /* Aurora ambiental */
+        .cv-root::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 0;
+          background:
+            radial-gradient(ellipse 70% 35% at 15% 0%,  rgba(84,199,248,0.08) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 30% at 85% 100%, rgba(59,158,218,0.06) 0%, transparent 58%);
+        }
+
+        /* Flag stripe */
+        .cv-flag {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: linear-gradient(90deg,
+            var(--sky) 0%,  var(--sky) 33%,
+            rgba(245,248,255,0.85) 33%, rgba(245,248,255,0.85) 66%,
+            var(--sky) 66%, var(--sky) 100%
+          );
+          z-index: 200;
+          opacity: 0.65;
+        }
 
         /* Top bar */
         .cv-topbar {
@@ -146,32 +188,38 @@ export default function ConversationPage() {
           align-items: center;
           gap: 12px;
           padding: 52px 20px 14px;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
-          background: rgba(8,8,16,0.97);
+          border-bottom: 1px solid var(--glass-b);
+          background: rgba(3,10,20,0.97);
           backdrop-filter: blur(20px);
           flex-shrink: 0;
           z-index: 10;
+          position: relative;
         }
 
         .cv-back {
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 50%;
           width: 36px; height: 36px;
           display: flex; align-items: center; justify-content: center;
-          color: rgba(255,255,255,0.6);
+          color: var(--muted);
           font-size: 20px;
           cursor: pointer;
           flex-shrink: 0;
           transition: all 0.15s;
           line-height: 1;
         }
-        .cv-back:hover { background: rgba(255,255,255,0.1); color: white; }
+        .cv-back:hover {
+          background: rgba(84,199,248,0.10);
+          border-color: rgba(84,199,248,0.3);
+          color: var(--sky);
+        }
 
         .cv-topbar-avatar {
           width: 36px; height: 36px;
           border-radius: 12px;
-          background: linear-gradient(135deg, rgba(255,45,107,0.3), rgba(255,107,53,0.2));
+          background: linear-gradient(135deg, rgba(84,199,248,0.2), rgba(59,158,218,0.1));
+          border: 1.5px solid var(--glass-b);
           display: flex; align-items: center; justify-content: center;
           font-size: 16px;
           overflow: hidden;
@@ -185,7 +233,7 @@ export default function ConversationPage() {
           font-family: 'Syne', sans-serif;
           font-size: 15px;
           font-weight: 700;
-          color: white;
+          color: var(--w);
         }
 
         .cv-topbar-status {
@@ -198,22 +246,26 @@ export default function ConversationPage() {
           border-radius: 50%;
         }
         .cv-status-dot.online { background: #22c55e; box-shadow: 0 0 5px #22c55e; }
-        .cv-status-dot.offline { background: rgba(255,255,255,0.15); }
-        .cv-status-text { font-size: 11px; color: rgba(255,255,255,0.3); }
+        .cv-status-dot.offline { background: rgba(84,199,248,0.18); }
+        .cv-status-text { font-size: 11px; color: var(--muted); }
 
         .cv-toggle-btn {
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 10px;
           padding: 6px 12px;
-          color: rgba(255,255,255,0.4);
+          color: var(--muted);
           font-size: 12px;
           cursor: pointer;
           flex-shrink: 0;
           font-family: 'DM Sans', sans-serif;
           transition: all 0.15s;
         }
-        .cv-toggle-btn:hover { color: white; border-color: rgba(255,255,255,0.2); }
+        .cv-toggle-btn:hover {
+          color: var(--sky);
+          border-color: rgba(84,199,248,0.3);
+          background: rgba(84,199,248,0.08);
+        }
 
         /* Main body */
         .cv-body {
@@ -221,15 +273,17 @@ export default function ConversationPage() {
           display: flex;
           min-height: 0;
           overflow: hidden;
+          position: relative;
+          z-index: 1;
         }
 
         /* Profile panel — 38% */
         .cv-profile {
           width: 38%;
           flex-shrink: 0;
-          border-right: 1px solid rgba(255,255,255,0.05);
+          border-right: 1px solid var(--glass-b);
           overflow-y: auto;
-          background: rgba(255,255,255,0.015);
+          background: rgba(84,199,248,0.02);
           display: flex;
           flex-direction: column;
           transition: width 0.3s ease;
@@ -249,18 +303,19 @@ export default function ConversationPage() {
           flex-direction: column;
           align-items: center;
           gap: 14px;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+          border-bottom: 1px solid var(--glass-b);
         }
 
         .cv-big-avatar {
           width: 90px; height: 90px;
           border-radius: 28px;
-          background: linear-gradient(135deg, rgba(255,45,107,0.25), rgba(255,107,53,0.15));
-          border: 2px solid rgba(255,45,107,0.2);
+          background: linear-gradient(135deg, rgba(84,199,248,0.2), rgba(59,158,218,0.1));
+          border: 2px solid rgba(84,199,248,0.25);
           display: flex; align-items: center; justify-content: center;
           font-size: 40px;
           overflow: hidden;
           position: relative;
+          box-shadow: 0 8px 24px rgba(84,199,248,0.12);
         }
 
         .cv-big-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -270,16 +325,16 @@ export default function ConversationPage() {
           bottom: 4px; right: 4px;
           width: 14px; height: 14px;
           border-radius: 50%;
-          border: 2.5px solid rgba(8,8,16,0.9);
+          border: 2.5px solid var(--bg);
         }
-        .cv-online-badge.online { background: #22c55e; }
-        .cv-online-badge.offline { background: rgba(255,255,255,0.2); }
+        .cv-online-badge.online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+        .cv-online-badge.offline { background: rgba(84,199,248,0.2); }
 
         .cv-profile-name {
           font-family: 'Syne', sans-serif;
           font-size: 20px;
           font-weight: 800;
-          color: white;
+          color: var(--w);
           text-align: center;
           letter-spacing: -0.5px;
         }
@@ -287,7 +342,7 @@ export default function ConversationPage() {
         .cv-profile-status {
           display: flex; align-items: center; gap: 6px;
           font-size: 12px;
-          color: rgba(255,255,255,0.35);
+          color: var(--muted);
         }
 
         .cv-profile-body {
@@ -301,20 +356,21 @@ export default function ConversationPage() {
         .cv-section-label {
           font-size: 10px;
           font-weight: 600;
-          letter-spacing: 2px;
+          letter-spacing: 2.5px;
           text-transform: uppercase;
-          color: rgba(255,255,255,0.2);
+          color: var(--sky);
+          opacity: 0.7;
           margin-bottom: 4px;
         }
 
         .cv-bio {
           font-size: 13px;
-          color: rgba(255,255,255,0.5);
+          color: var(--muted);
           line-height: 1.7;
           font-style: italic;
         }
 
-        .cv-bio.empty { color: rgba(255,255,255,0.2); }
+        .cv-bio.empty { color: rgba(84,199,248,0.25); }
 
         .cv-stat-row {
           display: flex;
@@ -323,23 +379,28 @@ export default function ConversationPage() {
 
         .cv-stat {
           flex: 1;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.06);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 14px;
           padding: 12px;
           text-align: center;
+          transition: all 0.2s;
+        }
+        .cv-stat:hover {
+          background: rgba(84,199,248,0.08);
+          border-color: rgba(84,199,248,0.25);
         }
 
         .cv-stat-val {
           font-family: 'Syne', sans-serif;
           font-size: 20px;
           font-weight: 800;
-          color: white;
+          color: var(--sky);
         }
 
         .cv-stat-key {
           font-size: 10px;
-          color: rgba(255,255,255,0.3);
+          color: var(--muted);
           letter-spacing: 0.5px;
           margin-top: 2px;
         }
@@ -348,12 +409,12 @@ export default function ConversationPage() {
           display: flex;
           align-items: center;
           gap: 8px;
-          background: linear-gradient(135deg, rgba(255,45,107,0.1), rgba(255,107,53,0.05));
-          border: 1px solid rgba(255,45,107,0.2);
+          background: rgba(84,199,248,0.06);
+          border: 1px solid rgba(84,199,248,0.18);
           border-radius: 14px;
           padding: 12px 14px;
           font-size: 13px;
-          color: rgba(255,255,255,0.6);
+          color: var(--muted);
         }
 
         /* Chat panel — 62% */
@@ -378,10 +439,10 @@ export default function ConversationPage() {
 
         .cv-load-more {
           align-self: center;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 100px;
-          color: rgba(255,255,255,0.4);
+          color: var(--muted);
           font-size: 11px;
           padding: 5px 14px;
           cursor: pointer;
@@ -389,7 +450,11 @@ export default function ConversationPage() {
           font-family: 'DM Sans', sans-serif;
           transition: all 0.15s;
         }
-        .cv-load-more:hover { background: rgba(255,255,255,0.08); }
+        .cv-load-more:hover {
+          background: rgba(84,199,248,0.08);
+          color: var(--sky);
+          border-color: rgba(84,199,248,0.28);
+        }
 
         .cv-empty-chat {
           flex: 1;
@@ -398,10 +463,10 @@ export default function ConversationPage() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          opacity: 0.3;
+          opacity: 0.35;
         }
         .cv-empty-chat-icon { font-size: 36px; }
-        .cv-empty-chat-text { font-size: 13px; color: rgba(255,255,255,0.5); }
+        .cv-empty-chat-text { font-size: 13px; color: var(--muted); }
 
         .cv-msg-row {
           display: flex;
@@ -420,14 +485,17 @@ export default function ConversationPage() {
         }
 
         .cv-bubble.mine {
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
-          color: white;
+          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
+          color: #020d18;
           border-bottom-right-radius: 4px;
+          font-weight: 500;
+          box-shadow: 0 4px 14px rgba(84,199,248,0.25);
         }
 
         .cv-bubble.theirs {
-          background: rgba(255,255,255,0.08);
-          color: rgba(255,255,255,0.88);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
+          color: var(--w);
           border-bottom-left-radius: 4px;
         }
 
@@ -437,7 +505,7 @@ export default function ConversationPage() {
 
         .cv-msg-time {
           font-size: 10px;
-          color: rgba(255,255,255,0.18);
+          color: rgba(84,199,248,0.25);
           white-space: nowrap;
           margin-bottom: 2px;
           flex-shrink: 0;
@@ -445,23 +513,25 @@ export default function ConversationPage() {
 
         /* Input */
         .cv-input-area {
-            display: flex;
-            align-items: flex-end;
-            gap: 10px;
-            padding: 10px 12px 16px; /* ✅ sin padding extra abajo */
-            border-top: 1px solid rgba(255,255,255,0.05);
-            background: rgba(8,8,16,0.98);
-            flex-shrink: 0;
-            }
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+          padding: 10px 12px 16px;
+          border-top: 1px solid var(--glass-b);
+          background: rgba(3,10,20,0.98);
+          flex-shrink: 0;
+          position: relative;
+          z-index: 1;
+        }
 
         .cv-input {
           flex: 1;
-          background: rgba(255,255,255,0.06);
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 20px;
           padding: 10px 15px;
           font-size: 14px;
-          color: white;
+          color: var(--w);
           font-family: 'DM Sans', sans-serif;
           outline: none;
           resize: none;
@@ -469,23 +539,23 @@ export default function ConversationPage() {
           line-height: 1.5;
           transition: border-color 0.2s;
         }
-        .cv-input::placeholder { color: rgba(255,255,255,0.18); }
-        .cv-input:focus { border-color: rgba(255,45,107,0.35); }
+        .cv-input::placeholder { color: rgba(84,199,248,0.25); }
+        .cv-input:focus { border-color: rgba(84,199,248,0.4); box-shadow: 0 0 0 3px rgba(84,199,248,0.06); }
 
         .cv-send {
           width: 40px; height: 40px;
           border-radius: 50%;
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
+          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
           border: none;
-          color: white;
+          color: #020d18;
           font-size: 14px;
           cursor: pointer;
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0;
           transition: all 0.2s;
-          box-shadow: 0 4px 14px rgba(255,45,107,0.3);
+          box-shadow: 0 4px 14px rgba(84,199,248,0.35);
         }
-        .cv-send:hover:not(:disabled) { transform: scale(1.08); }
+        .cv-send:hover:not(:disabled) { transform: scale(1.08); box-shadow: 0 6px 20px rgba(84,199,248,0.5); }
         .cv-send:active:not(:disabled) { transform: scale(0.94); }
         .cv-send:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
 
@@ -495,6 +565,9 @@ export default function ConversationPage() {
           .cv-toggle-btn { display: none; }
         }
       `}</style>
+
+      {/* Flag stripe */}
+      <div className="cv-flag" />
 
       <div className="cv-root">
         {/* Top bar */}
@@ -569,7 +642,7 @@ export default function ConversationPage() {
               </div>
 
               <div className="cv-match-badge">
-                ❤️ Se dieron like mutuamente
+                💙 Se dieron like mutuamente
               </div>
             </div>
           </div>
