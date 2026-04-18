@@ -161,13 +161,21 @@ export function useAd(): UseAdReturn {
     if (!socket) return;
 
     const handleShowAd = ({ token }: { token: string | null }) => {
-      console.log("[Ad] 📺 show-ad recibido.");
-      adTokenRef.current = (token && token.trim() !== "") ? token : null;
-      setAdMode("AD_MODE");
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => loadBannerAd())
-      );
-    };
+    console.log("[Ad] 📺 show-ad recibido.");
+    adTokenRef.current = (token && token.trim() !== "") ? token : null;
+    setAdMode("AD_MODE");
+
+    // Usamos un pequeño delay para asegurar que el DOM de AdOverlay se renderizó
+    setTimeout(() => {
+      if (adContainerRef.current) {
+        loadBannerAd();
+      } else {
+        console.warn("[Ad] Reintentando carga: contenedor aún no disponible.");
+        // Un segundo intento si falló el primero
+        setTimeout(() => loadBannerAd(), 500);
+      }
+    }, 300); 
+  };
 
     const handleAdDone = () => {
       setAdMode("IDLE");
