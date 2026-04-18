@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
+
+import img from "../../Images/logo.png"
 
 export default function SideNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  // Close on route change
   useEffect(() => { setOpen(false); }, [pathname]);
 
-  // Lock body scroll when open
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -20,24 +21,24 @@ export default function SideNav() {
   const tabs = [
     {
       path: "/discover",
-      icon: "🔥",
+      icon: "✨",
       label: "Discover",
       desc: "Conocé gente nueva",
-      accent: "#ff2d6b",
+      accent: "#54c7f8",
     },
     {
       path: "/chat",
       icon: "💬",
       label: "Chats",
       desc: "Tus conversaciones",
-      accent: "#ff6b35",
+      accent: "#3b9eda",
     },
     {
       path: "/profile",
       icon: "👤",
       label: "Perfil",
       desc: "Tu cuenta",
-      accent: "#ffc947",
+      accent: "#7dd8f8",
     },
   ];
 
@@ -46,7 +47,7 @@ export default function SideNav() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
 
-        /* ── Toggle button — always visible ── */
+        /* ── Toggle button ── */
         .snav-toggle {
           position: fixed;
           top: 50%;
@@ -60,14 +61,14 @@ export default function SideNav() {
           gap: 5px;
           width: 36px;
           height: 72px;
-          background: rgba(10,10,22,0.9);
-          border: 1px solid rgba(255,255,255,0.07);
+          background: rgba(3,10,20,0.92);
+          border: 1px solid rgba(84,199,248,0.18);
           border-left: none;
           border-radius: 0 14px 14px 0;
           cursor: pointer;
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
-          box-shadow: 4px 0 24px rgba(0,0,0,0.4), 0 0 16px rgba(255,45,107,0.08);
+          box-shadow: 4px 0 24px rgba(0,0,0,0.4), 0 0 16px rgba(84,199,248,0.08);
           transition: width 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
           padding: 0;
           outline: none;
@@ -76,22 +77,22 @@ export default function SideNav() {
 
         .snav-toggle:hover {
           width: 40px;
-          background: rgba(255,45,107,0.08);
-          box-shadow: 4px 0 28px rgba(0,0,0,0.5), 0 0 24px rgba(255,45,107,0.18);
+          background: rgba(84,199,248,0.10);
+          box-shadow: 4px 0 28px rgba(0,0,0,0.5), 0 0 24px rgba(84,199,248,0.22);
         }
 
         .snav-toggle-bar {
           width: 14px;
           height: 2px;
           border-radius: 2px;
-          background: rgba(255,255,255,0.5);
+          background: rgba(255,255,255,0.65);
           transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
           transform-origin: center;
         }
 
         .snav-toggle.is-open .snav-toggle-bar:nth-child(1) {
           transform: translateY(7px) rotate(45deg);
-          background: #ff2d6b;
+          background: #54c7f8;
         }
         .snav-toggle.is-open .snav-toggle-bar:nth-child(2) {
           opacity: 0;
@@ -99,10 +100,9 @@ export default function SideNav() {
         }
         .snav-toggle.is-open .snav-toggle-bar:nth-child(3) {
           transform: translateY(-7px) rotate(-45deg);
-          background: #ff2d6b;
+          background: #54c7f8;
         }
 
-        /* Subtle glow pip on toggle showing active route */
         .snav-toggle-pip {
           position: absolute;
           top: 10px;
@@ -110,8 +110,8 @@ export default function SideNav() {
           width: 5px;
           height: 5px;
           border-radius: 50%;
-          background: #ff2d6b;
-          box-shadow: 0 0 6px #ff2d6b;
+          background: #54c7f8;
+          box-shadow: 0 0 6px #54c7f8;
           animation: pipPulse 2s ease-in-out infinite;
         }
 
@@ -131,7 +131,7 @@ export default function SideNav() {
         }
 
         .snav-backdrop.visible {
-          background: rgba(0,0,0,0.55);
+          background: rgba(0,0,0,0.6);
           pointer-events: all;
         }
 
@@ -143,8 +143,8 @@ export default function SideNav() {
           bottom: 0;
           z-index: 58;
           width: 280px;
-          background: rgba(8,8,18,0.96);
-          border-right: 1px solid rgba(255,255,255,0.06);
+          background: rgba(3,10,20,0.97);
+          border-right: 1px solid rgba(84,199,248,0.14);
           backdrop-filter: blur(32px);
           -webkit-backdrop-filter: blur(32px);
           display: flex;
@@ -152,7 +152,7 @@ export default function SideNav() {
           padding: 0;
           transform: translateX(-100%);
           transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          box-shadow: 8px 0 60px rgba(0,0,0,0.6), 0 0 80px rgba(255,45,107,0.05);
+          box-shadow: 8px 0 60px rgba(0,0,0,0.6), 0 0 80px rgba(84,199,248,0.05);
           overflow: hidden;
         }
 
@@ -160,18 +160,18 @@ export default function SideNav() {
           transform: translateX(0);
         }
 
-        /* Decorative aurora inside panel */
+        /* Aurora inside panel */
         .snav-panel-aurora {
           position: absolute;
           inset: 0;
           background:
-            radial-gradient(ellipse 80% 40% at 20% 10%, rgba(255,45,107,0.12) 0%, transparent 60%),
-            radial-gradient(ellipse 60% 50% at 80% 90%, rgba(255,107,53,0.08) 0%, transparent 60%);
+            radial-gradient(ellipse 80% 40% at 20% 10%, rgba(84,199,248,0.10) 0%, transparent 60%),
+            radial-gradient(ellipse 60% 50% at 80% 90%, rgba(59,158,218,0.07) 0%, transparent 60%);
           pointer-events: none;
           z-index: 0;
         }
 
-        /* Thin gradient line on right edge */
+        /* Gradient line on right edge */
         .snav-panel::after {
           content: '';
           position: absolute;
@@ -179,8 +179,8 @@ export default function SideNav() {
           width: 1px;
           background: linear-gradient(to bottom,
             transparent 0%,
-            rgba(255,45,107,0.3) 30%,
-            rgba(255,107,53,0.2) 60%,
+            rgba(84,199,248,0.3) 30%,
+            rgba(59,158,218,0.2) 60%,
             transparent 100%
           );
           z-index: 1;
@@ -194,20 +194,21 @@ export default function SideNav() {
           align-items: center;
           gap: 12px;
           padding: 36px 28px 28px;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+          border-bottom: 1px solid rgba(84,199,248,0.12);
         }
 
         .snav-logo-icon {
           width: 40px;
           height: 40px;
           border-radius: 12px;
-          background: linear-gradient(135deg, #ff2d6b 0%, #ff6b35 60%, #ffc947 100%);
+          background: rgba(84,199,248,0.08);
+          border: 1px solid rgba(84,199,248,0.2);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
           flex-shrink: 0;
-          box-shadow: 0 0 20px rgba(255,45,107,0.4), 0 0 40px rgba(255,45,107,0.15);
+          overflow: hidden;
+          box-shadow: 0 0 20px rgba(84,199,248,0.25), 0 0 40px rgba(84,199,248,0.10);
         }
 
         .snav-logo-text {
@@ -215,12 +216,12 @@ export default function SideNav() {
           font-size: 20px;
           font-weight: 800;
           letter-spacing: -0.5px;
-          color: white;
+          color: #f5f8ff;
           line-height: 1;
         }
 
         .snav-logo-text span {
-          background: linear-gradient(135deg, #ff2d6b, #ff6b35, #ffc947);
+          background: linear-gradient(135deg, #54c7f8, #3b9eda, #1a6fa8);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -229,7 +230,7 @@ export default function SideNav() {
         .snav-logo-sub {
           font-family: 'DM Sans', sans-serif;
           font-size: 10px;
-          color: rgba(255,255,255,0.25);
+          color: rgba(180,215,240,0.4);
           letter-spacing: 1.8px;
           text-transform: uppercase;
           margin-top: 2px;
@@ -261,7 +262,6 @@ export default function SideNav() {
           width: 100%;
           position: relative;
           overflow: hidden;
-          /* stagger-in animation vars set inline */
           opacity: 0;
           transform: translateX(-16px);
         }
@@ -275,22 +275,21 @@ export default function SideNav() {
         }
 
         .snav-item:hover {
-          background: rgba(255,255,255,0.04);
-          border-color: rgba(255,255,255,0.07);
+          background: rgba(84,199,248,0.05);
+          border-color: rgba(84,199,248,0.14);
           transform: translateX(4px);
         }
 
         .snav-item.active {
-          background: rgba(255,45,107,0.08);
-          border-color: rgba(255,45,107,0.18);
+          background: rgba(84,199,248,0.10);
+          border-color: rgba(84,199,248,0.25);
         }
 
-        /* Shimmer on hover */
         .snav-item::before {
           content: '';
           position: absolute;
           inset: 0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+          background: linear-gradient(90deg, transparent, rgba(84,199,248,0.06), transparent);
           transform: translateX(-100%);
           transition: transform 0.5s ease;
         }
@@ -306,8 +305,8 @@ export default function SideNav() {
           justify-content: center;
           font-size: 20px;
           flex-shrink: 0;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.06);
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.08);
           transition: all 0.25s ease;
         }
 
@@ -328,34 +327,35 @@ export default function SideNav() {
           flex: 1;
         }
 
+        /* ✅ FIXED: texto siempre blanco/legible */
         .snav-item-label {
           font-family: 'Syne', sans-serif;
           font-size: 15px;
           font-weight: 700;
-          color: rgba(255,255,255,0.75);
+          color: rgba(255,255,255,0.82);
           transition: color 0.2s ease;
           line-height: 1;
         }
 
         .snav-item.active .snav-item-label {
-          color: white;
+          color: #f5f8ff;
         }
 
+        /* ✅ FIXED: descripción legible */
         .snav-item-desc {
           font-family: 'DM Sans', sans-serif;
           font-size: 11px;
-          font-weight: 300;
-          color: rgba(255,255,255,0.25);
+          font-weight: 400;
+          color: rgba(180,215,240,0.55);
           line-height: 1;
         }
 
-        /* Active indicator dot */
         .snav-item-dot {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: var(--item-accent, #ff2d6b);
-          box-shadow: 0 0 8px var(--item-accent, #ff2d6b);
+          background: var(--item-accent, #54c7f8);
+          box-shadow: 0 0 8px var(--item-accent, #54c7f8);
           flex-shrink: 0;
           opacity: 0;
           transform: scale(0);
@@ -367,23 +367,22 @@ export default function SideNav() {
           transform: scale(1);
         }
 
-        /* ── Footer inside panel ── */
+        /* ── Footer ── */
         .snav-footer {
           position: relative;
           z-index: 2;
           padding: 20px 28px 32px;
-          border-top: 1px solid rgba(255,255,255,0.05);
+          border-top: 1px solid rgba(84,199,248,0.10);
         }
 
         .snav-footer-line {
           font-family: 'DM Sans', sans-serif;
           font-size: 10px;
-          color: rgba(255,255,255,0.1);
+          color: rgba(180,215,240,0.2);
           letter-spacing: 0.4px;
           text-align: center;
         }
 
-        /* ── Spacer so page content doesn't hide under toggle ── */
         .snav-page-offset {
           padding-left: 44px;
         }
@@ -413,7 +412,15 @@ export default function SideNav() {
 
         {/* Header */}
         <div className="snav-header">
-          <div className="snav-logo-icon">🔥</div>
+          <div className="snav-logo-icon">
+            <Image
+              src={img} // Pass the imported variable directly
+              alt="Turrinder logo"
+              width={40}
+              height={40}
+              style={{ objectFit: "cover", width: "100%", height: "100%" }}
+            />
+          </div>
           <div>
             <div className="snav-logo-text">Turr<span>inder</span></div>
             <div className="snav-logo-sub">Tinder meets OmeTV</div>

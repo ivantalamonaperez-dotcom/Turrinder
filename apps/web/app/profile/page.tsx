@@ -13,7 +13,7 @@ const INTERESTS_ALL = [
 
 const LOOKING_FOR_ALL = [
   { id: "friends", label: "Amigos",      emoji: "👋" },
-  { id: "dates",   label: "Citas",       emoji: "❤️" },
+  { id: "dates",   label: "Citas",       emoji: "💙" },
   { id: "chat",    label: "Charlar",     emoji: "💬" },
   { id: "network", label: "Networking",  emoji: "🤝" },
 ];
@@ -32,7 +32,6 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<"info" | "fotos" | "vibe">("info");
   const [mounted,   setMounted]   = useState(false);
 
-  // Datos del perfil
   const [userId,    setUserId]    = useState("");
   const [email,     setEmail]     = useState("");
   const [name,      setName]      = useState("");
@@ -65,7 +64,6 @@ export default function ProfilePage() {
         setInterests(p.interests || []);
         setLookingFor(p.looking_for || []);
 
-        // Cargar fotos existentes
         const urls: Photo[] = [];
         if (p.photos?.length) {
           p.photos.forEach((url: string) => urls.push({ url }));
@@ -109,7 +107,6 @@ export default function ProfilePage() {
   const save = async () => {
     setSaving(true);
 
-    // Subir fotos nuevas
     const finalUrls: string[] = [];
     for (const photo of photos) {
       if (photo.isNew && photo.file) {
@@ -133,7 +130,6 @@ export default function ProfilePage() {
       looking_for: lookingFor,
     }).eq("id", userId);
 
-    // Actualizar estado con URLs definitivas
     setPhotos(finalUrls.map(url => ({ url })));
     setSaving(false);
     setSaved(true);
@@ -148,25 +144,40 @@ export default function ProfilePage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Cabinet+Grotesk:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* ── TOKENS (espejados desde ChatPage) ── */
+        .pf-root {
+          --sky:      #54c7f8;
+          --sky2:     #3b9eda;
+          --sky3:     #1a6fa8;
+          --sky-glow: rgba(84,199,248,0.38);
+          --w:        #f5f8ff;
+          --bg:       #030a14;
+          --bg2:      #050f1e;
+          --glass:    rgba(84,199,248,0.04);
+          --glass-b:  rgba(84,199,248,0.12);
+          --muted:    rgba(180,215,240,0.45);
+        }
+
         .pf-root {
           min-height: 100vh;
-          background: #07070f;
-          font-family: 'Cabinet Grotesk', sans-serif;
+          background: var(--bg);
+          font-family: 'DM Sans', sans-serif;
           padding-bottom: 100px;
           position: relative;
           overflow-x: hidden;
+          -webkit-font-smoothing: antialiased;
         }
 
-        /* Fondo */
+        /* Fondo aurora */
         .pf-bg {
           position: fixed; inset: 0; pointer-events: none; z-index: 0;
           background:
-            radial-gradient(ellipse 55% 35% at 80% 5%, rgba(255,45,107,0.1) 0%, transparent 60%),
-            radial-gradient(ellipse 45% 35% at 15% 95%, rgba(255,107,53,0.07) 0%, transparent 60%);
+            radial-gradient(ellipse 55% 35% at 80% 5%,  rgba(84,199,248,0.10) 0%, transparent 60%),
+            radial-gradient(ellipse 45% 35% at 15% 95%, rgba(59,158,218,0.07) 0%, transparent 60%);
           animation: bgBreath 10s ease-in-out infinite alternate;
         }
 
@@ -174,7 +185,21 @@ export default function ProfilePage() {
           from { opacity: 0.7; } to { opacity: 1; }
         }
 
-        /* ── Hero del perfil ── */
+        /* Flag stripe */
+        .pf-flag {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: linear-gradient(90deg,
+            var(--sky) 0%,  var(--sky) 33%,
+            rgba(245,248,255,0.85) 33%, rgba(245,248,255,0.85) 66%,
+            var(--sky) 66%, var(--sky) 100%
+          );
+          z-index: 200;
+          opacity: 0.65;
+        }
+
+        /* ── Hero ── */
         .pf-hero {
           position: relative;
           z-index: 1;
@@ -185,7 +210,6 @@ export default function ProfilePage() {
           gap: 0;
         }
 
-        /* Foto principal — grande y destacada */
         .pf-avatar-wrap {
           position: relative;
           margin-bottom: 20px;
@@ -195,52 +219,47 @@ export default function ProfilePage() {
           width: 110px; height: 110px;
           border-radius: 32px;
           overflow: hidden;
-          background: linear-gradient(135deg, rgba(255,45,107,0.25), rgba(255,107,53,0.15));
-          border: 2px solid rgba(255,45,107,0.25);
+          background: linear-gradient(135deg, rgba(84,199,248,0.2), rgba(59,158,218,0.1));
+          border: 2px solid rgba(84,199,248,0.25);
           display: flex; align-items: center; justify-content: center;
           font-size: 48px;
-          box-shadow:
-            0 0 0 4px rgba(255,45,107,0.08),
-            0 20px 50px rgba(0,0,0,0.5),
-            0 0 40px rgba(255,45,107,0.15);
           animation: avatarGlow 4s ease-in-out infinite alternate;
         }
 
         @keyframes avatarGlow {
-          from { box-shadow: 0 0 0 4px rgba(255,45,107,0.08), 0 20px 50px rgba(0,0,0,0.5), 0 0 30px rgba(255,45,107,0.12); }
-          to   { box-shadow: 0 0 0 4px rgba(255,45,107,0.18), 0 20px 50px rgba(0,0,0,0.5), 0 0 60px rgba(255,45,107,0.25); }
+          from { box-shadow: 0 0 0 4px rgba(84,199,248,0.08), 0 20px 50px rgba(0,0,0,0.5), 0 0 30px rgba(84,199,248,0.12); }
+          to   { box-shadow: 0 0 0 4px rgba(84,199,248,0.22), 0 20px 50px rgba(0,0,0,0.5), 0 0 60px rgba(84,199,248,0.28); }
         }
 
         .pf-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-        /* Badge de edit en el avatar */
         .pf-avatar-edit {
           position: absolute;
           bottom: -6px; right: -6px;
           width: 30px; height: 30px;
           border-radius: 50%;
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
-          border: 2px solid #07070f;
+          background: linear-gradient(135deg, var(--sky), var(--sky3));
+          border: 2px solid var(--bg);
           display: flex; align-items: center; justify-content: center;
           font-size: 13px;
           cursor: pointer;
           transition: transform 0.2s;
-          box-shadow: 0 4px 12px rgba(255,45,107,0.4);
+          box-shadow: 0 4px 12px rgba(84,199,248,0.4);
         }
 
         .pf-avatar-edit:hover { transform: scale(1.1); }
 
         .pf-name {
-          font-family: 'Bricolage Grotesque', sans-serif;
+          font-family: 'Syne', sans-serif;
           font-size: 26px; font-weight: 800;
-          color: white; letter-spacing: -0.8px;
+          color: var(--w); letter-spacing: -0.8px;
           text-align: center;
           animation: fadeUp 0.5s 0.1s both;
         }
 
         .pf-sub {
           font-size: 13px;
-          color: rgba(255,255,255,0.3);
+          color: var(--muted);
           margin-top: 4px;
           animation: fadeUp 0.5s 0.2s both;
         }
@@ -250,7 +269,7 @@ export default function ProfilePage() {
           display: flex;
           gap: 1px;
           margin-top: 20px;
-          background: rgba(255,255,255,0.05);
+          background: var(--glass-b);
           border-radius: 16px;
           overflow: hidden;
           width: 100%;
@@ -261,20 +280,20 @@ export default function ProfilePage() {
         .pf-stat {
           flex: 1;
           padding: 14px 8px;
-          background: rgba(255,255,255,0.03);
+          background: var(--glass);
           display: flex; flex-direction: column; align-items: center; gap: 3px;
           transition: background 0.2s;
         }
 
-        .pf-stat:hover { background: rgba(255,255,255,0.06); }
+        .pf-stat:hover { background: rgba(84,199,248,0.09); }
 
         .pf-stat-val {
-          font-family: 'Bricolage Grotesque', sans-serif;
-          font-size: 20px; font-weight: 800; color: white;
+          font-family: 'Syne', sans-serif;
+          font-size: 20px; font-weight: 800; color: var(--sky);
         }
 
         .pf-stat-key {
-          font-size: 10px; color: rgba(255,255,255,0.28);
+          font-size: 10px; color: var(--muted);
           letter-spacing: 0.5px; text-transform: uppercase;
         }
 
@@ -298,22 +317,22 @@ export default function ProfilePage() {
         .pf-tab {
           flex: 1;
           padding: 10px 6px;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.06);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 12px;
-          font-family: 'Bricolage Grotesque', sans-serif;
+          font-family: 'Syne', sans-serif;
           font-size: 12px; font-weight: 700;
           letter-spacing: 0.5px; text-transform: uppercase;
-          color: rgba(255,255,255,0.3);
+          color: var(--muted);
           cursor: pointer;
           transition: all 0.22s ease;
           text-align: center;
         }
 
         .pf-tab.active {
-          background: rgba(255,45,107,0.12);
-          border-color: rgba(255,45,107,0.35);
-          color: #ff2d6b;
+          background: rgba(84,199,248,0.12);
+          border-color: rgba(84,199,248,0.38);
+          color: var(--sky);
         }
 
         /* ── Body ── */
@@ -329,7 +348,6 @@ export default function ProfilePage() {
           animation: fadeUp 0.45s 0.4s both;
         }
 
-        /* Campos */
         .pf-field {
           display: flex;
           flex-direction: column;
@@ -338,32 +356,33 @@ export default function ProfilePage() {
 
         .pf-label {
           font-size: 10px; font-weight: 600;
-          letter-spacing: 1.5px; text-transform: uppercase;
-          color: rgba(255,255,255,0.25);
+          letter-spacing: 2.5px; text-transform: uppercase;
+          color: var(--sky);
+          opacity: 0.75;
         }
 
         .pf-input {
           width: 100%;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 13px;
           padding: 13px 16px;
-          font-size: 15px; color: white;
-          font-family: 'Cabinet Grotesk', sans-serif;
+          font-size: 15px; color: var(--w);
+          font-family: 'DM Sans', sans-serif;
           outline: none;
           transition: all 0.2s;
           resize: none;
         }
 
-        .pf-input::placeholder { color: rgba(255,255,255,0.18); }
+        .pf-input::placeholder { color: rgba(84,199,248,0.25); }
 
         .pf-input:focus {
-          border-color: rgba(255,45,107,0.45);
-          background: rgba(255,45,107,0.04);
-          box-shadow: 0 0 0 3px rgba(255,45,107,0.1);
+          border-color: rgba(84,199,248,0.45);
+          background: rgba(84,199,248,0.07);
+          box-shadow: 0 0 0 3px rgba(84,199,248,0.08);
         }
 
-        .pf-char { text-align: right; font-size: 11px; color: rgba(255,255,255,0.2); }
+        .pf-char { text-align: right; font-size: 11px; color: var(--muted); }
 
         .pf-row { display: flex; gap: 12px; }
         .pf-row .pf-field { flex: 1; }
@@ -373,19 +392,19 @@ export default function ProfilePage() {
 
         .pf-gender-pill {
           padding: 8px 14px;
-          background: rgba(255,255,255,0.04);
-          border: 1.5px solid rgba(255,255,255,0.07);
+          background: var(--glass);
+          border: 1.5px solid var(--glass-b);
           border-radius: 100px;
-          color: rgba(255,255,255,0.4);
-          font-family: 'Cabinet Grotesk', sans-serif;
+          color: var(--muted);
+          font-family: 'DM Sans', sans-serif;
           font-size: 13px; cursor: pointer;
           transition: all 0.18s;
         }
 
         .pf-gender-pill.active {
-          background: rgba(255,45,107,0.12);
-          border-color: rgba(255,45,107,0.4);
-          color: #ff2d6b;
+          background: rgba(84,199,248,0.12);
+          border-color: rgba(84,199,248,0.42);
+          color: var(--sky);
         }
 
         /* ── Fotos ── */
@@ -400,25 +419,28 @@ export default function ProfilePage() {
           border-radius: 16px;
           overflow: hidden;
           position: relative;
-          background: rgba(255,255,255,0.03);
-          border: 1.5px dashed rgba(255,255,255,0.1);
+          background: var(--glass);
+          border: 1.5px dashed var(--glass-b);
           cursor: pointer;
           transition: all 0.2s;
           display: flex; flex-direction: column;
           align-items: center; justify-content: center; gap: 8px;
         }
 
-        .pf-photo-slot:hover { border-color: rgba(255,45,107,0.4); background: rgba(255,45,107,0.05); }
-        .pf-photo-slot.filled { border-style: solid; border-color: rgba(255,255,255,0.08); cursor: default; }
+        .pf-photo-slot:hover {
+          border-color: rgba(84,199,248,0.4);
+          background: rgba(84,199,248,0.07);
+        }
+        .pf-photo-slot.filled { border-style: solid; border-color: var(--glass-b); cursor: default; }
         .pf-photo-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
         .pf-photo-add-icon { font-size: 26px; opacity: 0.35; }
-        .pf-photo-add-text { font-size: 11px; color: rgba(255,255,255,0.22); text-align: center; }
+        .pf-photo-add-text { font-size: 11px; color: var(--muted); text-align: center; }
 
         .pf-photo-main {
           position: absolute; top: 8px; left: 8px;
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
-          color: white; font-size: 9px; font-weight: 700;
+          background: linear-gradient(135deg, var(--sky), var(--sky3));
+          color: #020d18; font-size: 9px; font-weight: 700;
           letter-spacing: 1px; text-transform: uppercase;
           padding: 3px 8px; border-radius: 6px; z-index: 2;
         }
@@ -432,10 +454,10 @@ export default function ProfilePage() {
           z-index: 2; transition: background 0.15s;
         }
 
-        .pf-photo-rm:hover { background: rgba(255,45,107,0.8); }
+        .pf-photo-rm:hover { background: rgba(84,199,248,0.7); color: #020d18; }
 
         .pf-photos-hint {
-          font-size: 12px; color: rgba(255,255,255,0.22);
+          font-size: 12px; color: var(--muted);
           text-align: center; line-height: 1.6;
         }
 
@@ -444,22 +466,22 @@ export default function ProfilePage() {
 
         .pf-tag {
           padding: 8px 14px;
-          background: rgba(255,255,255,0.04);
-          border: 1.5px solid rgba(255,255,255,0.07);
+          background: var(--glass);
+          border: 1.5px solid var(--glass-b);
           border-radius: 100px;
-          color: rgba(255,255,255,0.45);
+          color: var(--muted);
           font-size: 13px; cursor: pointer;
           transition: all 0.18s;
-          font-family: 'Cabinet Grotesk', sans-serif;
+          font-family: 'DM Sans', sans-serif;
           white-space: nowrap;
         }
 
-        .pf-tag:hover { border-color: rgba(255,45,107,0.3); color: rgba(255,255,255,0.8); }
+        .pf-tag:hover { border-color: rgba(84,199,248,0.32); color: var(--w); }
 
         .pf-tag.active {
-          background: rgba(255,45,107,0.12);
-          border-color: rgba(255,45,107,0.45);
-          color: #ff6b9d;
+          background: rgba(84,199,248,0.12);
+          border-color: rgba(84,199,248,0.45);
+          color: var(--sky);
         }
 
         /* Looking for cards */
@@ -471,81 +493,81 @@ export default function ProfilePage() {
 
         .pf-lf-card {
           padding: 14px;
-          background: rgba(255,255,255,0.03);
-          border: 1.5px solid rgba(255,255,255,0.07);
+          background: var(--glass);
+          border: 1.5px solid var(--glass-b);
           border-radius: 14px;
           cursor: pointer; transition: all 0.2s;
           display: flex; flex-direction: column; gap: 5px;
           text-align: left;
         }
 
-        .pf-lf-card:hover { border-color: rgba(255,45,107,0.25); }
+        .pf-lf-card:hover { border-color: rgba(84,199,248,0.28); }
 
         .pf-lf-card.active {
-          background: rgba(255,45,107,0.08);
-          border-color: rgba(255,45,107,0.4);
+          background: rgba(84,199,248,0.08);
+          border-color: rgba(84,199,248,0.42);
         }
 
         .pf-lf-emoji { font-size: 20px; }
         .pf-lf-label {
-          font-family: 'Bricolage Grotesque', sans-serif;
+          font-family: 'Syne', sans-serif;
           font-size: 13px; font-weight: 700;
-          color: rgba(255,255,255,0.6);
+          color: var(--muted);
         }
-        .pf-lf-card.active .pf-lf-label { color: white; }
+        .pf-lf-card.active .pf-lf-label { color: var(--sky); }
 
-        /* Sección divider */
         .pf-section-title {
-          font-family: 'Bricolage Grotesque', sans-serif;
+          font-family: 'Syne', sans-serif;
           font-size: 12px; font-weight: 700;
-          color: rgba(255,255,255,0.2);
+          color: var(--muted);
           letter-spacing: 1.5px; text-transform: uppercase;
         }
 
         /* Botones */
         .pf-btn {
           width: 100%; padding: 15px;
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
-          border: none; border-radius: 14px; color: white;
-          font-family: 'Bricolage Grotesque', sans-serif;
-          font-size: 15px; font-weight: 700; letter-spacing: 0.3px;
+          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
+          border: none; border-radius: 14px; color: #020d18;
+          font-family: 'Syne', sans-serif;
+          font-size: 15px; font-weight: 800; letter-spacing: 0.3px;
           cursor: pointer; transition: all 0.2s;
-          box-shadow: 0 8px 24px rgba(255,45,107,0.35);
+          box-shadow: 0 8px 24px rgba(84,199,248,0.35);
           position: relative; overflow: hidden;
         }
 
         .pf-btn::after {
           content: '';
           position: absolute; inset: 0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
           transform: translateX(-100%);
           transition: transform 0.5s;
         }
 
         .pf-btn:hover::after { transform: translateX(100%); }
-        .pf-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(255,45,107,0.5); }
+        .pf-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(84,199,248,0.5); }
         .pf-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .pf-btn.saved-state {
           background: linear-gradient(135deg, #22c55e, #16a34a);
           box-shadow: 0 8px 24px rgba(34,197,94,0.35);
+          color: white;
         }
 
         .pf-btn-ghost {
           width: 100%; padding: 13px;
           background: transparent;
-          border: 1px solid rgba(255,77,77,0.2);
+          border: 1px solid rgba(84,199,248,0.15);
           border-radius: 14px;
-          color: rgba(255,77,77,0.6);
-          font-family: 'Cabinet Grotesk', sans-serif;
+          color: var(--muted);
+          font-family: 'DM Sans', sans-serif;
           font-size: 14px; cursor: pointer;
           transition: all 0.2s;
         }
 
         .pf-btn-ghost:hover {
-          background: rgba(255,77,77,0.07);
-          border-color: rgba(255,77,77,0.4);
-          color: #ff4d4d;
+          background: rgba(84,199,248,0.06);
+          border-color: rgba(84,199,248,0.3);
+          color: var(--sky);
         }
 
         .pf-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -553,13 +575,15 @@ export default function ProfilePage() {
         /* Skeleton */
         .pf-skel {
           height: 48px; border-radius: 13px;
-          background: rgba(255,255,255,0.05);
+          background: var(--glass);
           animation: shimmer 1.4s ease-in-out infinite;
         }
 
-        @keyframes shimmer { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.9; } }
+        @keyframes shimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.85; } }
       `}</style>
 
+      {/* Flag stripe */}
+      <div className="pf-flag" />
       <div className="pf-bg" />
 
       <div className="pf-root">
@@ -606,7 +630,7 @@ export default function ProfilePage() {
               className={`pf-tab ${activeTab === tab ? "active" : ""}`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === "info" ? "👤 Info" : tab === "fotos" ? "📸 Fotos" : "🔥 Vibe"}
+              {tab === "info" ? "👤 Info" : tab === "fotos" ? "📸 Fotos" : "✨ Vibe"}
             </button>
           ))}
         </div>
