@@ -266,7 +266,7 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           flex-shrink: 0;
           display: flex; align-items: center; justify-content: center;
           gap: 16px;
-          padding: 8px 24px calc(20px + env(safe-area-inset-bottom, 20px));
+          padding: 8px 24px calc(30px + env(safe-area-inset-bottom, 20px));
           background: rgba(3,10,20,0.97);
           border-top: 1px solid var(--glass-b);
           backdrop-filter: blur(16px);
