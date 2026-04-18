@@ -37,13 +37,16 @@ export default function DiscoverPage() {
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
   // Sin adContainerRef ni adBlockDetected — Vignette no los necesita
-  const { adMode, skipInfo, isBlocked, reportAdCompleted } = useAd();
+  const { adMode, skipInfo, isBlocked, reportSkip, reportAdCompleted } = useAd();
 
   const nextUser = useCallback(async () => {
-    if (!socket || isBlocked) return;
+    if (isBlocked) return;
     try {
+      // ✅ Registrar skip y disparar anuncio si corresponde
+      reportSkip();
+
       const currentRoomId = room?.id;
-      socket.emit("skip");
+      if (socket) socket.emit("skip");
       if (currentRoomId) {
         matchingService.endRoom(currentRoomId).catch(err =>
           console.error("Error limpiando room:", err)
@@ -53,7 +56,7 @@ export default function DiscoverPage() {
       console.error("❌ Error en nextUser:", error);
       window.location.reload();
     }
-  }, [socket, room, isBlocked]);
+  }, [socket, room, isBlocked, reportSkip]);
 
   return (
     <>
