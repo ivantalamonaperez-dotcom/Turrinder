@@ -73,17 +73,60 @@ export default function ChatPage() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* ── TOKENS ── */
         .cl-root {
-          min-height: 100vh;
-          background: #080810;
-          font-family: 'DM Sans', sans-serif;
-          padding-bottom: 80px;
+          --sky:      #54c7f8;
+          --sky2:     #3b9eda;
+          --sky3:     #1a6fa8;
+          --sky-glow: rgba(84,199,248,0.38);
+          --w:        #f5f8ff;
+          --bg:       #030a14;
+          --bg2:      #050f1e;
+          --glass:    rgba(84,199,248,0.04);
+          --glass-b:  rgba(84,199,248,0.12);
+          --muted:    rgba(180,215,240,0.45);
         }
 
-        /* Header */
+        .cl-root {
+          min-height: 100vh;
+          background: var(--bg);
+          font-family: 'DM Sans', sans-serif;
+          padding-bottom: 80px;
+          position: relative;
+          -webkit-font-smoothing: antialiased;
+        }
+
+        /* Aurora ambiental */
+        .cl-root::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          z-index: 0;
+          background:
+            radial-gradient(ellipse 70% 35% at 15% 0%,  rgba(84,199,248,0.10) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 30% at 85% 100%, rgba(59,158,218,0.08) 0%, transparent 58%);
+        }
+
+        /* Flag stripe */
+        .cl-flag {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: linear-gradient(90deg,
+            var(--sky) 0%,  var(--sky) 33%,
+            rgba(245,248,255,0.85) 33%, rgba(245,248,255,0.85) 66%,
+            var(--sky) 66%, var(--sky) 100%
+          );
+          z-index: 200;
+          opacity: 0.65;
+        }
+
+        /* ── HEADER ── */
         .cl-header {
           padding: 56px 24px 24px;
           position: relative;
+          z-index: 1;
         }
 
         .cl-header-top {
@@ -98,38 +141,41 @@ export default function ChatPage() {
           font-weight: 600;
           letter-spacing: 2.5px;
           text-transform: uppercase;
-          color: #ff2d6b;
+          color: var(--sky);
           margin-bottom: 6px;
+          opacity: 0.8;
         }
 
         .cl-title {
           font-family: 'Syne', sans-serif;
           font-size: 34px;
           font-weight: 900;
-          color: white;
+          color: var(--w);
           letter-spacing: -1px;
           line-height: 1;
         }
 
         .cl-count {
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
-          color: white;
+          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
+          color: #020d18;
           font-family: 'Syne', sans-serif;
           font-size: 13px;
-          font-weight: 700;
+          font-weight: 800;
           width: 32px; height: 32px;
           border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
           margin-top: 4px;
-          box-shadow: 0 4px 16px rgba(255,45,107,0.4);
+          box-shadow: 0 4px 16px rgba(84,199,248,0.45);
         }
 
-        /* Lista */
+        /* ── LISTA ── */
         .cl-list {
           padding: 0 16px;
           display: flex;
           flex-direction: column;
           gap: 8px;
+          position: relative;
+          z-index: 1;
         }
 
         .cl-card {
@@ -137,8 +183,8 @@ export default function ChatPage() {
           align-items: center;
           gap: 14px;
           padding: 14px 16px;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.05);
+          background: var(--glass);
+          border: 1px solid var(--glass-b);
           border-radius: 20px;
           cursor: pointer;
           transition: all 0.2s ease;
@@ -147,13 +193,15 @@ export default function ChatPage() {
         }
 
         .cl-card:hover {
-          background: rgba(255,255,255,0.06);
-          border-color: rgba(255,45,107,0.2);
+          background: rgba(84,199,248,0.08);
+          border-color: rgba(84,199,248,0.28);
           transform: translateY(-1px);
+          box-shadow: 0 6px 24px rgba(84,199,248,0.1);
         }
 
         .cl-card:active { transform: translateY(0); }
 
+        /* ── AVATAR ── */
         .cl-avatar-wrap {
           position: relative;
           flex-shrink: 0;
@@ -162,8 +210,8 @@ export default function ChatPage() {
         .cl-avatar {
           width: 56px; height: 56px;
           border-radius: 18px;
-          background: linear-gradient(135deg, #1a1a2e, #16213e);
-          border: 1.5px solid rgba(255,255,255,0.08);
+          background: linear-gradient(135deg, #060f1e, #0a1a2e);
+          border: 1.5px solid var(--glass-b);
           display: flex; align-items: center; justify-content: center;
           font-size: 24px;
           overflow: hidden;
@@ -176,7 +224,7 @@ export default function ChatPage() {
           bottom: 2px; right: 2px;
           width: 12px; height: 12px;
           border-radius: 50%;
-          border: 2px solid #080810;
+          border: 2px solid var(--bg);
         }
 
         .cl-online-dot.online {
@@ -184,43 +232,50 @@ export default function ChatPage() {
           box-shadow: 0 0 6px #22c55e;
         }
 
-        .cl-online-dot.offline { background: rgba(255,255,255,0.2); }
+        .cl-online-dot.offline { background: rgba(255,255,255,0.18); }
 
+        /* ── INFO ── */
         .cl-info { flex: 1; min-width: 0; }
 
         .cl-name {
           font-family: 'Syne', sans-serif;
           font-size: 15px;
           font-weight: 700;
-          color: white;
+          color: var(--w);
           margin-bottom: 4px;
         }
 
         .cl-preview {
           font-size: 13px;
-          color: rgba(255,255,255,0.35);
+          color: var(--muted);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .cl-preview.no-msg {
-          color: rgba(255,45,107,0.6);
+          color: rgba(84,199,248,0.55);
           font-style: italic;
         }
 
         .cl-arrow {
-          color: rgba(255,255,255,0.15);
-          font-size: 18px;
+          color: rgba(84,199,248,0.2);
+          font-size: 20px;
           flex-shrink: 0;
+          transition: color 0.2s ease;
+        }
+        .cl-card:hover .cl-arrow {
+          color: rgba(84,199,248,0.55);
         }
 
-        /* Skeleton */
+        /* ── SKELETON ── */
         .cl-skeleton {
           display: flex;
           flex-direction: column;
           gap: 8px;
           padding: 0 16px;
+          position: relative;
+          z-index: 1;
         }
 
         .cl-skel-card {
@@ -228,15 +283,15 @@ export default function ChatPage() {
           align-items: center;
           gap: 14px;
           padding: 14px 16px;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.04);
+          background: var(--glass);
+          border: 1px solid rgba(84,199,248,0.06);
           border-radius: 20px;
         }
 
         .skel-avatar {
           width: 56px; height: 56px;
           border-radius: 18px;
-          background: rgba(255,255,255,0.06);
+          background: rgba(84,199,248,0.07);
           flex-shrink: 0;
           animation: shimmer 1.4s ease-in-out infinite;
         }
@@ -246,7 +301,7 @@ export default function ChatPage() {
         .skel-line {
           height: 11px;
           border-radius: 6px;
-          background: rgba(255,255,255,0.06);
+          background: rgba(84,199,248,0.07);
           animation: shimmer 1.4s ease-in-out infinite;
         }
 
@@ -254,11 +309,11 @@ export default function ChatPage() {
         .skel-line.w40 { width: 40%; }
 
         @keyframes shimmer {
-          0%, 100% { opacity: 0.4; }
-          50% { opacity: 0.9; }
+          0%, 100% { opacity: 0.35; }
+          50%       { opacity: 0.85; }
         }
 
-        /* Empty */
+        /* ── EMPTY STATE ── */
         .cl-empty {
           display: flex;
           flex-direction: column;
@@ -267,11 +322,13 @@ export default function ChatPage() {
           padding: 80px 40px;
           gap: 16px;
           text-align: center;
+          position: relative;
+          z-index: 1;
         }
 
         .cl-empty-icon {
           font-size: 64px;
-          filter: grayscale(0.3);
+          filter: grayscale(0.2);
           margin-bottom: 8px;
         }
 
@@ -279,13 +336,13 @@ export default function ChatPage() {
           font-family: 'Syne', sans-serif;
           font-size: 22px;
           font-weight: 800;
-          color: rgba(255,255,255,0.6);
+          color: rgba(240,248,255,0.55);
           letter-spacing: -0.5px;
         }
 
         .cl-empty-sub {
           font-size: 14px;
-          color: rgba(255,255,255,0.25);
+          color: var(--muted);
           line-height: 1.7;
           max-width: 260px;
         }
@@ -293,24 +350,37 @@ export default function ChatPage() {
         .cl-empty-btn {
           margin-top: 12px;
           padding: 14px 32px;
-          background: linear-gradient(135deg, #ff2d6b, #c9193e);
+          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
           border: none;
           border-radius: 100px;
-          color: white;
+          color: #020d18;
           font-family: 'Syne', sans-serif;
           font-size: 14px;
-          font-weight: 700;
+          font-weight: 800;
           cursor: pointer;
-          letter-spacing: 0.5px;
-          box-shadow: 0 8px 24px rgba(255,45,107,0.35);
-          transition: all 0.2s;
+          letter-spacing: 0.3px;
+          box-shadow: 0 8px 24px rgba(84,199,248,0.4);
+          position: relative;
+          overflow: hidden;
+          transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+        }
+
+        .cl-empty-btn::before {
+          content: '';
+          position: absolute; inset: 0;
+          background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent 55%);
         }
 
         .cl-empty-btn:hover {
           transform: translateY(-2px);
-          box-shadow: 0 12px 32px rgba(255,45,107,0.5);
+          box-shadow: 0 14px 36px rgba(84,199,248,0.55);
         }
+
+        .cl-empty-btn:active { transform: translateY(0); }
       `}</style>
+
+      {/* Flag stripe */}
+      <div className="cl-flag" />
 
       <div className="cl-root">
         <div className="cl-header">
@@ -345,7 +415,7 @@ export default function ChatPage() {
               Cuando ambos se den like, el contacto aparece acá para que puedan chatear.
             </p>
             <button className="cl-empty-btn" onClick={() => router.push("/discover")}>
-              Ir a Discover 🔥
+              Ir a Discover ✨
             </button>
           </div>
         ) : (
