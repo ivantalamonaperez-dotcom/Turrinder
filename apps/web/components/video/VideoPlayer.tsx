@@ -1,8 +1,21 @@
 "use client";
 
+/**
+ * VideoPlayer.tsx
+ *
+ * Maneja SOLO la lógica de video y WebRTC.
+ * Los controles están en VideoControls.tsx para poder ser reemplazados.
+ *
+ * Si necesitás una pantalla con la lógica de video pero botones distintos:
+ *   1. No uses VideoPlayer directamente
+ *   2. Importá useWebRTC y armá tu propio componente con los botones que quieras
+ *   3. O usá VideoPlayer con `customControls` para inyectar tus propios botones
+ */
+
 import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
 import UserChip from "@/components/user/UserChip";
+import VideoControls from "./Videocontrols";
 
 interface Props {
   room: { id: string } | null;
@@ -12,16 +25,25 @@ interface Props {
   liked: boolean;
   searching?: boolean;
   skipBlocked?: boolean;
+  /** Inyectá tus propios controles — si se pasa, VideoControls no se renderiza */
+  customControls?: React.ReactNode;
 }
 
-export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, searching, skipBlocked }: Props) {
+export default function VideoPlayer({
+  room,
+  matchUser,
+  onNext,
+  onLike,
+  liked,
+  searching,
+  skipBlocked,
+  customControls,
+}: Props) {
   const targetPartnerId = room?.id || null;
   const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
     useWebRTC(targetPartnerId);
 
   const [audioLocked,  setAudioLocked]  = useState(true);
-  const [likeAnim,     setLikeAnim]     = useState(false);
-  const [skipAnim,     setSkipAnim]     = useState(false);
   const [likeFlash,    setLikeFlash]    = useState(false);
   const [streamerMode, setStreamerMode] = useState(false);
 
@@ -39,19 +61,9 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
   };
 
   const handleLike = () => {
-    if (!liked) {
-      setLikeAnim(true);
-      setLikeFlash(true);
-      setTimeout(() => setLikeAnim(false), 700);
-      setTimeout(() => setLikeFlash(false), 600);
-      onLike();
-    }
-  };
-
-  const handleSkip = () => {
-    if (skipBlocked) return;
-    setSkipAnim(true);
-    setTimeout(() => { setSkipAnim(false); onNext(); }, 350);
+    setLikeFlash(true);
+    setTimeout(() => setLikeFlash(false), 600);
+    onLike();
   };
 
   return (
@@ -59,7 +71,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
-        /* ── TOKENS (mismos que TurrinderPage) ── */
         .vp-root {
           --sky:      #54c7f8;
           --sky2:     #3b9eda;
@@ -73,274 +84,109 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           --muted:    rgba(180,215,240,0.45);
         }
 
-        /* ── ROOT ── */
         .vp-root {
-          width: 100%;
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          position: relative;
+          width: 100%; height: 100%;
+          display: flex; flex-direction: column;
+          overflow: hidden; position: relative;
           background: var(--bg);
           font-family: 'DM Sans', sans-serif;
         }
 
-        /* ── ZONA DE VIDEO ── */
         .vp-video-zone {
-          flex: 1;
-          min-height: 0;
-          display: flex;
-          flex-direction: row;
-          position: relative;
-          overflow: hidden;
+          flex: 1; min-height: 0;
+          display: flex; flex-direction: row;
+          position: relative; overflow: hidden;
         }
 
-        /* ── PANELES 50/50 ── */
         .vp-panel {
-          flex: 1;
-          position: relative;
-          overflow: hidden;
-          min-width: 0;
+          flex: 1; position: relative;
+          overflow: hidden; min-width: 0;
         }
         .vp-panel-local  { background: #040c18; }
         .vp-panel-remote { background: #050f1e; }
 
-        /* ── MOBILE: apilado vertical ── */
         @media (max-width: 768px) {
           .vp-video-zone { flex-direction: column; }
           .vp-panel-remote { order: -1; flex: 1.6; min-height: 0; }
           .vp-panel-local  { order:  1; flex: 1;   min-height: 0; }
-
-          /* Divisor horizontal en mobile */
           .vp-divider {
-            left: 0; right: 0;
-            top: 61.5%; bottom: auto;
-            width: auto; height: 2px;
-            transform: none;
-            background: linear-gradient(
-              to right,
-              transparent 0%,
-              rgba(84,199,248,0.0) 5%,
-              rgba(84,199,248,0.7) 20%,
-              rgba(84,199,248,1)   50%,
-              rgba(84,199,248,0.7) 80%,
-              rgba(84,199,248,0.0) 95%,
-              transparent 100%
-            );
+            left: 0; right: 0; top: 61.5%; bottom: auto;
+            width: auto; height: 2px; transform: none;
+            background: linear-gradient(to right, transparent 0%, rgba(84,199,248,0.0) 5%, rgba(84,199,248,0.7) 20%, rgba(84,199,248,1) 50%, rgba(84,199,248,0.7) 80%, rgba(84,199,248,0.0) 95%, transparent 100%);
             box-shadow: 0 0 12px rgba(84,199,248,0.45), 0 0 30px rgba(84,199,248,0.18);
           }
-
-          .vp-divider-gem {
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-          }
-
-          .vp-label {
-            top: 10px; left: 10px;
-            padding: 3px 10px 3px 7px;
-            font-size: 9px;
-          }
-
-          .vp-streamer-badge {
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-          }
+          .vp-divider-gem { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+          .vp-label { top: 10px; left: 10px; padding: 3px 10px 3px 7px; font-size: 9px; }
+          .vp-streamer-badge { bottom: 10px; left: 50%; transform: translateX(-50%); }
         }
 
-        /* ── VIDEOS ── */
-        .vp-video {
-          width: 100%; height: 100%;
-          object-fit: cover; display: block;
-        }
+        .vp-video { width: 100%; height: 100%; object-fit: cover; display: block; }
         .vp-video-local  { transform: scaleX(-1); }
         .vp-video-remote { transition: opacity 1s ease; }
 
-        /* ── VIGNETTE ── */
         .vp-panel::after {
-          content: '';
-          position: absolute; inset: 0;
+          content: ''; position: absolute; inset: 0;
           background: radial-gradient(ellipse at center, transparent 40%, rgba(3,10,20,0.6) 100%);
-          pointer-events: none;
-          z-index: 2;
+          pointer-events: none; z-index: 2;
         }
 
-        /* ── MODO STREAMER: blur ── */
         .vp-streamer-blur {
           position: absolute; inset: 0; z-index: 5;
           backdrop-filter: blur(28px) brightness(0.55);
           -webkit-backdrop-filter: blur(28px) brightness(0.55);
-          transition: opacity 0.35s ease;
-          pointer-events: none;
+          transition: opacity 0.35s ease; pointer-events: none;
         }
 
-        /* ── MODO STREAMER: badge ── */
         .vp-streamer-badge {
-          position: absolute;
-          bottom: 16px; left: 50%;
-          transform: translateX(-50%);
-          z-index: 20;
-          display: flex; align-items: center; gap: 6px;
-          background: rgba(84,199,248,0.10);
-          border: 1px solid rgba(84,199,248,0.28);
-          backdrop-filter: blur(10px);
-          border-radius: 100px;
-          padding: 4px 12px;
-          font-size: 9px; font-weight: 600;
-          color: rgba(143,212,255,0.9);
+          position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+          z-index: 20; display: flex; align-items: center; gap: 6px;
+          background: rgba(84,199,248,0.10); border: 1px solid rgba(84,199,248,0.28);
+          backdrop-filter: blur(10px); border-radius: 100px; padding: 4px 12px;
+          font-size: 9px; font-weight: 600; color: rgba(143,212,255,0.9);
           letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap;
           animation: streamerBadgePulse 3s ease-in-out infinite;
         }
         .vp-streamer-badge-dot {
           width: 5px; height: 5px; border-radius: 50%;
-          background: var(--sky);
-          box-shadow: 0 0 5px var(--sky);
-          animation: recBlink 2s infinite;
-          flex-shrink: 0;
+          background: var(--sky); box-shadow: 0 0 5px var(--sky);
+          animation: recBlink 2s infinite; flex-shrink: 0;
         }
-        @keyframes streamerBadgePulse {
-          0%,100% { opacity: 1; }
-          50%      { opacity: 0.72; }
-        }
+        @keyframes streamerBadgePulse { 0%,100%{opacity:1} 50%{opacity:0.72} }
 
-        /* ── ETIQUETA "TÚ" ── */
         .vp-label {
-          position: absolute;
-          top: 16px; left: 16px;
-          z-index: 10;
+          position: absolute; top: 16px; left: 16px; z-index: 10;
           display: flex; align-items: center; gap: 7px;
-          background: rgba(3,10,20,0.5);
-          border: 1px solid var(--glass-b);
-          backdrop-filter: blur(8px);
-          border-radius: 100px;
+          background: rgba(3,10,20,0.5); border: 1px solid var(--glass-b);
+          backdrop-filter: blur(8px); border-radius: 100px;
           padding: 4px 12px 4px 8px;
-          font-size: 10px; font-weight: 500;
-          color: var(--muted);
+          font-size: 10px; font-weight: 500; color: var(--muted);
           letter-spacing: 1.5px; text-transform: uppercase;
         }
         .vp-rec-dot {
           width: 5px; height: 5px; border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 6px #22c55e;
-          animation: recBlink 2s infinite;
-          flex-shrink: 0;
+          background: #22c55e; box-shadow: 0 0 6px #22c55e;
+          animation: recBlink 2s infinite; flex-shrink: 0;
         }
         @keyframes recBlink { 0%,100%{opacity:1} 50%{opacity:0.25} }
 
-        /* ── DIVISOR CENTRAL ── */
         .vp-divider {
-          position: absolute;
-          left: 50%; top: 0; bottom: 0;
-          transform: translateX(-50%);
-          width: 2px; z-index: 30;
-          background: linear-gradient(
-            to bottom,
-            transparent 0%,
-            rgba(84,199,248,0.0) 5%,
-            rgba(84,199,248,0.7) 20%,
-            rgba(84,199,248,1)   50%,
-            rgba(84,199,248,0.7) 80%,
-            rgba(84,199,248,0.0) 95%,
-            transparent 100%
-          );
+          position: absolute; left: 50%; top: 0; bottom: 0;
+          transform: translateX(-50%); width: 2px; z-index: 30;
+          background: linear-gradient(to bottom, transparent 0%, rgba(84,199,248,0.0) 5%, rgba(84,199,248,0.7) 20%, rgba(84,199,248,1) 50%, rgba(84,199,248,0.7) 80%, rgba(84,199,248,0.0) 95%, transparent 100%);
           box-shadow: 0 0 12px rgba(84,199,248,0.4), 0 0 30px rgba(84,199,248,0.15);
         }
         .vp-divider-gem {
-          position: absolute;
-          left: 50%; top: 50%;
-          transform: translate(-50%,-50%);
+          position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
           width: 10px; height: 10px; border-radius: 50%;
           background: radial-gradient(circle, #a8e6ff 0%, var(--sky) 55%, var(--sky2) 100%);
-          box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.35);
-          z-index: 31;
+          box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.35); z-index: 31;
           animation: gemPulse 3s ease-in-out infinite;
         }
         @keyframes gemPulse {
           0%,100% { box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.3); transform: translate(-50%,-50%) scale(1); }
-          50%      { box-shadow: 0 0 24px rgba(84,199,248,1),   0 0 60px rgba(84,199,248,0.5); transform: translate(-50%,-50%) scale(1.25); }
+          50%      { box-shadow: 0 0 24px rgba(84,199,248,1), 0 0 60px rgba(84,199,248,0.5); transform: translate(-50%,-50%) scale(1.25); }
         }
 
-        /* ── BARRA DE CONTROLES ── */
-        .vp-controls {
-          flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-          gap: 16px;
-          padding: 8px 24px calc(30px + env(safe-area-inset-bottom, 20px));
-          background: rgba(3,10,20,0.97);
-          border-top: 1px solid var(--glass-b);
-          backdrop-filter: blur(16px);
-          z-index: 40;
-        }
-        .vp-ctrl-slot {
-          width: 50px;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .vp-ctrl-slot-center {
-          display: flex; align-items: center; justify-content: center;
-        }
-        .vp-ctrl {
-          border-radius: 50%; border: none; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease;
-          position: relative;
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        /* Skip */
-        .vp-ctrl-skip {
-          width: 50px; height: 50px;
-          background: rgba(84,199,248,0.05);
-          color: var(--muted);
-          border: 1.5px solid var(--glass-b);
-          font-size: 17px;
-          backdrop-filter: blur(10px);
-        }
-        .vp-ctrl-skip:hover  { background: rgba(84,199,248,0.10); transform: scale(1.06); }
-        .vp-ctrl-skip.anim   { transform: scale(0.82) rotate(-12deg); }
-        .vp-ctrl-skip:disabled { opacity: 0.3; cursor: not-allowed; transform: none !important; }
-
-        /* Like */
-        .vp-ctrl-like {
-          width: 62px; height: 62px;
-          background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
-          color: #02080f;
-          font-size: 24px;
-          box-shadow: 0 4px 20px rgba(84,199,248,0.45), 0 0 0 0 rgba(84,199,248,0.3);
-        }
-        .vp-ctrl-like:hover  { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 28px rgba(84,199,248,0.6); }
-        .vp-ctrl-like.anim   { transform: scale(1.35); box-shadow: 0 0 0 14px rgba(84,199,248,0); }
-        .vp-ctrl-like.liked  { filter: grayscale(0.6); opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
-
-        /* Streamer */
-        .vp-ctrl-streamer {
-          width: 50px; height: 50px;
-          background: rgba(84,199,248,0.05);
-          color: rgba(143,212,255,0.5);
-          border: 1.5px solid var(--glass-b);
-          font-size: 17px;
-          backdrop-filter: blur(10px);
-          transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, background 0.25s, border-color 0.25s, color 0.25s;
-        }
-        .vp-ctrl-streamer:hover { background: rgba(84,199,248,0.10); transform: scale(1.06); }
-        .vp-ctrl-streamer.active {
-          background: rgba(84,199,248,0.15);
-          border-color: rgba(84,199,248,0.42);
-          color: rgba(143,212,255,0.95);
-          box-shadow: 0 0 14px rgba(84,199,248,0.28);
-        }
-        .vp-ctrl-streamer.active:hover { background: rgba(84,199,248,0.22); }
-
-        .vp-ctrl-label {
-          position: absolute;
-          bottom: -18px; left: 50%;
-          transform: translateX(-50%);
-          font-size: 9px; font-weight: 500;
-          color: rgba(143,212,255,0.28);
-          letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap;
-        }
-
-        /* ── LIKE FLASH ── */
         .vp-like-flash {
           position: absolute; inset: 0; z-index: 50; pointer-events: none;
           background: radial-gradient(ellipse at center, rgba(84,199,248,0.16) 0%, transparent 70%);
@@ -348,7 +194,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         }
         @keyframes likeFlash { 0%{opacity:1} 100%{opacity:0} }
 
-        /* ── SIN CÁMARA ── */
         .vp-no-cam {
           position: absolute; inset: 0;
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
@@ -357,7 +202,6 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         .vp-no-cam-icon { font-size: 28px; opacity: 0.22; }
         .vp-no-cam-text { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
 
-        /* ── RADAR (buscando) ── */
         .vp-placeholder {
           position: absolute; inset: 0;
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
@@ -367,40 +211,28 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
         .vp-radar-ring {
           position: absolute; border-radius: 50%;
           border: 1px solid rgba(84,199,248,0.3);
-          top: 50%; left: 50%;
-          transform: translate(-50%,-50%);
+          top: 50%; left: 50%; transform: translate(-50%,-50%);
           animation: radarExpand 2.6s ease-out infinite;
         }
-        @keyframes radarExpand {
-          0%   { width: 20px; height: 20px; opacity: 0.9; }
-          100% { width: 110px; height: 110px; opacity: 0; }
-        }
+        @keyframes radarExpand { 0%{width:20px;height:20px;opacity:0.9} 100%{width:110px;height:110px;opacity:0} }
         .vp-radar-center {
-          position: absolute; top: 50%; left: 50%;
-          transform: translate(-50%,-50%);
+          position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
           width: 42px; height: 42px; border-radius: 50%;
           background: linear-gradient(135deg, var(--sky), var(--sky2));
-          display: flex; align-items: center; justify-content: center;
-          font-size: 20px;
+          display: flex; align-items: center; justify-content: center; font-size: 20px;
           box-shadow: 0 0 24px rgba(84,199,248,0.7);
           animation: radarCenterPulse 2.6s ease-in-out infinite;
         }
         @keyframes radarCenterPulse {
-          0%,100% { box-shadow: 0 0 24px rgba(84,199,248,0.7); }
-          50%      { box-shadow: 0 0 40px rgba(84,199,248,1), 0 0 70px rgba(84,199,248,0.3); }
+          0%,100%{box-shadow:0 0 24px rgba(84,199,248,0.7)}
+          50%{box-shadow:0 0 40px rgba(84,199,248,1),0 0 70px rgba(84,199,248,0.3)}
         }
         .vp-radar-text {
-          font-family: 'Syne', sans-serif;
-          font-size: 11px; font-weight: 700;
-          color: var(--sky);
-          letter-spacing: 3px; text-transform: uppercase; opacity: 0.9;
+          font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+          color: var(--sky); letter-spacing: 3px; text-transform: uppercase; opacity: 0.9;
         }
-        .vp-radar-sub {
-          font-size: 10px; color: var(--muted);
-          letter-spacing: 1px; margin-top: -12px;
-        }
+        .vp-radar-sub { font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-top: -12px; }
 
-        /* ── PERFIL FALLBACK ── */
         .vp-profile-card {
           position: absolute; inset: 0;
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
@@ -416,70 +248,48 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
           width: 84px; height: 84px; border-radius: 50%;
           background: linear-gradient(135deg, #060f1e, #0a1a2e);
           border: 2px solid rgba(84,199,248,0.3);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 34px;
+          display: flex; align-items: center; justify-content: center; font-size: 34px;
           box-shadow: 0 0 0 4px rgba(84,199,248,0.06);
         }
         .vp-profile-name {
-          font-family: 'Syne', sans-serif;
-          font-size: 20px; font-weight: 800;
+          font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800;
           color: var(--w); text-align: center;
         }
-        .vp-profile-online {
-          display: flex; align-items: center; gap: 6px;
-          font-size: 11px; color: var(--muted);
-        }
+        .vp-profile-online { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
         .vp-online-dot {
           width: 6px; height: 6px; border-radius: 50%;
-          background: #22c55e; box-shadow: 0 0 6px #22c55e;
-          animation: recBlink 2s infinite;
+          background: #22c55e; box-shadow: 0 0 6px #22c55e; animation: recBlink 2s infinite;
         }
         .vp-badge {
-          background: rgba(84,199,248,0.08);
-          border: 1px solid rgba(84,199,248,0.22);
+          background: rgba(84,199,248,0.08); border: 1px solid rgba(84,199,248,0.22);
           border-radius: 100px; padding: 3px 12px;
-          font-size: 9px; color: rgba(143,212,255,0.8);
-          letter-spacing: 1.5px; text-transform: uppercase;
+          font-size: 9px; color: rgba(143,212,255,0.8); letter-spacing: 1.5px; text-transform: uppercase;
         }
 
-        /* ── AUDIO HINT ── */
         .vp-audio-hint {
-          position: absolute;
-          top: 14px; right: 14px;
-          background: rgba(84,199,248,0.82);
-          backdrop-filter: blur(8px);
-          color: #020d18;
-          padding: 5px 13px; border-radius: 100px;
-          font-size: 10px; font-weight: 600;
-          z-index: 20; letter-spacing: 0.5px;
+          position: absolute; top: 14px; right: 14px;
+          background: rgba(84,199,248,0.82); backdrop-filter: blur(8px);
+          color: #020d18; padding: 5px 13px; border-radius: 100px;
+          font-size: 10px; font-weight: 600; z-index: 20; letter-spacing: 0.5px;
           animation: audioPulse 2s ease-in-out infinite;
         }
-        @keyframes audioPulse {
-          0%,100% { opacity: 1; }
-          50%      { opacity: 0.65; }
-        }
+        @keyframes audioPulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
 
-        /* ── CORNER DECORATION ── */
-        .vp-corner {
-          position: absolute;
-          width: 20px; height: 20px;
-          z-index: 10; opacity: 0.3;
-        }
-        .vp-corner-tl { top: 10px; left: 10px;   border-top: 1.5px solid var(--sky); border-left:  1.5px solid var(--sky); }
-        .vp-corner-tr { top: 10px; right: 10px;  border-top: 1.5px solid var(--sky); border-right: 1.5px solid var(--sky); }
-        .vp-corner-bl { bottom: 10px; left: 10px;  border-bottom: 1.5px solid var(--sky); border-left:  1.5px solid var(--sky); }
-        .vp-corner-br { bottom: 10px; right: 10px; border-bottom: 1.5px solid var(--sky); border-right: 1.5px solid var(--sky); }
+        .vp-corner { position: absolute; width: 20px; height: 20px; z-index: 10; opacity: 0.3; }
+        .vp-corner-tl { top:10px; left:10px;   border-top:1.5px solid var(--sky); border-left:1.5px solid var(--sky); }
+        .vp-corner-tr { top:10px; right:10px;  border-top:1.5px solid var(--sky); border-right:1.5px solid var(--sky); }
+        .vp-corner-bl { bottom:10px; left:10px;   border-bottom:1.5px solid var(--sky); border-left:1.5px solid var(--sky); }
+        .vp-corner-br { bottom:10px; right:10px;  border-bottom:1.5px solid var(--sky); border-right:1.5px solid var(--sky); }
       `}</style>
 
-      {/* Like flash overlay */}
       {likeFlash && <div className="vp-like-flash" />}
 
       <div className="vp-root" onClick={unlockAudio}>
 
-        {/* ════════════════ ZONA DE VIDEO ════════════════ */}
+        {/* ════ ZONA DE VIDEO ════ */}
         <div className="vp-video-zone">
 
-          {/* ════ PANEL IZQUIERDO — TÚ ════ */}
+          {/* Panel izquierdo — tú */}
           <div className="vp-panel vp-panel-local">
             <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
 
@@ -498,32 +308,27 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
             <div className="vp-corner vp-corner-bl" />
           </div>
 
-          {/* ════ DIVISOR CENTRAL ════ */}
+          {/* Divisor central */}
           <div className="vp-divider">
             <div className="vp-divider-gem" />
           </div>
 
-          {/* ════ PANEL DERECHO — PAREJA ════ */}
+          {/* Panel derecho — pareja */}
           <div className="vp-panel vp-panel-remote">
 
             <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
+              ref={remoteVideoRef} autoPlay playsInline
               className="vp-video vp-video-remote"
               style={{ opacity: hasVideo ? 1 : 0 }}
             />
 
             {streamerMode && hasVideo && <div className="vp-streamer-blur" />}
-
             {streamerMode && hasVideo && (
               <div className="vp-streamer-badge">
-                <div className="vp-streamer-badge-dot" />
-                Modo streamer
+                <div className="vp-streamer-badge-dot" /> Modo streamer
               </div>
             )}
 
-            {/* Estado: buscando */}
             {!remoteReady && (
               <div className="vp-placeholder">
                 <div className="vp-radar">
@@ -532,51 +337,34 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
                   <div className="vp-radar-ring" style={{ animationDelay: "1.8s" }} />
                   <div className="vp-radar-center">{searching ? "🔥" : "👤"}</div>
                 </div>
-                <div className="vp-radar-text">
-                  {searching ? "Buscando..." : "Enlazando..."}
-                </div>
-                <div className="vp-radar-sub">
-                  {searching ? "Encontrando tu pareja" : "Estableciendo conexión"}
-                </div>
+                <div className="vp-radar-text">{searching ? "Buscando..." : "Enlazando..."}</div>
+                <div className="vp-radar-sub">{searching ? "Encontrando tu pareja" : "Estableciendo conexión"}</div>
               </div>
             )}
 
-            {/* Estado: match sin video — perfil */}
             {remoteReady && !hasVideo && matchUser && (
               <div className="vp-profile-card">
                 {matchUser.avatar_url
                   ? <img src={matchUser.avatar_url} alt={matchUser.name} className="vp-avatar" />
-                  : <div className="vp-avatar-ph">{matchUser.name?.[0]?.toUpperCase() ?? "?"}</div>
-                }
-                <div className="vp-profile-name">
-                  {matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}
-                </div>
-                <div className="vp-profile-online">
-                  <div className="vp-online-dot" /> Conectado
-                </div>
-                <div className="vp-badge">
-                  {isConnected ? "Video en camino" : "Enlazando video"}
-                </div>
+                  : <div className="vp-avatar-ph">{matchUser.name?.[0]?.toUpperCase() ?? "?"}</div>}
+                <div className="vp-profile-name">{matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}</div>
+                <div className="vp-profile-online"><div className="vp-online-dot" /> Conectado</div>
+                <div className="vp-badge">{isConnected ? "Video en camino" : "Enlazando video"}</div>
               </div>
             )}
 
-            {/* Estado: match sin video, sin perfil */}
             {remoteReady && !hasVideo && !matchUser && (
               <div className="vp-profile-card">
                 <div className="vp-avatar-ph">👤</div>
-                <div className="vp-profile-name" style={{ opacity: 0.5, fontSize: 15 }}>
-                  Cargando perfil...
-                </div>
+                <div className="vp-profile-name" style={{ opacity: 0.5, fontSize: 15 }}>Cargando perfil...</div>
                 <div className="vp-badge">Enlazando video</div>
               </div>
             )}
 
-            {/* Audio hint */}
             {remoteReady && hasVideo && audioLocked && (
               <div className="vp-audio-hint">🔊 Toca para escuchar</div>
             )}
 
-            {/* Info overlay con video activo */}
             {hasVideo && matchUser && (
               <UserChip
                 user={matchUser}
@@ -589,72 +377,21 @@ export default function VideoPlayer({ room, matchUser, onNext, onLike, liked, se
             <div className="vp-corner vp-corner-br" />
           </div>
 
-        </div>{/* fin vp-video-zone */}
-
-        {/* ════════════════ BARRA DE CONTROLES ════════════════ */}
-        <div className="vp-controls" onClick={(e) => e.stopPropagation()}>
-
-          {/* Slot izquierdo — Skip */}
-          <div className="vp-ctrl-slot">
-            <div style={{ position: "relative" }}>
-              <button
-                className={`vp-ctrl vp-ctrl-skip ${skipAnim ? "anim" : ""}`}
-                onClick={(e) => { e.stopPropagation(); handleSkip(); }}
-                disabled={!!skipBlocked}
-                title="Pasar"
-              >
-                ✕
-              </button>
-              <span className="vp-ctrl-label">Pasar</span>
-            </div>
-          </div>
-
-          {/* Centro — Like */}
-          <div className="vp-ctrl-slot-center">
-            <div style={{ position: "relative" }}>
-              <button
-                className={`vp-ctrl vp-ctrl-like ${likeAnim ? "anim" : ""} ${liked ? "liked" : ""}`}
-                onClick={(e) => { e.stopPropagation(); handleLike(); }}
-                disabled={liked}
-                title="Like"
-              >
-                ♥
-              </button>
-              <span className="vp-ctrl-label">Like</span>
-            </div>
-          </div>
-
-          {/* Slot derecho — Modo Streamer */}
-          <div className="vp-ctrl-slot">
-            <div style={{ position: "relative" }}>
-              <button
-                className={`vp-ctrl vp-ctrl-streamer ${streamerMode ? "active" : ""}`}
-                onClick={(e) => { e.stopPropagation(); setStreamerMode(prev => !prev); }}
-                title={streamerMode ? "Desactivar modo streamer" : "Activar modo streamer"}
-              >
-                {streamerMode ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
-                  </svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                )}
-              </button>
-              <span
-                className="vp-ctrl-label"
-                style={{ color: streamerMode ? "rgba(143,212,255,0.7)" : undefined }}
-              >
-                {streamerMode ? "Visible" : "Streamer"}
-              </span>
-            </div>
-          </div>
-
         </div>
+
+        {/* ════ CONTROLES ════
+            Si se pasa customControls, se renderiza eso.
+            Si no, se usa VideoControls con los botones por defecto. */}
+        {customControls ?? (
+          <VideoControls
+            onSkip={onNext}
+            onLike={handleLike}
+            liked={liked}
+            skipBlocked={skipBlocked}
+            streamerMode={streamerMode}
+            onStreamerToggle={() => setStreamerMode(prev => !prev)}
+          />
+        )}
 
       </div>
     </>
