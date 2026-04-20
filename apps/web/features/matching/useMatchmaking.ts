@@ -1,19 +1,29 @@
 "use client";
 
 /**
- * useMatchmaking — CON DELAY EN SKIP
+ * useMatchmaking — CON MODO
  *
- * CAMBIO: findNewMatch ahora acepta un parámetro `delayMs` (default 0).
- * - nextUser en page.tsx puede llamar findNewMatch() sin delay.
- * - handlePartnerLeft usa 1000ms de delay para que la transición sea suave.
- * - El delay también evita que dos usuarios se "crucen" y ambos busquen
- *   a la vez, terminando en cola en lugar de emparejarse entre sí.
+ * CAMBIO: El hook ahora recibe un parámetro `mode` (default "discover").
+ * Ese modo se envía al servidor en cada "find-match" para que el matchmaking
+ * solo emparejecon usuarios del mismo modo.
+ *
+ * Uso:
+ *   // En discover (solo skip + streamer, sin like)
+ *   const { room, searching, findNewMatch } = useMatchmaking("discover");
+ *
+ *   // En la modalidad Ligues (con like)
+ *   const { room, searching, findNewMatch } = useMatchmaking("ligues");
+ *
+ * Para agregar una nueva modalidad en el futuro, solo pasás el string
+ * correspondiente — no hay que tocar el hook ni el servidor.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSocket } from "@/hooks/useSocket";
 
-export const useMatchmaking = () => {
+export type MatchMode = "discover" | "ligues" | string;
+
+export const useMatchmaking = (mode: MatchMode = "discover") => {
   const { socket, connectCount } = useSocket();
   const [room,      setRoom]      = useState<{ id: string } | null>(null);
   const [searching, setSearching] = useState(false);
@@ -38,37 +48,37 @@ export const useMatchmaking = () => {
 
     const doSearch = () => {
       if (!socket?.connected) return;
-      console.log("[Matchmaking] 🔍 Emitiendo find-match...");
+      console.log(`[Matchmaking] 🔍 Emitiendo find-match (modo: ${mode})...`);
       isFindingMatch.current = true;
       setSearching(true);
       setRoom(null);
-      socket.emit("find-match");
+      // ← CLAVE: enviamos el modo al servidor
+      socket.emit("find-match", { mode });
     };
 
     if (delayMs > 0) {
-      // Mostrar el radar inmediatamente aunque la búsqueda tenga delay
       setRoom(null);
       setSearching(true);
       searchTimeout.current = setTimeout(doSearch, delayMs);
     } else {
       doSearch();
     }
-  }, [socket]);
+  }, [socket, mode]);
 
   // ── Listeners ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    const handleMatchFound = (data: { partnerId: string }) => {
+    const handleMatchFound = (data: { partnerId: string; mode?: string }) => {
       clearSearchTimeout();
-      console.log("[Matchmaking] ✅ Match con:", data.partnerId);
+      console.log(`[Matchmaking] ✅ Match con: ${data.partnerId} (modo: ${data.mode ?? mode})`);
       setRoom({ id: data.partnerId });
       setSearching(false);
       isFindingMatch.current = false;
     };
 
     const handleWaiting = () => {
-      console.log("[Matchmaking] ⏳ En cola...");
+      console.log(`[Matchmaking] ⏳ En cola (modo: ${mode})...`);
       setSearching(true);
       isFindingMatch.current = false;
     };
@@ -82,7 +92,6 @@ export const useMatchmaking = () => {
     const handlePartnerLeft = () => {
       console.log("[Matchmaking] 💔 Compañero se fue.");
       isFindingMatch.current = false;
-      // 1 segundo de pausa antes de buscar — transición suave + evita cruce
       findNewMatch(1000);
     };
 
@@ -98,13 +107,13 @@ export const useMatchmaking = () => {
       socket.off("partner-left", handlePartnerLeft);
       clearSearchTimeout();
     };
-  }, [socket, findNewMatch]);
+  }, [socket, findNewMatch, mode]);
 
   // ── Disparador automático en cada conexión ───────────────────────────────
   useEffect(() => {
     if (connectCount === 0) return;
     if (!room && !searching && !isFindingMatch.current) {
-      console.log(`[Matchmaking] 🚀 Búsqueda inicial (connectCount=${connectCount})...`);
+      console.log(`[Matchmaking] 🚀 Búsqueda inicial [${mode}] (connectCount=${connectCount})...`);
       findNewMatch();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

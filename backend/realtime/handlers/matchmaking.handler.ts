@@ -1,18 +1,39 @@
 /**
- * matchmaking.handler.ts — Con guard de AD_MODE
+ * matchmaking.handler.ts — COLAS POR MODO
  *
- * CAMBIO respecto a la versión anterior:
- *   handleFindMatch ahora verifica adManager.canMatchmake() antes de
- *   proceder. Si el usuario está en AD_MODE, se rechaza silenciosamente.
- *   Esto cierra el bypass desde cualquier path de código.
+ * CAMBIO: En lugar de una sola `queue: string[]`, ahora hay una
+ * `queues: Map<MatchMode, string[]>` donde cada modo tiene su propia
+ * cola de espera. La lógica interna es idéntica a la versión anterior.
+ *
+ * Para agregar un modo nuevo en el futuro, basta con extender el tipo
+ * MatchMode y no tocar nada más.
  */
 
 import { Socket, Server } from "socket.io";
 import { userSocketMap } from "../../webrtc/webrtc.events";
 import { adManager } from "../../ad/ad.manager";
 
-let queue: string[] = [];
+// ── Tipos ────────────────────────────────────────────────────────────────────
+
+export type MatchMode = "discover" | "ligues" | string;
+// Usar `string` al final permite agregar modos nuevos sin tocar este archivo.
+
+// ── Estado ───────────────────────────────────────────────────────────────────
+
+/** Una cola por modo. Se crea lazy al primer usuario que la necesita. */
+const queues = new Map<MatchMode, string[]>();
+
+/** Qué modo está usando cada usuario actualmente. */
+const userMode = new Map<string, MatchMode>();
+
 const activeMatches = new Map<string, string>();
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const getQueue = (mode: MatchMode): string[] => {
+  if (!queues.has(mode)) queues.set(mode, []);
+  return queues.get(mode)!;
+};
 
 const isSocketAlive = (io: Server, userId: string): boolean => {
   const sid = userSocketMap.get(userId);
@@ -20,8 +41,11 @@ const isSocketAlive = (io: Server, userId: string): boolean => {
   return io.sockets.sockets.has(sid);
 };
 
-const removeFromQueue = (userId: string) => {
-  queue = queue.filter((id) => id !== userId);
+const removeFromAllQueues = (userId: string) => {
+  for (const [, q] of queues) {
+    const idx = q.indexOf(userId);
+    if (idx !== -1) q.splice(idx, 1);
+  }
 };
 
 const breakActiveMatch = (io: Server, userId: string) => {
@@ -37,55 +61,73 @@ const breakActiveMatch = (io: Server, userId: string) => {
   }
 };
 
+// ── Handler ──────────────────────────────────────────────────────────────────
+
 export const matchmakingHandler = {
-  handleFindMatch: (io: Server, socket: Socket) => {
+  handleFindMatch: (io: Server, socket: Socket, mode: MatchMode = "discover") => {
     const supabaseId = socket.handshake.query.userId as string;
     if (!supabaseId) return;
 
-    // ── GUARD: Bloquear si está en AD_MODE ─────────────────────────────
+    // ── GUARD: Bloquear si está en AD_MODE ──────────────────────────────
     if (!adManager.canMatchmake(supabaseId)) {
       console.warn(`[Matchmaking] 🚫 ${supabaseId} bloqueado (AD_MODE)`);
       return;
     }
 
     userSocketMap.set(supabaseId, socket.id);
-    removeFromQueue(supabaseId);
+    userMode.set(supabaseId, mode);
+    removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
 
-    console.log(`[Matchmaking] 👤 ${supabaseId} buscando match...`);
+    console.log(`[Matchmaking] 👤 ${supabaseId} buscando match en modo "${mode}"...`);
 
-    // Sanear cola
-    queue = queue.filter((uid) => isSocketAlive(io, uid));
+    // Sanear la cola de este modo
+    const queue = getQueue(mode);
+    const cleanQueue = queue.filter((uid) => isSocketAlive(io, uid));
+    queues.set(mode, cleanQueue);
 
-    if (queue.length > 0) {
-      const partnerUUID = queue.shift()!;
+    if (cleanQueue.length > 0) {
+      const partnerUUID = cleanQueue.shift()!;
+
       if (!isSocketAlive(io, partnerUUID)) {
-        queue.push(supabaseId);
-        socket.emit("waiting");
+        // El partner murió entre la limpieza y el shift — volver a esperar
+        cleanQueue.push(supabaseId);
+        socket.emit("waiting", { mode });
         return;
       }
+
       const partnerSocketId = userSocketMap.get(partnerUUID)!;
       activeMatches.set(supabaseId, partnerUUID);
       activeMatches.set(partnerUUID, supabaseId);
-      socket.emit("match-found", { partnerId: partnerUUID, isInitiator: true });
-      io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId, isInitiator: false });
-      console.log(`[Matchmaking] ❤️  MATCH: ${supabaseId} <-> ${partnerUUID}`);
+
+      socket.emit("match-found",          { partnerId: partnerUUID, isInitiator: true,  mode });
+      io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId, isInitiator: false, mode });
+
+      console.log(`[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId} <-> ${partnerUUID}`);
       return;
     }
 
-    queue.push(supabaseId);
-    socket.emit("waiting");
-    console.log(`[Matchmaking] ⏳ ${supabaseId} en cola (total: ${queue.length})`);
+    cleanQueue.push(supabaseId);
+    socket.emit("waiting", { mode });
+    console.log(`[Matchmaking] ⏳ ${supabaseId} en cola "${mode}" (total: ${cleanQueue.length})`);
   },
 
   handleLeave: (socket: Socket, io: Server) => {
     const supabaseId = socket.handshake.query.userId as string;
     if (!supabaseId) return;
-    removeFromQueue(supabaseId);
+    removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
+    userMode.delete(supabaseId);
     console.log(`[Matchmaking] 🚪 ${supabaseId} salió.`);
   },
 
-  getQueueLength: () => queue.length,
-  getActiveMatchCount: () => activeMatches.size / 2,
+  /** Estadísticas por modo — útil para debugging o un panel de admin */
+  getStats: () => {
+    const stats: Record<string, number> = {};
+    for (const [mode, q] of queues) stats[mode] = q.length;
+    return {
+      queues: stats,
+      activeMatches: activeMatches.size / 2,
+    };
+  },
 };

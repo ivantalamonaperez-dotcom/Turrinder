@@ -1,17 +1,26 @@
 /**
- * matchmaking.events.ts — ACTUALIZADO
+ * matchmaking.events.ts — CON MODO
  *
- * CAMBIO: El listener "find-match" fue movido a ad.events.ts para que
- * pueda interceptarlo con el guard de AD_MODE.
- * Este archivo solo maneja "leave-matchmaking".
+ * CAMBIO: "find-match" vuelve a registrarse aquí porque el guard de AD_MODE
+ * ya vive dentro del handler. El evento ahora recibe `{ mode }` del cliente
+ * y lo pasa directamente a matchmakingHandler.handleFindMatch.
+ *
+ * El flujo en server.ts se mantiene igual:
+ *   registerAdEvents → registerMatchmakingEvents → registerWebRTCEvents
+ *
+ * Si en algún momento querés volver a interceptar "find-match" en ad.events,
+ * simplemente asegurate de que ad.events pase el `mode` al handler también.
  */
 
 import { Server, Socket } from "socket.io";
-import { matchmakingHandler } from "../handlers/matchmaking.handler";
+import { matchmakingHandler, MatchMode } from "../handlers/matchmaking.handler";
 
 export default function registerMatchmakingEvents(io: Server, socket: Socket) {
-  // "find-match" ya no se registra aquí — lo maneja ad.events.ts
-  // con el guard de AD_MODE integrado.
+
+  socket.on("find-match", ({ mode }: { mode?: MatchMode } = {}) => {
+    // Fallback a "discover" si el cliente no manda modo (retrocompatibilidad)
+    matchmakingHandler.handleFindMatch(io, socket, mode ?? "discover");
+  });
 
   socket.on("leave-matchmaking", () => {
     matchmakingHandler.handleLeave(socket, io);
