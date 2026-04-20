@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 
@@ -8,7 +8,6 @@ import { useProfile } from "@/hooks/useProfile";
 import { usePresence } from "@/hooks/usePresence";
 import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
-import { useLike } from "@/hooks/Uselike";
 import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
 import { matchingService } from "@/features/matching/matching.service";
@@ -16,6 +15,7 @@ import { matchingService } from "@/features/matching/matching.service";
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
 import AdOverlay from "@/components/ads/AdOverlay";
+import VideoControls from "@/components/video/Videocontrols";
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -34,9 +34,12 @@ export default function DiscoverPage() {
 
   const { room, searching, findNewMatch } = useMatchmaking();
   const { matchUser } = useMatchUser(room);
-  const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
   const { adMode, skipInfo, isBlocked, adReady, reportSkip, reportAdCompleted } = useAd();
+
+  // Estado local del modo streamer (antes vivía en VideoPlayer, ahora lo manejamos acá
+  // porque usamos customControls)
+  const [streamerMode, setStreamerMode] = useState(false);
 
   const nextUser = useCallback(async () => {
     if (isBlocked) return;
@@ -60,7 +63,6 @@ export default function DiscoverPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
 
-        /* ── TOKENS — idénticos a TurrinderPage ── */
         .dp-root {
           --sky:       #54c7f8;
           --sky2:      #3b9eda;
@@ -74,7 +76,6 @@ export default function DiscoverPage() {
           --muted:     rgba(180,215,240,0.45);
         }
 
-        /* ── ROOT ── */
         .dp-root {
           height: 100dvh;
           display: flex;
@@ -86,7 +87,6 @@ export default function DiscoverPage() {
           -webkit-font-smoothing: antialiased;
         }
 
-        /* ── AURORA (igual que la landing) ── */
         .dp-aurora {
           position: absolute;
           inset: 0;
@@ -104,7 +104,6 @@ export default function DiscoverPage() {
           100% { opacity: .85; transform: scale(1.07) rotate(-0.2deg);}
         }
 
-        /* ── FLAG STRIPE — misma franja tricolor de la landing ── */
         .dp-flag {
           position: absolute;
           top: 0; left: 0; right: 0;
@@ -118,7 +117,6 @@ export default function DiscoverPage() {
           opacity: 0.65;
         }
 
-        /* ── VIDEO WRAPPER ── */
         .dp-video {
           flex: 1;
           min-height: 0;
@@ -127,9 +125,6 @@ export default function DiscoverPage() {
           z-index: 1;
         }
 
-        /* ════════════════════════════════════════
-           HEADER
-        ════════════════════════════════════════ */
         .dp-header {
           position: absolute;
           top: 3px;
@@ -148,7 +143,6 @@ export default function DiscoverPage() {
           );
         }
 
-        /* ── LOGO ── */
         .dp-logo-wrap {
           position: relative;
           pointer-events: all;
@@ -185,7 +179,6 @@ export default function DiscoverPage() {
           opacity: 0.4;
         }
 
-        /* ── HEADER RIGHT ── */
         .dp-header-right {
           display: flex;
           align-items: center;
@@ -193,7 +186,6 @@ export default function DiscoverPage() {
           pointer-events: all;
         }
 
-        /* ── SKIP COUNTER ── */
         .dp-skips {
           display: flex;
           align-items: center;
@@ -215,11 +207,7 @@ export default function DiscoverPage() {
           0%,100% { transform: none; }
           35%      { transform: scale(1.07); }
         }
-        .dp-pips {
-          display: flex;
-          gap: 3px;
-          align-items: center;
-        }
+        .dp-pips { display: flex; gap: 3px; align-items: center; }
         .dp-pip {
           width: 5px; height: 5px;
           border-radius: 50%;
@@ -237,41 +225,9 @@ export default function DiscoverPage() {
           letter-spacing: 0.5px;
           white-space: nowrap;
         }
-
-        /* ── LIVE PILL ── */
-        .dp-live {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: rgba(3,10,20,0.58);
-          border: 1px solid var(--glass-b);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border-radius: 100px;
-          padding: 5px 13px;
-        }
-        .dp-live-dot {
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: #22c55e;
-          animation: dp-live-pulse 2s infinite;
-        }
-        @keyframes dp-live-pulse {
-          0%   { box-shadow: 0 0 0 0   rgba(34,197,94,0.6); }
-          70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0);   }
-          100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
-        }
-        .dp-live-text {
-          font-size: 10px;
-          font-weight: 500;
-          color: var(--muted);
-          letter-spacing: 1px;
-          text-transform: uppercase;
-        }
       `}</style>
 
-      <MatchModal visible={isMatch} onClose={() => setIsMatch(false)} user={matchUser} />
-
+      {/* No hay MatchModal ni AdOverlay en discover — solo exploración */}
       <AdOverlay
         visible={adMode === "AD_THANKS"}
         onContinue={reportAdCompleted}
@@ -281,23 +237,16 @@ export default function DiscoverPage() {
       />
 
       <div className="dp-root">
-
-        {/* Aurora de fondo */}
         <div className="dp-aurora" />
-
-        {/* Franja tricolor top */}
         <div className="dp-flag" />
 
-        {/* ════════ HEADER ════════ */}
         <header className="dp-header">
-
           <div className="dp-logo-wrap">
             <span className="dp-logo-t">Turr</span>
             <span className="dp-logo-inder">inder</span>
           </div>
 
           <div className="dp-header-right">
-
             <div className={`dp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
               <div className="dp-pips">
                 {Array.from({ length: skipInfo.threshold }).map((_, i) => (
@@ -311,20 +260,50 @@ export default function DiscoverPage() {
           </div>
         </header>
 
-        {/* ════════ VIDEO ════════ */}
         <div className="dp-video">
           <VideoPlayer
             room={room}
             matchUser={matchUser}
             onNext={nextUser}
-            onLike={likeUser}
-            liked={liked}
+            onLike={() => {}} // no se usa — like está desactivado en discover
+            liked={false}
             searching={searching || !room}
             skipBlocked={isBlocked}
+            // ─── Inyectamos controles propios: solo skip + streamer, sin like ───
+            customControls={
+              <VideoControls
+                onSkip={nextUser}
+                onLike={() => {}}
+                liked={false}
+                skipBlocked={isBlocked}
+                streamerMode={streamerMode}
+                onStreamerToggle={() => setStreamerMode(prev => !prev)}
+                hideStreamer={false}
+                // Ocultamos el like pasándole un prop extra — ver nota abajo (*)
+                hideLike
+              />
+            }
           />
         </div>
-
       </div>
     </>
   );
 }
+
+/*
+ * (*) NOTA: VideoControls necesita un prop `hideLike?: boolean` para ocultar el botón.
+ *     Agregalo en Videocontrols.tsx:
+ *
+ *       export interface VideoControlsProps {
+ *         ...
+ *         hideLike?: boolean;   // ← nuevo
+ *       }
+ *
+ *     Y en el JSX, igual que hideStreamer:
+ *       {!hideLike && (
+ *         <div className="vc-slot-center"> ... </div>
+ *       )}
+ *
+ *     Si preferís no tocar VideoControls, podés hacer un componente
+ *     DiscoverControls.tsx mínimo con solo skip + streamer.
+ */

@@ -4,27 +4,16 @@
  * VideoControls.tsx
  *
  * Barra de controles reutilizable para VideoPlayer.
- * Se puede usar en cualquier pantalla que tenga la lógica de video
- * pero necesite botones distintos — simplemente no renderices este componente
- * y ponés los tuyos propios.
  *
  * Props:
- *   onSkip         — callback al pasar
- *   onLike         — callback al dar like
- *   liked          — si ya se dio like (deshabilita el botón)
- *   skipBlocked    — si el skip está bloqueado (anuncio)
- *   streamerMode   — estado actual del modo streamer
+ *   onSkip           — callback al pasar
+ *   onLike           — callback al dar like
+ *   liked            — si ya se dio like (deshabilita el botón)
+ *   skipBlocked      — si el skip está bloqueado (anuncio)
+ *   streamerMode     — estado actual del modo streamer
  *   onStreamerToggle — callback para togglear modo streamer
- *
- * Uso mínimo (solo skip y like, sin streamer):
- *   <VideoControls onSkip={...} onLike={...} liked={liked} />
- *
- * Uso con streamer:
- *   <VideoControls onSkip={...} onLike={...} liked={liked}
- *     streamerMode={streamerMode} onStreamerToggle={toggle} />
- *
- * Para una pantalla con controles distintos, no uses este componente —
- * importa solo useWebRTC desde VideoPlayer y renderizás tus propios botones.
+ *   hideStreamer      — ocultar el botón de modo streamer
+ *   hideLike          — ocultar el botón de like (ej: en discover)
  */
 
 import { useState } from "react";
@@ -38,6 +27,8 @@ export interface VideoControlsProps {
   onStreamerToggle?: () => void;
   /** Ocultar el botón de modo streamer */
   hideStreamer?: boolean;
+  /** Ocultar el botón de like — en discover solo hay skip + streamer */
+  hideLike?: boolean;
 }
 
 export default function VideoControls({
@@ -48,6 +39,7 @@ export default function VideoControls({
   streamerMode = false,
   onStreamerToggle,
   hideStreamer = false,
+  hideLike = false,
 }: VideoControlsProps) {
   const [likeAnim, setLikeAnim] = useState(false);
   const [skipAnim, setSkipAnim] = useState(false);
@@ -64,6 +56,9 @@ export default function VideoControls({
     setSkipAnim(true);
     setTimeout(() => { setSkipAnim(false); onSkip(); }, 350);
   };
+
+  // Cuando no hay like, el skip y el streamer se centran de otro modo
+  const noLike = hideLike;
 
   return (
     <>
@@ -87,6 +82,11 @@ export default function VideoControls({
           backdrop-filter: blur(16px);
           z-index: 40;
           font-family: 'DM Sans', sans-serif;
+        }
+
+        /* Sin like: los botones se espacian más */
+        .vc-root.no-like {
+          gap: 32px;
         }
 
         .vc-slot {
@@ -159,7 +159,7 @@ export default function VideoControls({
         }
       `}</style>
 
-      <div className="vc-root" onClick={(e) => e.stopPropagation()}>
+      <div className={`vc-root${noLike ? " no-like" : ""}`} onClick={(e) => e.stopPropagation()}>
 
         {/* Skip */}
         <div className="vc-slot">
@@ -176,20 +176,22 @@ export default function VideoControls({
           </div>
         </div>
 
-        {/* Like */}
-        <div className="vc-slot-center">
-          <div style={{ position: "relative" }}>
-            <button
-              className={`vc-btn vc-btn-like ${likeAnim ? "anim" : ""} ${liked ? "liked" : ""}`}
-              onClick={handleLike}
-              disabled={liked}
-              title="Like"
-            >
-              ♥
-            </button>
-            <span className="vc-label">Like</span>
+        {/* Like — opcional */}
+        {!hideLike && (
+          <div className="vc-slot-center">
+            <div style={{ position: "relative" }}>
+              <button
+                className={`vc-btn vc-btn-like ${likeAnim ? "anim" : ""} ${liked ? "liked" : ""}`}
+                onClick={handleLike}
+                disabled={liked}
+                title="Like"
+              >
+                ♥
+              </button>
+              <span className="vc-label">Like</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Streamer — opcional */}
         {!hideStreamer && (
