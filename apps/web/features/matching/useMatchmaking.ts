@@ -1,21 +1,25 @@
 "use client";
 
 /**
- * useMatchmaking — CON MODO
+ * useMatchmaking — CON MODO + CLEANUP AL DESMONTAR
  *
- * CAMBIO: El hook ahora recibe un parámetro `mode` (default "discover").
- * Ese modo se envía al servidor en cada "find-match" para que el matchmaking
- * solo emparejecon usuarios del mismo modo.
+ * FIXES:
  *
- * Uso:
- *   // En discover (solo skip + streamer, sin like)
- *   const { room, searching, findNewMatch } = useMatchmaking("discover");
+ * 1. MODO INCORRECTO AL NAVEGAR:
+ *    Al pasar de /discover a /modalidades/ligues, el hook de discover
+ *    se desmontaba sin emitir "leave-matchmaking", dejando al usuario
+ *    en la cola de "discover". El nuevo hook de ligues entonces emitía
+ *    "find-match" con "ligues" pero el servidor lo sacaba de la cola
+ *    equivocada (o encontraba el match en discover).
  *
- *   // En la modalidad Ligues (con like)
- *   const { room, searching, findNewMatch } = useMatchmaking("ligues");
+ *    Solución: emitir "leave-matchmaking" en el cleanup del useEffect
+ *    principal, garantizando que al desmontar el usuario salga de
+ *    cualquier cola en la que esté.
  *
- * Para agregar una nueva modalidad en el futuro, solo pasás el string
- * correspondiente — no hay que tocar el hook ni el servidor.
+ * 2. LISTENERS DUPLICADOS:
+ *    Con el socket singleton, si dos instancias del hook estaban vivas
+ *    a la vez (StrictMode o navegación rápida), los listeners se
+ *    acumulaban. Ahora el off() en el cleanup es simétrico al on().
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -52,7 +56,6 @@ export const useMatchmaking = (mode: MatchMode = "discover") => {
       isFindingMatch.current = true;
       setSearching(true);
       setRoom(null);
-      // ← CLAVE: enviamos el modo al servidor
       socket.emit("find-match", { mode });
     };
 
@@ -65,7 +68,7 @@ export const useMatchmaking = (mode: MatchMode = "discover") => {
     }
   }, [socket, mode]);
 
-  // ── Listeners ────────────────────────────────────────────────────────────
+  // ── Listeners + cleanup al desmontar ─────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -106,6 +109,14 @@ export const useMatchmaking = (mode: MatchMode = "discover") => {
       socket.off("error",        handleError);
       socket.off("partner-left", handlePartnerLeft);
       clearSearchTimeout();
+
+      // ← CLAVE: al desmontar, salimos de la cola del servidor.
+      // Esto evita que el usuario quede "fantasma" en la cola de un modo
+      // después de navegar a otra página o modalidad.
+      if (socket.connected) {
+        socket.emit("leave-matchmaking");
+        console.log(`[Matchmaking] 🚪 Desmontando hook (modo: ${mode}), leave emitido.`);
+      }
     };
   }, [socket, findNewMatch, mode]);
 

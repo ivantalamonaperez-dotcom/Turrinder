@@ -1,12 +1,20 @@
 /**
- * matchmaking.handler.ts — COLAS POR MODO
+ * matchmaking.handler.ts — COLAS POR MODO + ANTI-LOOP
  *
- * CAMBIO: En lugar de una sola `queue: string[]`, ahora hay una
- * `queues: Map<MatchMode, string[]>` donde cada modo tiene su propia
- * cola de espera. La lógica interna es idéntica a la versión anterior.
+ * FIXES:
  *
- * Para agregar un modo nuevo en el futuro, basta con extender el tipo
- * MatchMode y no tocar nada más.
+ * 1. ANTI-LOOP (causa del ciclo match/romper infinito con 2 usuarios):
+ *    Cuando A skipea a B → B recibe "partner-left" → B busca → encuentra A
+ *    → match → A skipea → loop eterno.
+ *
+ *    Solución: cooldown de pareja reciente. Después de un match,
+ *    ambos usuarios quedan en `recentPartners` durante RECENT_COOLDOWN_MS.
+ *    Al buscar nuevo match, se saltean candidatos recientes y se los
+ *    reintegra al final de la cola. Si no hay nadie más disponible,
+ *    el usuario queda en cola esperando que expire el cooldown o llegue
+ *    un tercero.
+ *
+ * 2. COLAS POR MODO: cada modo tiene su propia cola independiente.
  */
 
 import { Socket, Server } from "socket.io";
@@ -16,17 +24,18 @@ import { adManager } from "../../ad/ad.manager";
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 export type MatchMode = "discover" | "ligues" | string;
-// Usar `string` al final permite agregar modos nuevos sin tocar este archivo.
+
+// ── Config ───────────────────────────────────────────────────────────────────
+
+const RECENT_COOLDOWN_MS = 8_000;
+const MAX_SKIP_ATTEMPTS  = 10;
 
 // ── Estado ───────────────────────────────────────────────────────────────────
 
-/** Una cola por modo. Se crea lazy al primer usuario que la necesita. */
-const queues = new Map<MatchMode, string[]>();
-
-/** Qué modo está usando cada usuario actualmente. */
-const userMode = new Map<string, MatchMode>();
-
+const queues        = new Map<MatchMode, string[]>();
+const userMode      = new Map<string, MatchMode>();
 const activeMatches = new Map<string, string>();
+const recentPartners = new Map<string, Set<string>>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +70,20 @@ const breakActiveMatch = (io: Server, userId: string) => {
   }
 };
 
+const markRecentPartners = (a: string, b: string) => {
+  if (!recentPartners.has(a)) recentPartners.set(a, new Set());
+  if (!recentPartners.has(b)) recentPartners.set(b, new Set());
+  recentPartners.get(a)!.add(b);
+  recentPartners.get(b)!.add(a);
+  setTimeout(() => {
+    recentPartners.get(a)?.delete(b);
+    recentPartners.get(b)?.delete(a);
+  }, RECENT_COOLDOWN_MS);
+};
+
+const isRecentPartner = (userId: string, candidateId: string): boolean =>
+  recentPartners.get(userId)?.has(candidateId) ?? false;
+
 // ── Handler ──────────────────────────────────────────────────────────────────
 
 export const matchmakingHandler = {
@@ -68,7 +91,6 @@ export const matchmakingHandler = {
     const supabaseId = socket.handshake.query.userId as string;
     if (!supabaseId) return;
 
-    // ── GUARD: Bloquear si está en AD_MODE ──────────────────────────────
     if (!adManager.canMatchmake(supabaseId)) {
       console.warn(`[Matchmaking] 🚫 ${supabaseId} bloqueado (AD_MODE)`);
       return;
@@ -81,35 +103,50 @@ export const matchmakingHandler = {
 
     console.log(`[Matchmaking] 👤 ${supabaseId} buscando match en modo "${mode}"...`);
 
-    // Sanear la cola de este modo
+    // Sanear cola del modo
     const queue = getQueue(mode);
-    const cleanQueue = queue.filter((uid) => isSocketAlive(io, uid));
-    queues.set(mode, cleanQueue);
+    queues.set(mode, queue.filter((uid) => isSocketAlive(io, uid)));
 
-    if (cleanQueue.length > 0) {
-      const partnerUUID = cleanQueue.shift()!;
+    // Buscar candidato que no sea partner reciente
+    let foundPartner: string | null = null;
+    const skipped: string[] = [];
+    let attempts = 0;
 
-      if (!isSocketAlive(io, partnerUUID)) {
-        // El partner murió entre la limpieza y el shift — volver a esperar
-        cleanQueue.push(supabaseId);
-        socket.emit("waiting", { mode });
-        return;
+    while (queue.length > 0 && attempts < MAX_SKIP_ATTEMPTS) {
+      attempts++;
+      const candidate = queue.shift()!;
+
+      if (!isSocketAlive(io, candidate)) continue;
+
+      if (isRecentPartner(supabaseId, candidate)) {
+        skipped.push(candidate);
+        console.log(`[Matchmaking] ⏭️  Saltando partner reciente: ${candidate}`);
+        continue;
       }
 
-      const partnerSocketId = userSocketMap.get(partnerUUID)!;
-      activeMatches.set(supabaseId, partnerUUID);
-      activeMatches.set(partnerUUID, supabaseId);
+      foundPartner = candidate;
+      break;
+    }
 
-      socket.emit("match-found",          { partnerId: partnerUUID, isInitiator: true,  mode });
+    // Reintegrar los saltados al final
+    for (const uid of skipped) queue.push(uid);
+
+    if (foundPartner) {
+      const partnerSocketId = userSocketMap.get(foundPartner)!;
+      activeMatches.set(supabaseId, foundPartner);
+      activeMatches.set(foundPartner, supabaseId);
+      markRecentPartners(supabaseId, foundPartner);
+
+      socket.emit("match-found",           { partnerId: foundPartner, isInitiator: true,  mode });
       io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId, isInitiator: false, mode });
 
-      console.log(`[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId} <-> ${partnerUUID}`);
+      console.log(`[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId} <-> ${foundPartner}`);
       return;
     }
 
-    cleanQueue.push(supabaseId);
+    queue.push(supabaseId);
     socket.emit("waiting", { mode });
-    console.log(`[Matchmaking] ⏳ ${supabaseId} en cola "${mode}" (total: ${cleanQueue.length})`);
+    console.log(`[Matchmaking] ⏳ ${supabaseId} en cola "${mode}" (total: ${queue.length})`);
   },
 
   handleLeave: (socket: Socket, io: Server) => {
@@ -121,13 +158,9 @@ export const matchmakingHandler = {
     console.log(`[Matchmaking] 🚪 ${supabaseId} salió.`);
   },
 
-  /** Estadísticas por modo — útil para debugging o un panel de admin */
   getStats: () => {
     const stats: Record<string, number> = {};
     for (const [mode, q] of queues) stats[mode] = q.length;
-    return {
-      queues: stats,
-      activeMatches: activeMatches.size / 2,
-    };
+    return { queues: stats, activeMatches: activeMatches.size / 2 };
   },
 };
