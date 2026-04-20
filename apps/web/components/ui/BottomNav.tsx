@@ -27,6 +27,13 @@ export default function SideNav() {
       accent: "#54c7f8",
     },
     {
+      path: "/modalidades",
+      icon: "🎮",
+      label: "Modalidades",
+      desc: "Elegí cómo conectar",
+      accent: "#a78bfa",
+    },
+    {
       path: "/chat",
       icon: "💬",
       label: "Chats",
@@ -327,7 +334,6 @@ export default function SideNav() {
           flex: 1;
         }
 
-        /* ✅ FIXED: texto siempre blanco/legible */
         .snav-item-label {
           font-family: 'Syne', sans-serif;
           font-size: 15px;
@@ -341,7 +347,6 @@ export default function SideNav() {
           color: #f5f8ff;
         }
 
-        /* ✅ FIXED: descripción legible */
         .snav-item-desc {
           font-family: 'DM Sans', sans-serif;
           font-size: 11px;
@@ -365,6 +370,30 @@ export default function SideNav() {
         .snav-item.active .snav-item-dot {
           opacity: 1;
           transform: scale(1);
+        }
+
+        /* ── Separador de sección ── */
+        .snav-divider {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 4px 16px 2px;
+        }
+        .snav-divider-line {
+          flex: 1;
+          height: 1px;
+          background: rgba(84,199,248,0.10);
+        }
+        .snav-divider-label {
+          font-family: 'DM Sans', sans-serif;
+          font-size: 9px;
+          font-weight: 500;
+          letter-spacing: 1.8px;
+          text-transform: uppercase;
+          color: rgba(180,215,240,0.25);
+          white-space: nowrap;
         }
 
         /* ── Footer ── */
@@ -414,7 +443,7 @@ export default function SideNav() {
         <div className="snav-header">
           <div className="snav-logo-icon">
             <Image
-              src={img} // Pass the imported variable directly
+              src={img}
               alt="Turrinder logo"
               width={40}
               height={40}
@@ -431,26 +460,47 @@ export default function SideNav() {
         <div className="snav-items">
           {tabs.map((tab, i) => {
             const isActive = pathname === tab.path || pathname.startsWith(tab.path + "/");
+
             return (
-              <button
-                key={tab.path}
-                className={`snav-item ${isActive ? "active" : ""}`}
-                onClick={() => router.push(tab.path)}
-                style={{
-                  animationDelay: `${0.08 + i * 0.07}s`,
-                  "--item-accent": tab.accent,
-                  "--item-accent-bg": `${tab.accent}18`,
-                  "--item-accent-border": `${tab.accent}30`,
-                  "--item-accent-glow": `${tab.accent}40`,
-                } as React.CSSProperties}
-              >
-                <div className="snav-item-icon-wrap">{tab.icon}</div>
-                <div className="snav-item-text">
-                  <span className="snav-item-label">{tab.label}</span>
-                  <span className="snav-item-desc">{tab.desc}</span>
-                </div>
-                <div className="snav-item-dot" />
-              </button>
+              <>
+                {/* Separador antes de "Modalidades" */}
+                {tab.path === "/modalidades" && (
+                  <div key={`div-${tab.path}`} className="snav-divider">
+                    <div className="snav-divider-line" />
+                    <span className="snav-divider-label">Modos</span>
+                    <div className="snav-divider-line" />
+                  </div>
+                )}
+
+                <button
+                  key={tab.path}
+                  className={`snav-item ${isActive ? "active" : ""}`}
+                  onClick={() => router.push(tab.path)}
+                  style={{
+                    animationDelay: `${0.08 + i * 0.07}s`,
+                    "--item-accent": tab.accent,
+                    "--item-accent-bg": `${tab.accent}18`,
+                    "--item-accent-border": `${tab.accent}30`,
+                    "--item-accent-glow": `${tab.accent}40`,
+                  } as React.CSSProperties}
+                >
+                  <div className="snav-item-icon-wrap">{tab.icon}</div>
+                  <div className="snav-item-text">
+                    <span className="snav-item-label">{tab.label}</span>
+                    <span className="snav-item-desc">{tab.desc}</span>
+                  </div>
+                  <div className="snav-item-dot" />
+                </button>
+
+                {/* Separador después de "Modalidades", antes de "Chats" */}
+                {tab.path === "/modalidades" && (
+                  <div key={`div2-${tab.path}`} className="snav-divider">
+                    <div className="snav-divider-line" />
+                    <span className="snav-divider-label">Social</span>
+                    <div className="snav-divider-line" />
+                  </div>
+                )}
+              </>
             );
           })}
         </div>
