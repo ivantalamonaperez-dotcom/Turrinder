@@ -221,6 +221,7 @@ nav{
   padding:3px 10px;
   font-size:9px;
   font-weight:700;
+  
   letter-spacing:1.5px;
   color:rgba(143,212,255,0.8);
   text-transform:uppercase;
@@ -273,9 +274,10 @@ nav{
 }
 .hero-title .line1{display:block;color:var(--white-arg)}
 .hero-title .line2{
-  display:block;
   background:linear-gradient(135deg,var(--sky) 0%,#8fd4ff 50%,var(--sky2) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
 }
 
 .hero-sub{
@@ -285,27 +287,86 @@ nav{
 }
 
 .use-cases{
-  display:grid;grid-template-columns:repeat(4,1fr);gap:30px;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:22px;
   margin-bottom:10px;
   animation:fadeSlideUp 0.8s 0.35s both;
-  
 }
+
 .uc-card{
-  display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
-  padding:14px 10px;
-  background:var(--glass);border:1px solid var(--glass-b);
-  border-radius:16px;cursor:default;
-  transition:all 0.25s ease;
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  text-align:center;
+  padding:18px 14px;
+
+  background:linear-gradient(
+    145deg,
+    rgba(84,199,248,0.08),
+    rgba(84,199,248,0.02)
+  );
+
+  border:1px solid rgba(84,199,248,0.18);
+  border-radius:18px;
+  cursor:default;
+
+  backdrop-filter:blur(10px);
+
+  transition:all 0.3s cubic-bezier(0.16,1,0.3,1);
 }
+
+.uc-card::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:18px;
+  background:radial-gradient(
+    circle at 50% 0%,
+    rgba(84,199,248,0.18),
+    transparent 60%
+  );
+  opacity:0;
+  transition:opacity 0.3s ease;
+}
+
 .uc-card:hover{
-  background:rgba(84,199,248,0.09);
-  border-color:rgba(84,199,248,0.3);
-  transform:translateY(-3px);
-  box-shadow:0 8px 28px rgba(84,199,248,0.12);
+  transform:translateY(-6px) scale(1.02);
+  border-color:rgba(84,199,248,0.35);
+  box-shadow:
+    0 12px 40px rgba(84,199,248,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.uc-icon{font-size:22px;line-height:1}
-.uc-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--white-arg);letter-spacing:0.3px}
-.uc-desc{font-size:10px;color:var(--muted);line-height:1.4}
+
+.uc-card:hover::before{
+  opacity:1;
+}
+
+/* icono más pro */
+.uc-icon{
+  font-size:26px;
+  line-height:1;
+  filter:drop-shadow(0 0 6px rgba(84,199,248,0.5));
+}
+
+/* título más fuerte */
+.uc-title{
+  font-family:'Syne',sans-serif;
+  font-size:12px;
+  font-weight:800;
+  color:var(--white-arg);
+  letter-spacing:0.4px;
+}
+
+/* descripción más legible */
+.uc-desc{
+  font-size:11px;
+  color:rgba(180,215,240,0.55);
+  line-height:1.5;
+  max-width:120px;
+}
 
 @keyframes fadeSlideUp{
   from{opacity:0;transform:translateY(26px)}
@@ -636,6 +697,16 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
         </div>
         <div className="divider-line" /><span className="divider-text">o</span><div className="divider-line" />
       </div>
+      <button
+  className="btn-ghost"
+  onClick={() => {
+    onToast("Entrando como invitado... ⚡");
+    setTimeout(() => router.push("/discover"), 1000);
+  }}
+>
+  <div className="dot-sky" />
+  Entrar como invitado (sin cuenta)
+</button>
     </div>
   );
 }

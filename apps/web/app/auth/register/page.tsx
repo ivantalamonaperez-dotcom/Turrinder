@@ -1,1400 +1,860 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-// import { supabase } from "@/services/supabase.client";
-// import { useRouter } from "next/navigation";
+import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import img from "../Images/logo.png";
 
-// ── Datos de opciones ──────────────────────────────────────
-const INTERESTS = [
-  "🎵 Música", "🎮 Gaming", "✈️ Viajes", "📚 Libros", "🎬 Cine",
-  "🏋️ Fitness", "🍕 Gastronomía", "🎨 Arte", "📸 Fotografía", "🌿 Naturaleza",
-  "💻 Tecnología", "🎭 Teatro", "🏄 Surf", "🐕 Mascotas", "🧘 Yoga",
-  "🎸 Guitarra", "⚽ Fútbol", "🏀 Básquet", "🎤 Karaoke", "🎲 Juegos de mesa",
-];
+
 
 const LOOKING_FOR = [
-  { id: "friends", label: "Amigos",     emoji: "👋", desc: "Conectar sin presiones" },
-  { id: "dates",   label: "Citas",      emoji: "❤️", desc: "Conocer a alguien especial" },
-  { id: "chat",    label: "Charlar",    emoji: "💬", desc: "Conversaciones genuinas" },
-  { id: "network", label: "Networking", emoji: "🤝", desc: "Crecer juntos" },
+  { id:"friends", label:"Amigos",    emoji:"👋", desc:"Sin presiones" },
+  { id:"dates",   label:"Citas",     emoji:"❤️", desc:"Algo especial" },
+  { id:"chat",    label:"Charlar",   emoji:"💬", desc:"Ideas genuinas" },
+  { id:"debate",  label:"Debates",   emoji:"🔥", desc:"Perspectivas" },
+  { id:"network", label:"Network",   emoji:"🤝", desc:"Crecer juntos" },
+  { id:"stream",  label:"Streams",   emoji:"🎙️", desc:"Audiencia" },
 ];
 
-const STEPS = [
-  { id: "account",  label: "Cuenta",    emoji: "🔐", num: "01", desc: "Tu email y contraseña" },
-  { id: "identity", label: "Identidad", emoji: "✨", num: "02", desc: "Nombre, edad, bio" },
-  { id: "photos",   label: "Fotos",     emoji: "📸", num: "03", desc: "Subí hasta 4 fotos" },
-  { id: "vibe",     label: "Vibe",      emoji: "🔥", num: "04", desc: "Intereses y objetivos" },
-];
+const GENDERS = ["Hombre","Mujer","No binario","Prefiero no decir"];
 
 type Photo = { file: File; url: string };
 
-export default function RegisterPage() {
-  // const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
+function pwStrength(p: string) {
+  if (!p) return 0;
+  let s = 0;
+  if (p.length >= 6)  s++;
+  if (p.length >= 10) s++;
+  if (/[A-Z]/.test(p)) s++;
+  if (/[0-9]/.test(p)) s++;
+  if (/[^A-Za-z0-9]/.test(p)) s++;
+  return s;
+}
+const STR_LBL = ["","Débil","Regular","Buena","Fuerte","Muy fuerte"];
+const STR_CLR = ["","#ff4466","#ff8800","#f5c518","#44cc88","#00e676"];
 
+// ─── CSS ─────────────────────────────────────────────────────
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --sky:#54c7f8;
+  --sky2:#3b9eda;
+  --sky3:#1a6fa8;
+  --bg:#030a14;
+  --bg2:#050f1e;
+  --card-bg:rgba(8,18,38,0.92);
+  --text:rgba(240,248,255,0.92);
+  --muted:rgba(180,215,240,0.5);
+  --w:#f5f8ff;
+}
+html,body{height:100%;overflow-x:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+
+/* ── FULL BG ── */
+.rg-bg{position:fixed;inset:0;z-index:0;background:var(--bg);overflow:hidden;}
+.rg-bg-grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(84,199,248,0.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(84,199,248,0.04) 1px,transparent 1px);
+  background-size:60px 60px;
+  mask-image:radial-gradient(ellipse 80% 80% at 50% 50%,black 30%,transparent 100%);
+}
+.rg-blob{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none}
+.rg-blob-1{width:700px;height:700px;background:radial-gradient(circle,rgba(84,199,248,0.12) 0%,transparent 70%);top:-200px;left:-200px;animation:blobFloat1 20s ease-in-out infinite alternate;}
+.rg-blob-2{width:500px;height:500px;background:radial-gradient(circle,rgba(59,158,218,0.09) 0%,transparent 70%);bottom:-150px;right:-150px;animation:blobFloat2 26s ease-in-out infinite alternate;}
+.rg-blob-3{width:300px;height:300px;background:radial-gradient(circle,rgba(26,111,168,0.07) 0%,transparent 70%);top:50%;left:60%;animation:blobFloat3 18s ease-in-out infinite alternate;}
+@keyframes blobFloat1{from{transform:translate(0,0)}to{transform:translate(80px,100px) scale(1.1)}}
+@keyframes blobFloat2{from{transform:translate(0,0)}to{transform:translate(-60px,-80px) scale(1.08)}}
+@keyframes blobFloat3{from{transform:translate(0,0)}to{transform:translate(-40px,60px)}}
+
+/* ══ LAYOUT ══════════════════════════════════════════════════ */
+.rg-root{
+  position:relative;z-index:1;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:32px 24px;
+}
+
+.rg-inner{
+  display:flex;
+  align-items:center;
+  gap:0;
+  width:100%;
+  max-width:960px;
+}
+
+/* ── LEFT PANEL ── */
+.rg-left{
+  flex:1 1 0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:0 48px 0 0;
+  min-width:0;
+}
+
+/* Logo inside left panel */
+.rg-logo{
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:32px;
+}
+.rg-logo-icon{
+  width:38px;height:38px;border-radius:10px;
+  overflow:hidden;
+  border:1px solid rgba(84,199,248,0.22);
+  display:flex;align-items:center;justify-content:center;
+}
+.rg-logo-icon img{width:100%;height:100%;object-fit:contain;}
+.rg-logo-wordmark{
+  font-family:'Syne',sans-serif;font-size:22px;font-weight:800;
+  letter-spacing:-0.7px;color:var(--w);
+}
+.rg-logo-wordmark em{
+  font-style:normal;
+  background:linear-gradient(120deg,var(--sky),#a8e6ff 55%,var(--sky2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+
+/* Hero text */
+.rg-hero-badge{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:5px 16px;margin-bottom:22px;
+  background:rgba(84,199,248,0.07);
+  border:1px solid rgba(84,199,248,0.18);
+  border-radius:100px;
+  font-size:11px;font-weight:600;letter-spacing:.5px;
+  color:rgba(143,212,255,.8);
+}
+.rg-live-dot{
+  width:6px;height:6px;border-radius:50%;background:#22c55e;
+  animation:livePulse 2s infinite;
+}
+@keyframes livePulse{
+  0%{box-shadow:0 0 0 0 rgba(34,197,94,.7)}
+  70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}
+  100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}
+}
+.rg-hero-title{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(30px,3.2vw,50px);
+  font-weight:800;letter-spacing:-1.5px;line-height:1.06;
+  color:var(--w);margin-bottom:18px;
+}
+.rg-hero-title span{
+  background:linear-gradient(135deg,var(--sky) 0%,#8fd4ff 50%,var(--sky2) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.rg-hero-sub{
+  font-size:15px;color:var(--muted);font-weight:300;line-height:1.75;
+  max-width:400px;margin-bottom:48px;
+}
+
+/* Feature pills */
+.rg-features{display:flex;flex-direction:column;gap:14px;}
+.rg-feat{
+  display:flex;align-items:center;gap:14px;
+}
+.rg-feat-icon{
+  width:38px;height:38px;border-radius:10px;flex-shrink:0;
+  background:rgba(84,199,248,0.06);
+  border:1px solid rgba(84,199,248,0.12);
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;
+}
+.rg-feat-text{font-size:13.5px;color:rgba(180,215,240,0.6);font-weight:400;line-height:1.4;}
+.rg-feat-text strong{color:rgba(200,235,255,0.85);font-weight:600;}
+
+/* Divider */
+.rg-divider-v{
+  width:1px;
+  background:linear-gradient(to bottom,transparent,rgba(84,199,248,0.1) 20%,rgba(84,199,248,0.1) 80%,transparent);
+  flex-shrink:0;
+  align-self:stretch;
+  margin:0 0;
+}
+
+/* ── RIGHT PANEL ── */
+.rg-right{
+  flex:0 0 380px;
+}
+
+/* ── CARD ── */
+.rg-card{
+  width:100%;
+  background:var(--card-bg);
+  border:1px solid rgba(84,199,248,0.12);
+  border-radius:22px;
+  padding:26px 26px 22px;
+  position:relative;
+  overflow:hidden;
+  backdrop-filter:blur(32px);
+  box-shadow:0 0 0 1px rgba(84,199,248,0.06),0 24px 60px rgba(3,10,20,0.8),0 8px 24px rgba(84,199,248,0.06);
+  animation:cardAppear .5s cubic-bezier(0.34,1.15,0.64,1) both;
+}
+@keyframes cardAppear{
+  from{opacity:0;transform:translateY(20px) scale(0.97)}
+  to  {opacity:1;transform:translateY(0) scale(1)}
+}
+.rg-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(84,199,248,0.35),transparent);
+  pointer-events:none;
+}
+
+/* Card top badge */
+.rg-card-badge{
+  display:flex;align-items:center;gap:8px;
+  margin-bottom:22px;
+}
+.rg-card-badge-icon{
+  width:34px;height:34px;border-radius:9px;
+  background:linear-gradient(145deg,rgba(84,199,248,0.14),rgba(59,158,218,0.05));
+  border:1px solid rgba(84,199,248,0.22);
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;
+}
+.rg-card-badge-text{font-size:13px;font-weight:700;color:rgba(143,212,255,0.6);font-family:'Syne',sans-serif;}
+.rg-card-badge-sub{font-size:10px;color:rgba(84,199,248,0.3);letter-spacing:.3px;}
+
+/* Step chips inside card */
+.rg-chips{display:flex;gap:0;margin-bottom:24px;}
+.rg-chip{
+  flex:1;text-align:center;
+  padding:7px 4px;
+  font-size:11px;font-weight:700;
+  color:rgba(84,199,248,0.28);letter-spacing:.2px;
+  background:rgba(84,199,248,0.03);
+  border:1px solid rgba(84,199,248,0.1);
+  cursor:default;transition:all .25s;
+  font-family:'Syne',sans-serif;
+}
+.rg-chip:first-child{border-radius:8px 0 0 8px;border-right:none;}
+.rg-chip:last-child{border-radius:0 8px 8px 0;border-left:none;}
+.rg-chip:not(:first-child):not(:last-child){border-left:none;}
+.rg-chip.c-done{background:rgba(84,199,248,0.08);color:rgba(84,199,248,.55);}
+.rg-chip.c-active{
+  background:linear-gradient(135deg,rgba(84,199,248,0.16),rgba(59,158,218,0.1));
+  border-color:rgba(84,199,248,0.4);color:var(--sky);
+  box-shadow:inset 0 0 0 1px rgba(84,199,248,0.08);z-index:1;
+}
+
+/* Progress bar */
+.rg-prog-wrap{height:2px;background:rgba(84,199,248,0.07);border-radius:100px;margin-bottom:26px;overflow:hidden;}
+.rg-prog-fill{height:100%;border-radius:100px;background:linear-gradient(90deg,var(--sky),var(--sky2));transition:width .5s cubic-bezier(.4,0,.2,1);}
+
+/* Card typography */
+.rg-h2{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(20px,2vw,24px);
+  font-weight:800;letter-spacing:-0.6px;line-height:1.1;
+  color:var(--w);margin-bottom:6px;
+}
+.rg-h2 em{
+  font-style:normal;
+  background:linear-gradient(135deg,var(--sky),#a8e6ff 55%,var(--sky2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.rg-p{font-size:12.5px;color:var(--muted);line-height:1.6;font-weight:300;margin-bottom:20px;}
+
+/* Fields */
+.rg-fields{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;}
+.rg-field{display:flex;flex-direction:column;gap:5px;}
+.rg-label{
+  font-size:9.5px;font-weight:600;letter-spacing:2px;text-transform:uppercase;
+  color:rgba(84,199,248,0.35);
+  display:flex;align-items:center;gap:6px;
+}
+.rg-req{color:var(--sky);font-size:12px;line-height:1;}
+.rg-badge-opt{
+  font-size:8px;letter-spacing:1px;text-transform:uppercase;font-weight:700;
+  padding:2px 6px;border-radius:4px;
+  background:rgba(84,199,248,0.06);border:1px solid rgba(84,199,248,0.12);
+  color:rgba(84,199,248,0.25);
+}
+.rg-iw{position:relative;}
+.rg-input{
+  width:100%;
+  background:rgba(84,199,248,0.04);
+  border:1.5px solid rgba(84,199,248,0.1);
+  border-radius:12px;
+  padding:11px 15px;
+  font-size:13.5px;font-family:'Inter',sans-serif;font-weight:400;
+  color:var(--w);outline:none;
+  transition:border-color .2s,box-shadow .2s,background .2s;
+  -webkit-appearance:none;line-height:1.5;
+}
+.rg-input::placeholder{color:rgba(84,199,248,0.16);font-size:13px;}
+.rg-input:focus{
+  border-color:rgba(84,199,248,0.45);
+  background:rgba(84,199,248,0.06);
+  box-shadow:0 0 0 3px rgba(84,199,248,0.08);
+}
+.rg-input.has-icon{padding-right:44px;}
+textarea.rg-input{resize:none;}
+.rg-icon-btn{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  background:none;border:none;cursor:pointer;
+  color:rgba(84,199,248,0.22);font-size:15px;padding:4px;
+  display:flex;align-items:center;justify-content:center;
+  transition:color .15s;
+}
+.rg-icon-btn:hover{color:rgba(84,199,248,.65);}
+.rg-char-ct{text-align:right;font-size:10px;color:rgba(84,199,248,0.2);margin-top:-2px;}
+.rg-str{display:flex;align-items:center;gap:8px;margin-top:4px;}
+.rg-str-bars{display:flex;gap:3px;flex:1;}
+.rg-str-bar{flex:1;height:2px;border-radius:100px;background:rgba(84,199,248,0.07);transition:background .3s;}
+.rg-str-txt{font-size:10.5px;font-weight:600;min-width:64px;text-align:right;}
+.rg-match{font-size:10.5px;font-weight:500;margin-top:3px;display:flex;align-items:center;gap:4px;}
+.rg-2col{display:grid;grid-template-columns:1fr 80px;gap:10px;align-items:start;}
+.rg-gender{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+.rg-gpill{
+  padding:8px 4px;text-align:center;
+  background:rgba(84,199,248,0.04);
+  border:1.5px solid rgba(84,199,248,0.09);
+  border-radius:9px;
+  font-size:11px;font-weight:600;
+  color:var(--muted);cursor:pointer;
+  transition:all .18s;font-family:'Inter',sans-serif;
+}
+.rg-gpill:hover{background:rgba(84,199,248,.08);border-color:rgba(84,199,248,.25);color:rgba(84,199,248,.75);}
+.rg-gpill.on{background:rgba(84,199,248,.1);border-color:rgba(84,199,248,.42);color:var(--sky);}
+
+/* Photo wall */
+.rg-photo-wall{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;}
+.rg-photo-slot{
+  aspect-ratio:3/4;border-radius:10px;overflow:hidden;position:relative;
+  background:rgba(84,199,248,0.03);
+  border:1.5px dashed rgba(84,199,248,0.1);
+  cursor:pointer;transition:all .2s;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+}
+.rg-photo-slot:hover{border-color:rgba(84,199,248,.32);background:rgba(84,199,248,.06);}
+.rg-photo-slot.filled{border-style:solid;border-color:rgba(84,199,248,.1);cursor:default;}
+.rg-photo-slot img{width:100%;height:100%;object-fit:cover;display:block;}
+.rg-photo-add{font-size:18px;opacity:.25;}
+.rg-photo-add-lbl{font-size:9px;color:rgba(84,199,248,.2);text-align:center;line-height:1.3;padding:0 4px;font-weight:500;}
+.rg-photo-main-badge{
+  position:absolute;bottom:4px;left:3px;right:3px;
+  background:linear-gradient(135deg,rgba(84,199,248,0.9),rgba(59,158,218,0.85));
+  color:#02080f;font-size:7px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+  padding:3px 4px;border-radius:5px;text-align:center;z-index:2;
+}
+.rg-photo-del{
+  position:absolute;top:4px;right:4px;
+  width:18px;height:18px;border-radius:50%;
+  background:rgba(2,8,24,0.8);backdrop-filter:blur(6px);
+  border:1px solid rgba(84,199,248,0.15);
+  color:rgba(200,235,255,.7);font-size:8px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;z-index:2;
+  transition:background .15s;
+}
+.rg-photo-del:hover{background:rgba(59,158,218,.8);color:#02080f;}
+.rg-photo-n{
+  position:absolute;top:4px;left:4px;
+  width:16px;height:16px;border-radius:4px;
+  background:rgba(2,8,24,.65);
+  border:1px solid rgba(84,199,248,.12);
+  color:rgba(84,199,248,.55);font-size:8px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;z-index:2;
+}
+.rg-photo-note{
+  display:flex;align-items:flex-start;gap:7px;
+  padding:8px 11px;
+  background:rgba(84,199,248,0.04);
+  border:1px solid rgba(84,199,248,0.09);
+  border-radius:9px;margin-bottom:16px;
+}
+.rg-photo-note-txt{font-size:10.5px;color:rgba(143,212,255,0.35);line-height:1.5;font-weight:400;}
+
+/* Looking for */
+.rg-lf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:18px;}
+.rg-lf{
+  padding:12px 8px;
+  background:rgba(84,199,248,0.04);
+  border:1.5px solid rgba(84,199,248,0.09);
+  border-radius:13px;cursor:pointer;
+  transition:all .2s;position:relative;
+  text-align:left;overflow:hidden;
+}
+.rg-lf:hover{border-color:rgba(84,199,248,.26);background:rgba(84,199,248,.07);}
+.rg-lf.on{background:rgba(84,199,248,.09);border-color:rgba(84,199,248,.42);}
+.rg-lf-emo{font-size:18px;margin-bottom:4px;display:block;}
+.rg-lf-lbl{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:rgba(180,215,240,.55);transition:color .2s;line-height:1.2;}
+.rg-lf.on .rg-lf-lbl{color:var(--w);}
+.rg-lf-desc{font-size:9px;color:rgba(84,199,248,.22);line-height:1.3;margin-top:2px;}
+.rg-lf.on .rg-lf-desc{color:rgba(84,199,248,.48);}
+.rg-lf-ck{
+  position:absolute;top:6px;right:6px;
+  width:14px;height:14px;border-radius:50%;
+  background:linear-gradient(135deg,var(--sky),var(--sky2));
+  display:flex;align-items:center;justify-content:center;
+  font-size:7px;color:#02080f;
+  opacity:0;transform:scale(.4) rotate(-40deg);
+  transition:all .26s cubic-bezier(0.34,1.4,0.64,1);
+  box-shadow:0 2px 8px rgba(84,199,248,.45);
+}
+.rg-lf.on .rg-lf-ck{opacity:1;transform:scale(1) rotate(0deg);}
+
+/* Tags */
+.rg-sec-divider{display:flex;align-items:center;gap:10px;margin:4px 0 14px;}
+.rg-div-ln{flex:1;height:1px;background:rgba(84,199,248,.07);}
+.rg-div-txt{font-size:9px;font-weight:700;letter-spacing:2px;color:rgba(84,199,248,.2);text-transform:uppercase;}
+.rg-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:18px;}
+.rg-tag{
+  padding:5px 11px;
+  background:rgba(84,199,248,0.04);
+  border:1.5px solid rgba(84,199,248,0.09);
+  border-radius:100px;
+  color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;
+  transition:all .16s;font-family:'Inter',sans-serif;white-space:nowrap;
+}
+.rg-tag:hover{background:rgba(84,199,248,.09);border-color:rgba(84,199,248,.28);color:rgba(84,199,248,.85);}
+.rg-tag.on{background:rgba(84,199,248,.11);border-color:rgba(84,199,248,.44);color:var(--sky);font-weight:600;}
+.rg-sec-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.rg-sec-ttl{font-size:9.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:rgba(84,199,248,.35);}
+.rg-sec-ct{font-size:11px;color:var(--sky);font-weight:600;}
+
+/* Actions */
+.rg-actions{display:flex;flex-direction:column;gap:8px;}
+.rg-btn{
+  width:100%;padding:13px 24px;
+  background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 55%,var(--sky3) 100%);
+  border:none;border-radius:12px;
+  color:#02080f;
+  font-family:'Syne',sans-serif;font-size:14px;font-weight:800;letter-spacing:.2px;
+  cursor:pointer;
+  transition:all .22s cubic-bezier(0.16,1,0.3,1);
+  box-shadow:0 8px 28px rgba(84,199,248,.34),inset 0 1px 0 rgba(255,255,255,.18);
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  position:relative;overflow:hidden;
+}
+.rg-btn::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.16),transparent 55%);
+  pointer-events:none;
+}
+.rg-btn:hover:not(:disabled){
+  transform:translateY(-2px);
+  box-shadow:0 14px 40px rgba(84,199,248,.48),inset 0 1px 0 rgba(255,255,255,.22);
+}
+.rg-btn:active{transform:translateY(0);}
+.rg-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none;}
+.rg-btn-ghost{
+  width:100%;padding:11px 20px;
+  background:transparent;
+  border:1.5px solid rgba(84,199,248,.1);
+  border-radius:12px;
+  color:var(--muted);
+  font-family:'Inter',sans-serif;font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .2s;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.rg-btn-ghost:hover{background:rgba(84,199,248,.05);border-color:rgba(84,199,248,.24);color:rgba(143,212,255,.75);}
+.rg-cta{text-align:center;font-size:12px;color:rgba(84,199,248,.28);padding-top:2px;}
+.rg-cta a{color:var(--sky);text-decoration:none;font-weight:600;cursor:pointer;}
+.rg-cta a:hover{text-decoration:underline;}
+.rg-terms{text-align:center;font-size:10.5px;color:rgba(84,199,248,.15);line-height:1.8;margin-top:14px;}
+.rg-terms a{color:rgba(84,199,248,.3);text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
+.rg-terms a:hover{color:var(--sky);}
+
+/* Scrollable card content */
+.rg-card-scroll{
+  overflow-y:auto;
+  padding-right:2px;
+}
+.rg-card-scroll::-webkit-scrollbar{width:3px;}
+.rg-card-scroll::-webkit-scrollbar-track{background:transparent;}
+.rg-card-scroll::-webkit-scrollbar-thumb{background:rgba(84,199,248,.1);border-radius:100px;}
+
+/* ── RESPONSIVE: stack on mobile ── */
+@media(max-width:860px){
+  .rg-inner{flex-direction:column;gap:32px;}
+  .rg-left{padding:0;}
+  .rg-divider-v{display:none;}
+  .rg-right{flex:none;width:100%;}
+  .rg-hero-sub{max-width:100%;}
+  .rg-logo{margin-bottom:24px;}
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
+input[type=number]{-moz-appearance:textfield;}
+
+.rg-error{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 14px;margin-bottom:14px;
+  background:rgba(255,60,80,0.08);
+  border:1.5px solid rgba(255,60,80,0.22);
+  border-radius:11px;
+  font-size:12.5px;color:rgba(255,150,160,0.95);
+  font-weight:500;line-height:1.4;
+  animation:errorIn .2s ease both;
+}
+@keyframes errorIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.rg-error-icon{font-size:15px;flex-shrink:0;}
+`;
+
+const STEPS = [
+  { label:"Cuenta", emoji:"🔐" },
+  { label:"Perfil",  emoji:"✨" },
+  { label:"Vibe",    emoji:"🔥" },
+];
+
+export default function RegisterPage() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   const [step, setStep]       = useState(0);
   const [loading, setLoading] = useState(false);
-  const [userId, setUserId]   = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [animKey, setAnimKey] = useState(0);
+  const [error, setError]     = useState("");
 
-  useEffect(() => { setMounted(true); }, []);
+  const goTo = (n: number) => { setStep(n); setAnimKey(k => k + 1); setError(""); };
+  const err  = (msg: string) => { setError(msg); };
 
   // Step 0
-  const [email, setEmail]           = useState("");
-  const [password, setPassword]     = useState("");
-  const [passConf, setPassConf]     = useState("");
-  const [showPass, setShowPass]     = useState(false);
-  const [showPassConf, setShowPassConf] = useState(false);
+  const [email, setEmail]       = useState("");
+  const [pass, setPass]         = useState("");
+  const [conf, setConf]         = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [showConf, setShowConf] = useState(false);
 
   // Step 1
-  const [name, setName]   = useState("");
-  const [age, setAge]     = useState("");
-  const [bio, setBio]     = useState("");
+  const [name, setName]     = useState("");
+  const [age, setAge]       = useState("");
   const [gender, setGender] = useState("");
-
-  // Step 2
+  const [bio, setBio]       = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]);
 
-  // Step 3
-  const [interests, setInterests]   = useState<string[]>([]);
-  const [lookingFor, setLookingFor] = useState<string[]>([]);
+  // Step 2
+  const [lookingFor, setLF] = useState<string[]>([]);
+  const [interests, setInt] = useState<string[]>([]);
 
-  // ── Handlers ────────────────────────────────────────────
-  const handleCreateAccount = async () => {
-    if (!email || !password) return alert("Completá email y contraseña");
-    if (password !== passConf) return alert("Las contraseñas no coinciden");
-    if (password.length < 6) return alert("La contraseña debe tener al menos 6 caracteres");
+  const str  = pwStrength(pass);
+  const prog = ((step + 1) / STEPS.length) * 100;
+
+  const handleAccount = () => {
+    if (!email || !pass) return err("Completá email y contraseña.");
+    if (pass !== conf) return err("Las contraseñas no coinciden.");
+    if (pass.length < 6) return err("La contraseña debe tener al menos 6 caracteres.");
+    setError("");
     setLoading(true);
-    // const { data, error } = await supabase.auth.signUp({ email, password });
-    // if (error) { alert(error.message); setLoading(false); return; }
-    // setUserId(data.user?.id || null);
-    setTimeout(() => { setLoading(false); setStep(1); }, 800);
+    setTimeout(() => { setLoading(false); goTo(1); }, 700);
   };
 
-  const handlePhotoAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfile = () => {
+    if (!name.trim()) return err("Agregá tu nombre.");
+    if (!age || parseInt(age) < 18) return err("Debés tener al menos 18 años.");
+    if (photos.length === 0) return err("Subí al menos una foto.");
+    goTo(2);
+  };
+
+  const handleFinish = () => {
+    setLoading(true);
+    setTimeout(() => { setLoading(false); router.push("/discover"); }, 1000);
+  };
+
+  const addPhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const remaining = 4 - photos.length;
-    const toAdd = files.slice(0, remaining);
-    const newPhotos: Photo[] = toAdd.map(f => ({ file: f, url: URL.createObjectURL(f) }));
-    setPhotos(prev => [...prev, ...newPhotos]);
+    const rem = 4 - photos.length;
+    const add: Photo[] = files.slice(0, rem).map(f => ({ file: f, url: URL.createObjectURL(f) }));
+    setPhotos(p => [...p, ...add]);
     e.target.value = "";
   };
 
-  const removePhoto = (idx: number) => setPhotos(prev => prev.filter((_, i) => i !== idx));
-
-  const toggleInterest = (item: string) => {
-    setInterests(prev =>
-      prev.includes(item) ? prev.filter(i => i !== item) : prev.length < 8 ? [...prev, item] : prev
-    );
-  };
-
-  const toggleLookingFor = (id: string) => {
-    setLookingFor(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const handleFinish = async () => {
-    if (!name.trim()) return alert("Agregá tu nombre");
-    if (!age || parseInt(age) < 18) return alert("Debés tener al menos 18 años");
-    if (photos.length === 0) return alert("Agregá al menos una foto");
-    setLoading(true);
-    setTimeout(() => { setLoading(false); alert("¡Perfil creado con éxito! 🎉"); }, 1200);
-    // router.push("/discover");
-  };
-
-  const passwordStrength = (p: string) => {
-    if (!p) return 0;
-    let s = 0;
-    if (p.length >= 6) s++;
-    if (p.length >= 10) s++;
-    if (/[A-Z]/.test(p)) s++;
-    if (/[0-9]/.test(p)) s++;
-    if (/[^A-Za-z0-9]/.test(p)) s++;
-    return s;
-  };
-  const strength = passwordStrength(password);
-  const strengthLabel = ["", "Débil", "Regular", "Buena", "Fuerte", "Muy fuerte"][strength];
-  const strengthColor = ["", "#ff4466", "#ff8800", "#f5c518", "#44cc88", "#00e676"][strength];
-
-  const progress = ((step + 1) / STEPS.length) * 100;
-
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Syne:wght@700;800&display=swap');
+      <style>{CSS}</style>
 
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-          --red:     #E8294A;
-          --red-2:   #FF5E6C;
-          --red-3:   #FF8A96;
-          --orange:  #FF7A3D;
-          --amber:   #FFB347;
-          --bg:      #0F0D15;
-          --bg-2:    #160F1E;
-          --card:    rgba(255,255,255,0.055);
-          --card-h:  rgba(255,255,255,0.09);
-          --border:  rgba(255,255,255,0.09);
-          --border-f:rgba(232,41,74,0.55);
-          --text:    #F0EEF7;
-          --muted:   rgba(240,238,247,0.45);
-          --faint:   rgba(240,238,247,0.18);
-          --display: 'Syne', sans-serif;
-          --body:    'Plus Jakarta Sans', sans-serif;
-          --r-sm:    10px;
-          --r-md:    14px;
-          --r-lg:    18px;
-          --r-xl:    24px;
-        }
-
-        html, body { height: 100%; }
-
-        .rg-root {
-          min-height: 100vh;
-          background: var(--bg);
-          display: flex;
-          font-family: var(--body);
-          color: var(--text);
-          position: relative;
-          overflow-x: hidden;
-        }
-
-        /* Ambient background blobs */
-        .rg-ambient {
-          position: fixed;
-          inset: 0;
-          pointer-events: none;
-          z-index: 0;
-          overflow: hidden;
-        }
-        .rg-blob {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(90px);
-          opacity: 0.18;
-        }
-        .rg-blob-1 {
-          width: 600px; height: 600px;
-          background: radial-gradient(circle, #E8294A, transparent 70%);
-          top: -200px; left: -180px;
-          animation: floatBlob1 14s ease-in-out infinite alternate;
-        }
-        .rg-blob-2 {
-          width: 450px; height: 450px;
-          background: radial-gradient(circle, #FF7A3D, transparent 70%);
-          bottom: -120px; right: -100px;
-          opacity: 0.12;
-          animation: floatBlob2 18s ease-in-out infinite alternate;
-        }
-        .rg-blob-3 {
-          width: 300px; height: 300px;
-          background: radial-gradient(circle, #a855f7, transparent 70%);
-          top: 50%; right: 10%;
-          opacity: 0.07;
-          animation: floatBlob3 22s ease-in-out infinite alternate;
-        }
-        @keyframes floatBlob1 {
-          from { transform: translate(0,0) scale(1); }
-          to   { transform: translate(60px, 80px) scale(1.12); }
-        }
-        @keyframes floatBlob2 {
-          from { transform: translate(0,0) scale(1); }
-          to   { transform: translate(-50px, -60px) scale(1.1); }
-        }
-        @keyframes floatBlob3 {
-          from { transform: translate(0,0); }
-          to   { transform: translate(30px, -80px); }
-        }
-
-        /* ── SIDEBAR ── */
-        .rg-sidebar {
-          display: none;
-          width: 320px;
-          flex-shrink: 0;
-          position: sticky;
-          top: 0;
-          height: 100vh;
-          padding: 44px 36px;
-          flex-direction: column;
-          justify-content: space-between;
-          border-right: 1px solid var(--border);
-          background: rgba(232,41,74,0.025);
-          z-index: 1;
-          overflow: hidden;
-        }
-        @media (min-width: 900px) { .rg-sidebar { display: flex; } }
-
-        .rg-sidebar-shine {
-          position: absolute;
-          top: 0; left: 0; right: 0;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(232,41,74,0.5), transparent);
-        }
-
-        /* Brand */
-        .rg-brand-logo {
-          font-family: var(--display);
-          font-size: 22px;
-          font-weight: 800;
-          color: white;
-          letter-spacing: -0.5px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-bottom: 36px;
-        }
-        .rg-logo-mark {
-          width: 34px; height: 34px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, var(--red), var(--orange));
-          display: flex; align-items: center; justify-content: center;
-          font-size: 16px;
-          box-shadow: 0 4px 16px rgba(232,41,74,0.45);
-        }
-
-        .rg-tagline {
-          font-family: var(--display);
-          font-size: 28px;
-          font-weight: 800;
-          line-height: 1.15;
-          letter-spacing: -0.8px;
-          color: white;
-          margin-bottom: 10px;
-        }
-        .rg-tagline-grad {
-          background: linear-gradient(135deg, var(--red-2), var(--orange), var(--amber));
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-        .rg-brand-sub {
-          font-size: 13px;
-          color: var(--muted);
-          line-height: 1.75;
-          font-weight: 400;
-        }
-
-        /* Steps list */
-        .rg-sidebar-steps {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .rg-ss-step {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 11px 13px;
-          border-radius: var(--r-md);
-          transition: background 0.25s;
-          position: relative;
-        }
-        .rg-ss-step.active { background: rgba(232,41,74,0.1); }
-        .rg-ss-connector {
-          position: absolute;
-          left: 25px;
-          top: 42px;
-          width: 1px;
-          height: 18px;
-          background: var(--border);
-        }
-        .rg-ss-num {
-          width: 32px; height: 32px;
-          border-radius: 9px;
-          border: 1.5px solid var(--border);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 10px;
-          font-weight: 700;
-          color: var(--faint);
-          transition: all 0.3s;
-          flex-shrink: 0;
-          font-family: var(--display);
-        }
-        .rg-ss-step.done .rg-ss-num {
-          background: linear-gradient(135deg, var(--red), var(--orange));
-          border-color: transparent;
-          color: white;
-          box-shadow: 0 2px 12px rgba(232,41,74,0.4);
-        }
-        .rg-ss-step.active .rg-ss-num {
-          border-color: var(--red);
-          color: var(--red-2);
-          box-shadow: 0 0 0 3px rgba(232,41,74,0.12);
-        }
-        .rg-ss-info { flex: 1; }
-        .rg-ss-label {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--faint);
-          transition: color 0.25s;
-          line-height: 1.3;
-        }
-        .rg-ss-step.active .rg-ss-label,
-        .rg-ss-step.done  .rg-ss-label { color: white; }
-        .rg-ss-desc {
-          font-size: 11px;
-          color: var(--faint);
-          margin-top: 1px;
-        }
-        .rg-ss-step.active .rg-ss-desc { color: rgba(255,94,108,0.6); }
-        .rg-ss-check {
-          font-size: 12px;
-          color: var(--red-2);
-          opacity: 0;
-          transition: opacity 0.25s;
-        }
-        .rg-ss-step.done .rg-ss-check { opacity: 1; }
-
-        /* Sidebar footer */
-        .rg-live-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          padding: 6px 13px;
-          background: rgba(232,41,74,0.1);
-          border: 1px solid rgba(232,41,74,0.25);
-          border-radius: 100px;
-          font-size: 11.5px;
-          color: var(--red-3);
-          font-weight: 600;
-          margin-bottom: 16px;
-        }
-        .rg-live-dot {
-          width: 7px; height: 7px;
-          border-radius: 50%;
-          background: var(--red);
-          box-shadow: 0 0 0 0 rgba(232,41,74,0.5);
-          animation: livePulse 2s infinite;
-        }
-        @keyframes livePulse {
-          0%   { box-shadow: 0 0 0 0 rgba(232,41,74,0.5); }
-          70%  { box-shadow: 0 0 0 8px rgba(232,41,74,0); }
-          100% { box-shadow: 0 0 0 0 rgba(232,41,74,0); }
-        }
-        .rg-stats {
-          display: flex;
-          gap: 24px;
-        }
-        .rg-stat { display: flex; flex-direction: column; gap: 2px; }
-        .rg-stat-num {
-          font-family: var(--display);
-          font-size: 22px;
-          font-weight: 800;
-          color: white;
-          letter-spacing: -0.5px;
-        }
-        .rg-stat-label { font-size: 11px; color: var(--muted); }
-
-        /* ── MAIN ── */
-        .rg-main {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          min-height: 100vh;
-          position: relative;
-          z-index: 1;
-        }
-
-        /* Mobile header */
-        .rg-mob-header {
-          position: sticky;
-          top: 0;
-          z-index: 20;
-          background: rgba(15,13,21,0.88);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border-bottom: 1px solid var(--border);
-          padding: 14px 20px 12px;
-        }
-        @media (min-width: 900px) { .rg-mob-header { display: none; } }
-        .rg-mob-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 12px;
-        }
-        .rg-mob-logo {
-          font-family: var(--display);
-          font-size: 18px;
-          font-weight: 800;
-          color: white;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .rg-mob-logo-mark {
-          width: 26px; height: 26px;
-          border-radius: 7px;
-          background: linear-gradient(135deg, var(--red), var(--orange));
-          display: flex; align-items: center; justify-content: center;
-          font-size: 12px;
-        }
-        .rg-mob-step {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          color: var(--muted);
-          font-weight: 500;
-        }
-        .rg-mob-step-dot {
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: var(--red);
-        }
-        .rg-mob-bar-track {
-          height: 3px;
-          background: rgba(255,255,255,0.07);
-          border-radius: 100px;
-          overflow: hidden;
-        }
-        .rg-mob-bar-fill {
-          height: 100%;
-          background: linear-gradient(90deg, var(--red), var(--orange));
-          border-radius: 100px;
-          transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
-        }
-
-        /* ── Content ── */
-        .rg-content {
-          flex: 1;
-          padding: 48px 28px 72px;
-          max-width: 500px;
-          width: 100%;
-          margin: 0 auto;
-        }
-
-        @media (min-width: 600px) {
-          .rg-content { padding: 56px 40px 72px; }
-        }
-
-        .rg-slide-in {
-          animation: slideIn 0.4s cubic-bezier(0.34,1.4,0.64,1) both;
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateY(22px) scale(0.98); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        /* Hero */
-        .rg-eyebrow {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 11px;
-          background: rgba(232,41,74,0.1);
-          border: 1px solid rgba(232,41,74,0.2);
-          border-radius: 100px;
-          font-size: 10.5px;
-          font-weight: 700;
-          letter-spacing: 1.4px;
-          text-transform: uppercase;
-          color: var(--red-3);
-          margin-bottom: 14px;
-        }
-        .rg-title {
-          font-family: var(--display);
-          font-size: 36px;
-          font-weight: 800;
-          color: white;
-          letter-spacing: -1.2px;
-          line-height: 1.05;
-          margin-bottom: 10px;
-        }
-        .rg-subtitle {
-          font-size: 14px;
-          color: var(--muted);
-          line-height: 1.75;
-          max-width: 380px;
-          font-weight: 400;
-          margin-bottom: 36px;
-        }
-
-        /* Fields */
-        .rg-fields {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-          margin-bottom: 28px;
-        }
-
-        .rg-field { display: flex; flex-direction: column; gap: 7px; }
-
-        .rg-label {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.9px;
-          text-transform: uppercase;
-          color: var(--muted);
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-        .rg-req { color: var(--red-2); font-size: 12px; }
-        .rg-opt {
-          font-size: 9px;
-          letter-spacing: 1px;
-          color: var(--faint);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 5px;
-          padding: 1px 6px;
-          text-transform: uppercase;
-          font-weight: 600;
-        }
-
-        .rg-input-wrap { position: relative; }
-        .rg-input {
-          width: 100%;
-          background: var(--card);
-          border: 1.5px solid var(--border);
-          border-radius: var(--r-md);
-          padding: 13px 16px;
-          font-size: 14.5px;
-          color: white;
-          font-family: var(--body);
-          font-weight: 400;
-          outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-          -webkit-appearance: none;
-          line-height: 1.5;
-        }
-        .rg-input::placeholder { color: var(--faint); font-size: 13.5px; }
-        .rg-input:focus {
-          border-color: var(--border-f);
-          background: rgba(232,41,74,0.04);
-          box-shadow: 0 0 0 4px rgba(232,41,74,0.09), inset 0 1px 2px rgba(0,0,0,0.2);
-        }
-        .rg-input.has-icon { padding-right: 48px; }
-        textarea.rg-input { resize: none; }
-
-        .rg-icon-btn {
-          position: absolute;
-          right: 13px;
-          top: 50%;
-          transform: translateY(-50%);
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: var(--muted);
-          font-size: 16px;
-          padding: 4px;
-          display: flex; align-items: center; justify-content: center;
-          transition: color 0.15s;
-        }
-        .rg-icon-btn:hover { color: white; }
-
-        .rg-char-hint {
-          text-align: right;
-          font-size: 11px;
-          color: var(--faint);
-          margin-top: -3px;
-        }
-
-        /* Password strength */
-        .rg-strength {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-top: 4px;
-        }
-        .rg-strength-bars { display: flex; gap: 4px; flex: 1; }
-        .rg-strength-bar {
-          flex: 1; height: 3px;
-          border-radius: 100px;
-          background: rgba(255,255,255,0.07);
-          transition: background 0.35s;
-        }
-        .rg-strength-label {
-          font-size: 11px;
-          font-weight: 600;
-          min-width: 64px;
-          text-align: right;
-        }
-        .rg-hint {
-          font-size: 11px;
-          margin-top: 4px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-weight: 500;
-        }
-
-        /* Row layout */
-        .rg-row {
-          display: grid;
-          grid-template-columns: 1fr 88px;
-          gap: 12px;
-          align-items: start;
-        }
-
-        /* Gender */
-        .rg-gender-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-        }
-        @media (max-width: 480px) {
-          .rg-gender-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        .rg-gpill {
-          padding: 10px 6px;
-          background: var(--card);
-          border: 1.5px solid var(--border);
-          border-radius: var(--r-sm);
-          color: var(--muted);
-          font-family: var(--body);
-          font-size: 12.5px;
-          font-weight: 600;
-          cursor: pointer;
-          text-align: center;
-          transition: all 0.2s;
-        }
-        .rg-gpill:hover {
-          background: var(--card-h);
-          border-color: rgba(255,255,255,0.15);
-          color: white;
-        }
-        .rg-gpill.active {
-          background: rgba(232,41,74,0.12);
-          border-color: rgba(232,41,74,0.5);
-          color: var(--red-2);
-        }
-
-        /* ── Photo Grid ── */
-        .rg-photo-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-          margin-bottom: 16px;
-        }
-        .rg-photo-slot {
-          aspect-ratio: 3/4;
-          border-radius: var(--r-lg);
-          overflow: hidden;
-          position: relative;
-          background: var(--card);
-          border: 1.5px dashed rgba(255,255,255,0.1);
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-        }
-        .rg-photo-slot:hover {
-          border-color: rgba(232,41,74,0.4);
-          background: rgba(232,41,74,0.05);
-        }
-        .rg-photo-slot.filled {
-          border-style: solid;
-          border-color: rgba(255,255,255,0.1);
-          cursor: default;
-        }
-        .rg-photo-slot img {
-          width: 100%; height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-        .rg-photo-add-icon { font-size: 28px; opacity: 0.3; }
-        .rg-photo-add-txt {
-          font-size: 11px;
-          color: var(--faint);
-          text-align: center;
-          line-height: 1.5;
-          padding: 0 10px;
-          font-weight: 500;
-        }
-        .rg-photo-badge {
-          position: absolute;
-          bottom: 8px; left: 8px; right: 8px;
-          background: linear-gradient(135deg, rgba(232,41,74,0.92), rgba(255,90,100,0.92));
-          backdrop-filter: blur(10px);
-          color: white;
-          font-size: 9px;
-          font-weight: 800;
-          letter-spacing: 1.2px;
-          text-transform: uppercase;
-          padding: 5px 10px;
-          border-radius: 8px;
-          text-align: center;
-          z-index: 2;
-        }
-        .rg-photo-del {
-          position: absolute;
-          top: 8px; right: 8px;
-          width: 28px; height: 28px;
-          border-radius: 50%;
-          background: rgba(0,0,0,0.7);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(255,255,255,0.12);
-          color: white;
-          font-size: 12px;
-          cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          z-index: 2;
-          transition: background 0.15s;
-        }
-        .rg-photo-del:hover { background: rgba(232,41,74,0.85); }
-        .rg-photo-num {
-          position: absolute;
-          top: 8px; left: 8px;
-          width: 24px; height: 24px;
-          border-radius: 7px;
-          background: rgba(0,0,0,0.6);
-          border: 1px solid rgba(255,255,255,0.12);
-          color: rgba(255,255,255,0.75);
-          font-size: 10px;
-          font-weight: 700;
-          display: flex; align-items: center; justify-content: center;
-          z-index: 2;
-        }
-        .rg-photo-tip {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          padding: 12px 14px;
-          background: rgba(255,183,71,0.06);
-          border: 1px solid rgba(255,183,71,0.15);
-          border-radius: var(--r-sm);
-          margin-bottom: 28px;
-        }
-        .rg-photo-tip-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
-        .rg-photo-tip-txt {
-          font-size: 12px;
-          color: rgba(255,210,130,0.65);
-          line-height: 1.6;
-          font-weight: 500;
-        }
-
-        /* ── Vibe / Interests ── */
-        .rg-section-hd {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 12px;
-        }
-        .rg-section-ttl {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          color: var(--muted);
-        }
-        .rg-section-ct {
-          font-size: 12px;
-          color: var(--red-2);
-          font-weight: 600;
-        }
-
-        .rg-lf-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-          margin-bottom: 28px;
-        }
-        .rg-lf-card {
-          padding: 18px 15px;
-          background: var(--card);
-          border: 1.5px solid var(--border);
-          border-radius: var(--r-lg);
-          cursor: pointer;
-          transition: all 0.22s;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          text-align: left;
-          position: relative;
-          overflow: hidden;
-        }
-        .rg-lf-card::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(135deg, rgba(232,41,74,0.08), transparent 60%);
-          opacity: 0;
-          transition: opacity 0.22s;
-          pointer-events: none;
-        }
-        .rg-lf-card:hover { border-color: rgba(232,41,74,0.3); }
-        .rg-lf-card:hover::after { opacity: 1; }
-        .rg-lf-card.active {
-          background: rgba(232,41,74,0.09);
-          border-color: rgba(232,41,74,0.5);
-        }
-        .rg-lf-card.active::after { opacity: 1; }
-        .rg-lf-emoji { font-size: 24px; margin-bottom: 3px; }
-        .rg-lf-label {
-          font-family: var(--display);
-          font-size: 14px;
-          font-weight: 700;
-          color: rgba(255,255,255,0.6);
-          transition: color 0.2s;
-        }
-        .rg-lf-card.active .rg-lf-label { color: white; }
-        .rg-lf-desc {
-          font-size: 11.5px;
-          color: var(--faint);
-          line-height: 1.4;
-          transition: color 0.2s;
-          font-weight: 400;
-        }
-        .rg-lf-card.active .rg-lf-desc { color: rgba(255,110,120,0.65); }
-        .rg-lf-check {
-          position: absolute;
-          top: 11px; right: 11px;
-          width: 20px; height: 20px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, var(--red), var(--orange));
-          display: flex; align-items: center; justify-content: center;
-          font-size: 10px;
-          color: white;
-          opacity: 0;
-          transform: scale(0.4) rotate(-45deg);
-          transition: all 0.28s cubic-bezier(0.34,1.4,0.64,1);
-          box-shadow: 0 2px 10px rgba(232,41,74,0.5);
-        }
-        .rg-lf-card.active .rg-lf-check {
-          opacity: 1;
-          transform: scale(1) rotate(0deg);
-        }
-
-        .rg-divider {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin: 6px 0 24px;
-        }
-        .rg-divider-line { flex: 1; height: 1px; background: var(--border); }
-        .rg-divider-txt {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          color: var(--faint);
-          text-transform: uppercase;
-        }
-
-        .rg-tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 7px;
-          margin-bottom: 32px;
-        }
-        .rg-tag {
-          padding: 7px 13px;
-          background: var(--card);
-          border: 1.5px solid var(--border);
-          border-radius: 100px;
-          color: var(--muted);
-          font-size: 13px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.18s;
-          font-family: var(--body);
-          white-space: nowrap;
-        }
-        .rg-tag:hover {
-          background: var(--card-h);
-          border-color: rgba(232,41,74,0.3);
-          color: rgba(255,255,255,0.85);
-        }
-        .rg-tag.active {
-          background: rgba(232,41,74,0.12);
-          border-color: rgba(232,41,74,0.5);
-          color: var(--red-2);
-          font-weight: 600;
-        }
-
-        /* ── Actions ── */
-        .rg-actions { display: flex; flex-direction: column; gap: 10px; }
-
-        .rg-btn {
-          width: 100%;
-          padding: 15px 24px;
-          background: linear-gradient(135deg, #E8294A 0%, #c91c3a 55%, #aa1530 100%);
-          border: none;
-          border-radius: var(--r-md);
-          color: white;
-          font-family: var(--display);
-          font-size: 15px;
-          font-weight: 700;
-          letter-spacing: 0.2px;
-          cursor: pointer;
-          transition: all 0.22s;
-          box-shadow: 0 6px 28px rgba(232,41,74,0.38), 0 2px 6px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.12);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          position: relative;
-          overflow: hidden;
-        }
-        .rg-btn::before {
-          content: '';
-          position: absolute;
-          top: 0; left: -100%;
-          width: 100%; height: 100%;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
-          transition: left 0.5s;
-        }
-        .rg-btn:hover::before { left: 100%; }
-        .rg-btn:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 36px rgba(232,41,74,0.5), 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
-        }
-        .rg-btn:active { transform: translateY(0); }
-        .rg-btn:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
-          transform: none;
-          box-shadow: 0 2px 8px rgba(232,41,74,0.15);
-        }
-
-        .rg-btn-ghost {
-          width: 100%;
-          padding: 13px 24px;
-          background: transparent;
-          border: 1.5px solid var(--border);
-          border-radius: var(--r-md);
-          color: var(--muted);
-          font-family: var(--body);
-          font-size: 13.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-        }
-        .rg-btn-ghost:hover {
-          background: var(--card-h);
-          color: rgba(255,255,255,0.7);
-          border-color: rgba(255,255,255,0.14);
-        }
-
-        .rg-login-cta {
-          text-align: center;
-          font-size: 13px;
-          color: var(--faint);
-          padding-top: 4px;
-        }
-        .rg-login-cta a {
-          color: var(--red-2);
-          text-decoration: none;
-          font-weight: 600;
-          cursor: pointer;
-        }
-        .rg-login-cta a:hover { text-decoration: underline; }
-
-        .rg-terms {
-          text-align: center;
-          font-size: 11.5px;
-          color: rgba(255,255,255,0.2);
-          line-height: 1.65;
-          margin-top: 18px;
-        }
-        .rg-terms a {
-          color: rgba(255,255,255,0.38);
-          text-decoration: underline;
-          text-underline-offset: 2px;
-          cursor: pointer;
-        }
-        .rg-terms a:hover { color: var(--red-2); }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 100px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(232,41,74,0.4); }
-
-        /* Number input arrow hide */
-        input[type=number]::-webkit-inner-spin-button,
-        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
-        input[type=number] { -moz-appearance: textfield; }
-      `}</style>
+      {/* Background */}
+      <div className="rg-bg">
+        <div className="rg-bg-grid"/>
+        <div className="rg-blob rg-blob-1"/>
+        <div className="rg-blob rg-blob-2"/>
+        <div className="rg-blob rg-blob-3"/>
+      </div>
 
       <div className="rg-root">
+        <div className="rg-inner">
 
-        {/* Ambient blobs */}
-        <div className="rg-ambient">
-          <div className="rg-blob rg-blob-1" />
-          <div className="rg-blob rg-blob-2" />
-          <div className="rg-blob rg-blob-3" />
+        {/* ══ LEFT: logo + hero text ══ */}
+        <div className="rg-left">
+
+          {/* Logo */}
+          <div className="rg-logo">
+            <div className="rg-logo-icon">
+              <img src="/logo.png" alt="Turrinder logo"/>
+            </div>
+            <div>
+              <div className="rg-logo-wordmark">Turr<em>inder</em></div>
+            </div>
+          </div>
+
+          {/* Badge */}
+          <div className="rg-hero-badge">
+            <div className="rg-live-dot"/>
+            Creá tu cuenta — es gratis
+          </div>
+
+          {/* Title */}
+          <h1 className="rg-hero-title">
+            Tu lugar para<br/>
+            <span>conectar</span>, crear<br/>
+            y debatir.
+          </h1>
+
+          {/* Sub */}
+          <p className="rg-hero-sub">
+            Streamers, debatistas, personas que buscan comunidad o simplemente quieren conocer gente real. Turrinder es para todos.
+          </p>
+
+          {/* Feature list */}
+          <div className="rg-features">
+            <div className="rg-feat">
+              <div className="rg-feat-icon">🎙️</div>
+              <div className="rg-feat-text"><strong>Streams en vivo</strong> — conectá con tu audiencia en tiempo real.</div>
+            </div>
+            <div className="rg-feat">
+              <div className="rg-feat-icon">🔥</div>
+              <div className="rg-feat-text"><strong>Debates reales</strong> — intercambiá perspectivas con gente que piensa diferente.</div>
+            </div>
+            <div className="rg-feat">
+              <div className="rg-feat-icon">❤️</div>
+              <div className="rg-feat-text"><strong>Conexiones genuinas</strong> — amigos, citas o comunidad, vos elegís.</div>
+            </div>
+          </div>
+
         </div>
 
-        {/* ── Sidebar ── */}
-        <aside className="rg-sidebar">
-          <div className="rg-sidebar-shine" />
+        {/* Vertical divider */}
+        <div className="rg-divider-v"/>
 
-          {/* Brand */}
-          <div>
-            <div className="rg-brand-logo">
-              <div className="rg-logo-mark">📡</div>
-              Turrinder
-            </div>
-            <div className="rg-tagline">
-              Conocé gente<br />
-              <span className="rg-tagline-grad">en tiempo real.</span>
-            </div>
-            <p className="rg-brand-sub" style={{ marginBottom: 0 }}>
-              La red social que combina el matching de Tinder con la espontaneidad de OmeTV. Charlá en vivo con personas reales cerca tuyo.
-            </p>
-          </div>
+        {/* ══ RIGHT: registration card ══ */}
+        <div className="rg-right">
+          <div className="rg-card" key={animKey}>
 
-          {/* Steps */}
-          <div className="rg-sidebar-steps">
-            {STEPS.map((s, i) => (
-              <div
-                key={s.id}
-                className={`rg-ss-step ${i < step ? "done" : i === step ? "active" : ""}`}
-                style={{ position: "relative" }}
-              >
-                {i < STEPS.length - 1 && <div className="rg-ss-connector" />}
-                <div className="rg-ss-num">{i < step ? "✓" : s.num}</div>
-                <div className="rg-ss-info">
-                  <div className="rg-ss-label">{s.emoji} {s.label}</div>
-                  <div className="rg-ss-desc">{s.desc}</div>
+            {/* Card top: logo badge */}
+            <div className="rg-card-badge">
+              <div className="rg-card-badge-icon">
+                <img src="/logo.png" alt="Turrinder" style={{width:22,height:22,objectFit:"contain"}}/>
+              </div>
+              <div>
+                <div className="rg-card-badge-text">Turrinder</div>
+                <div className="rg-card-badge-sub">Conectá · Creá · Debatí</div>
+              </div>
+            </div>
+
+            {/* Step chips */}
+            <div className="rg-chips">
+              {STEPS.map((s, i) => (
+                <div key={s.label} className={`rg-chip ${i < step ? "c-done" : i === step ? "c-active" : ""}`}>
+                  {i < step ? "✓ " : `${i+1}. `}{s.label}
                 </div>
-                <div className="rg-ss-check">✓</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Footer stats */}
-          <div>
-            <div className="rg-live-pill">
-              <div className="rg-live-dot" />
-              En línea ahora
+              ))}
             </div>
-            <div className="rg-stats">
-              <div className="rg-stat">
-                <span className="rg-stat-num">12.4k</span>
-                <span className="rg-stat-label">En vivo</span>
-              </div>
-              <div className="rg-stat">
-                <span className="rg-stat-num">4.8★</span>
-                <span className="rg-stat-label">Rating</span>
-              </div>
-              <div className="rg-stat">
-                <span className="rg-stat-num">98%</span>
-                <span className="rg-stat-label">Reales</span>
-              </div>
+
+            {/* Progress bar */}
+            <div className="rg-prog-wrap">
+              <div className="rg-prog-fill" style={{ width:`${prog}%` }}/>
             </div>
-          </div>
-        </aside>
 
-        {/* ── Main ── */}
-        <main className="rg-main">
+            {/* Scrollable content */}
+            <div className="rg-card-scroll">
 
-          {/* Mobile header */}
-          <div className="rg-mob-header">
-            <div className="rg-mob-top">
-              <div className="rg-mob-logo">
-                <div className="rg-mob-logo-mark">📡</div>
-                Turrinder
-              </div>
-              <div className="rg-mob-step">
-                <div className="rg-mob-step-dot" />
-                {STEPS[step].emoji} {STEPS[step].label} · {step + 1}/{STEPS.length}
-              </div>
-            </div>
-            <div className="rg-mob-bar-track">
-              <div className="rg-mob-bar-fill" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-
-          {/* ── STEP 0: Cuenta ── */}
-          {step === 0 && (
-            <div className="rg-content rg-slide-in" key="s0">
-              <div className="rg-eyebrow">🔐 Paso 01</div>
-              <div className="rg-title">Creá tu cuenta</div>
-              <p className="rg-subtitle">Tu email y contraseña para entrar a Turrinder. En segundos, sin complicaciones.</p>
-
-              <div className="rg-fields">
-                <div className="rg-field">
-                  <label className="rg-label">Email <span className="rg-req">*</span></label>
-                  <input
-                    className="rg-input"
-                    type="email"
-                    placeholder="tu@email.com"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    autoComplete="email"
-                  />
+              {/* Error banner */}
+              {error && (
+                <div className="rg-error">
+                  <span className="rg-error-icon">⚠️</span>
+                  {error}
                 </div>
+              )}
 
-                <div className="rg-field">
-                  <label className="rg-label">Contraseña <span className="rg-req">*</span></label>
-                  <div className="rg-input-wrap">
-                    <input
-                      className="rg-input has-icon"
-                      type={showPass ? "text" : "password"}
-                      placeholder="Mínimo 6 caracteres"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                    <button className="rg-icon-btn" onClick={() => setShowPass(p => !p)} type="button" tabIndex={-1}>
-                      {showPass ? "🙈" : "👁️"}
-                    </button>
+              {/* ── STEP 0 ── */}
+              {step === 0 && (
+                <>
+                  <h2 className="rg-h2">Creá tu <em>cuenta</em></h2>
+                  <p className="rg-p">En menos de un minuto ya estás adentro.</p>
+
+                  <div className="rg-fields">
+                    <div className="rg-field">
+                      <label className="rg-label">Email <span className="rg-req">*</span></label>
+                      <input className="rg-input" type="email" placeholder="tu@email.com"
+                        value={email} onChange={e => setEmail(e.target.value)} autoComplete="email"/>
+                    </div>
+                    <div className="rg-field">
+                      <label className="rg-label">Contraseña <span className="rg-req">*</span></label>
+                      <div className="rg-iw">
+                        <input className="rg-input has-icon" type={showPass ? "text":"password"}
+                          placeholder="Mínimo 6 caracteres"
+                          value={pass} onChange={e => setPass(e.target.value)} autoComplete="new-password"/>
+                        <button className="rg-icon-btn" type="button" tabIndex={-1}
+                          onClick={() => setShowPass(p => !p)}>{showPass?"🙈":"👁️"}</button>
+                      </div>
+                      {pass.length > 0 && (
+                        <div className="rg-str">
+                          <div className="rg-str-bars">
+                            {[1,2,3,4,5].map(i => (
+                              <div key={i} className="rg-str-bar"
+                                style={{ background: i <= str ? STR_CLR[str] : undefined }}/>
+                            ))}
+                          </div>
+                          <span className="rg-str-txt" style={{ color: STR_CLR[str] }}>{STR_LBL[str]}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="rg-field">
+                      <label className="rg-label">Confirmar contraseña <span className="rg-req">*</span></label>
+                      <div className="rg-iw">
+                        <input className="rg-input has-icon" type={showConf ? "text":"password"}
+                          placeholder="Repetí tu contraseña"
+                          value={conf} onChange={e => setConf(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleAccount()} autoComplete="new-password"/>
+                        <button className="rg-icon-btn" type="button" tabIndex={-1}
+                          onClick={() => setShowConf(p => !p)}>{showConf?"🙈":"👁️"}</button>
+                      </div>
+                      {conf.length > 0 && (
+                        <div className="rg-match" style={{ color: pass===conf ? "#44cc88":"#ff5566" }}>
+                          {pass===conf ? "✓ Coinciden" : "✕ No coinciden"}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {password.length > 0 && (
-                    <div className="rg-strength">
-                      <div className="rg-strength-bars">
-                        {[1,2,3,4,5].map(i => (
-                          <div
-                            key={i}
-                            className="rg-strength-bar"
-                            style={{ background: i <= strength ? strengthColor : undefined }}
-                          />
+
+                  <div className="rg-actions">
+                    <button className="rg-btn" onClick={handleAccount} disabled={loading}>
+                      {loading ? "Creando cuenta..." : <><span>Continuar</span><span>→</span></>}
+                    </button>
+                    <button className="rg-btn-ghost" onClick={() => router.push("/")}>Iniciar sesión</button>
+                  </div>
+                  <p className="rg-terms">
+                    Al registrarte aceptás nuestros <a>Términos de uso</a> y <a>Política de privacidad</a>. Solo para mayores de 18 años.
+                  </p>
+                </>
+              )}
+
+              {/* ── STEP 1 ── */}
+              {step === 1 && (
+                <>
+                  <h2 className="rg-h2">Tu <em>perfil</em></h2>
+                  <p className="rg-p">Es lo primero que ven los demás. Hacelo tuyo.</p>
+
+                  <div className="rg-fields">
+                    <div className="rg-2col">
+                      <div className="rg-field">
+                        <label className="rg-label">Nombre <span className="rg-req">*</span></label>
+                        <input className="rg-input" placeholder="Tu nombre o apodo"
+                          value={name} onChange={e => setName(e.target.value)} maxLength={30}/>
+                      </div>
+                      <div className="rg-field">
+                        <label className="rg-label">Edad <span className="rg-req">*</span></label>
+                        <input className="rg-input" type="number" placeholder="18"
+                          value={age} onChange={e => setAge(e.target.value)}
+                          min={18} max={99} style={{ textAlign:"center" }}/>
+                      </div>
+                    </div>
+                    <div className="rg-field">
+                      <label className="rg-label">Género <span className="rg-badge-opt">Opcional</span></label>
+                      <div className="rg-gender">
+                        {GENDERS.map(g => (
+                          <button key={g} type="button"
+                            className={`rg-gpill ${gender===g?"on":""}`}
+                            onClick={() => setGender(gender===g?"":g)}>{g}</button>
                         ))}
                       </div>
-                      <div className="rg-strength-label" style={{ color: strengthColor }}>
-                        {strengthLabel}
+                    </div>
+                    <div className="rg-field">
+                      <label className="rg-label">Bio <span className="rg-badge-opt">Opcional</span></label>
+                      <textarea className="rg-input" rows={2}
+                        placeholder="Contá algo sobre vos…"
+                        value={bio} onChange={e => setBio(e.target.value.slice(0,160))}/>
+                      <div className="rg-char-ct">{bio.length}/160</div>
+                    </div>
+                  </div>
+
+                  <div className="rg-sec-row" style={{ marginBottom:8 }}>
+                    <span className="rg-sec-ttl">Fotos <span style={{color:"var(--sky)"}}>*</span></span>
+                    <span className="rg-sec-ct">{photos.length}/4 subidas</span>
+                  </div>
+                  <div className="rg-photo-wall">
+                    {[0,1,2,3].map(idx => (
+                      <div key={idx} className={`rg-photo-slot ${photos[idx]?"filled":""}`}
+                        onClick={() => !photos[idx] && fileRef.current?.click()}>
+                        {photos[idx] ? (
+                          <>
+                            <img src={photos[idx].url} alt=""/>
+                            <div className="rg-photo-n">{idx+1}</div>
+                            {idx===0 && <div className="rg-photo-main-badge">⭐ Principal</div>}
+                            <button className="rg-photo-del" type="button"
+                              onClick={e => { e.stopPropagation(); setPhotos(p => p.filter((_,i) => i!==idx)); }}>
+                              ✕
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rg-photo-add">{idx===0?"📷":"+"}</div>
+                            <div className="rg-photo-add-lbl">{idx===0?"Principal":"Foto "+(idx+1)}</div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="rg-field">
-                  <label className="rg-label">Confirmar contraseña <span className="rg-req">*</span></label>
-                  <div className="rg-input-wrap">
-                    <input
-                      className="rg-input has-icon"
-                      type={showPassConf ? "text" : "password"}
-                      placeholder="Repetí tu contraseña"
-                      value={passConf}
-                      onChange={e => setPassConf(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleCreateAccount()}
-                      autoComplete="new-password"
-                    />
-                    <button className="rg-icon-btn" onClick={() => setShowPassConf(p => !p)} type="button" tabIndex={-1}>
-                      {showPassConf ? "🙈" : "👁️"}
-                    </button>
+                    ))}
                   </div>
-                  {passConf.length > 0 && (
-                    <div className="rg-hint" style={{ color: password === passConf ? "#44cc88" : "#ff5566" }}>
-                      {password === passConf ? "✓ Coinciden" : "✕ No coinciden"}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rg-actions">
-                <button className="rg-btn" onClick={handleCreateAccount} disabled={loading}>
-                  {loading ? "Creando cuenta..." : <><span>Continuar</span><span>→</span></>}
-                </button>
-                <div className="rg-login-cta">
-                  ¿Ya tenés cuenta? <a>Iniciá sesión</a>
-                </div>
-              </div>
-
-              <p className="rg-terms">
-                Al registrarte aceptás nuestros <a>Términos de uso</a> y <a>Política de privacidad</a>. Debés tener 18 años o más.
-              </p>
-            </div>
-          )}
-
-          {/* ── STEP 1: Identidad ── */}
-          {step === 1 && (
-            <div className="rg-content rg-slide-in" key="s1">
-              <div className="rg-eyebrow">✨ Paso 02</div>
-              <div className="rg-title">¿Quién sos?</div>
-              <p className="rg-subtitle">Contales a los demás quién está del otro lado de la pantalla.</p>
-
-              <div className="rg-fields">
-                <div className="rg-row">
-                  <div className="rg-field">
-                    <label className="rg-label">Nombre <span className="rg-req">*</span></label>
-                    <input
-                      className="rg-input"
-                      placeholder="Tu nombre o apodo"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      maxLength={30}
-                    />
+                  <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={addPhotos}/>
+                  <div className="rg-photo-note">
+                    <span style={{fontSize:12,flexShrink:0}}>💡</span>
+                    <span className="rg-photo-note-txt">Cara visible y buena iluminación. JPG, PNG o WEBP · Máx 5 MB.</span>
                   </div>
-                  <div className="rg-field">
-                    <label className="rg-label">Edad <span className="rg-req">*</span></label>
-                    <input
-                      className="rg-input"
-                      type="number"
-                      placeholder="18"
-                      value={age}
-                      onChange={e => setAge(e.target.value)}
-                      min={18} max={99}
-                      style={{ textAlign: "center" }}
-                    />
-                  </div>
-                </div>
 
-                <div className="rg-field">
-                  <label className="rg-label">Género <span className="rg-opt">Opcional</span></label>
-                  <div className="rg-gender-grid">
-                    {["Hombre", "Mujer", "No binario", "Prefiero no decir"].map(g => (
-                      <button
-                        key={g}
-                        className={`rg-gpill ${gender === g ? "active" : ""}`}
-                        onClick={() => setGender(gender === g ? "" : g)}
-                        type="button"
-                      >
-                        {g}
+                  <div className="rg-actions">
+                    <button className="rg-btn" onClick={handleProfile}>Continuar →</button>
+                    <button className="rg-btn-ghost" onClick={() => goTo(0)}>← Volver</button>
+                  </div>
+                </>
+              )}
+
+              {/* ── STEP 2 ── */}
+              {step === 2 && (
+                <>
+                  <h2 className="rg-h2">Tu <em>vibe</em></h2>
+                  <p className="rg-p">Conectamos mejor cuando sabemos qué buscás.</p>
+
+                  <div className="rg-sec-row">
+                    <span className="rg-sec-ttl">¿Qué buscás?</span>
+                    {lookingFor.length > 0 && (
+                      <span className="rg-sec-ct">{lookingFor.length} elegido{lookingFor.length>1?"s":""}</span>
+                    )}
+                  </div>
+                  <div className="rg-lf-grid">
+                    {LOOKING_FOR.map(lf => (
+                      <button key={lf.id} type="button"
+                        className={`rg-lf ${lookingFor.includes(lf.id)?"on":""}`}
+                        onClick={() => setLF(p => p.includes(lf.id) ? p.filter(i=>i!==lf.id) : [...p,lf.id])}>
+                        <div className="rg-lf-ck">✓</div>
+                        <span className="rg-lf-emo">{lf.emoji}</span>
+                        <div className="rg-lf-lbl">{lf.label}</div>
+                        <div className="rg-lf-desc">{lf.desc}</div>
                       </button>
                     ))}
                   </div>
-                </div>
 
-                <div className="rg-field">
-                  <label className="rg-label">Bio <span className="rg-opt">Opcional</span></label>
-                  <textarea
-                    className="rg-input"
-                    rows={3}
-                    placeholder="Contá algo sobre vos… Los perfiles con bio reciben 3x más matches."
-                    value={bio}
-                    onChange={e => setBio(e.target.value.slice(0, 160))}
-                  />
-                  <div className="rg-char-hint">{bio.length}/160</div>
-                </div>
-              </div>
+                  
 
-              <div className="rg-actions">
-                <button className="rg-btn" onClick={() => {
-                  if (!name.trim()) return alert("Agregá tu nombre");
-                  if (!age || parseInt(age) < 18) return alert("Debés tener al menos 18 años");
-                  setStep(2);
-                }}>
-                  Continuar →
-                </button>
-                <button className="rg-btn-ghost" onClick={() => setStep(0)}>← Volver</button>
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 2: Fotos ── */}
-          {step === 2 && (
-            <div className="rg-content rg-slide-in" key="s2">
-              <div className="rg-eyebrow">📸 Paso 03</div>
-              <div className="rg-title">Tus fotos</div>
-              <p className="rg-subtitle">La primera es tu foto principal. Podés subir hasta 4. Perfiles con fotos claras consiguen 5× más conexiones.</p>
-
-              <div className="rg-photo-grid">
-                {[0,1,2,3].map(idx => (
-                  <div
-                    key={idx}
-                    className={`rg-photo-slot ${photos[idx] ? "filled" : ""}`}
-                    onClick={() => !photos[idx] && fileRef.current?.click()}
-                  >
-                    {photos[idx] ? (
-                      <>
-                        <img src={photos[idx].url} alt="" />
-                        <div className="rg-photo-num">{idx + 1}</div>
-                        {idx === 0 && <div className="rg-photo-badge">⭐ Foto principal</div>}
-                        <button
-                          className="rg-photo-del"
-                          onClick={e => { e.stopPropagation(); removePhoto(idx); }}
-                          type="button"
-                        >✕</button>
-                      </>
-                    ) : (
-                      <>
-                        <div className="rg-photo-add-icon">{idx === 0 ? "📷" : "+"}</div>
-                        <div className="rg-photo-add-txt">
-                          {idx === 0 ? "Foto principal\n(obligatoria)" : `Foto ${idx + 1}`}
-                        </div>
-                      </>
-                    )}
+                  <div className="rg-actions">
+                    <button className="rg-btn" onClick={handleFinish} disabled={loading}>
+                      {loading ? "Guardando perfil..." : "¡Empezar a conectar! 🔥"}
+                    </button>
+                    <button className="rg-btn-ghost" onClick={() => goTo(1)}>← Volver</button>
                   </div>
-                ))}
-              </div>
+                </>
+              )}
 
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: "none" }}
-                onChange={handlePhotoAdd}
-              />
+            </div>{/* end card-scroll */}
+          </div>
+        </div>
 
-              <div className="rg-photo-tip">
-                <span className="rg-photo-tip-icon">💡</span>
-                <span className="rg-photo-tip-txt">
-                  Usá fotos donde se vea bien tu cara con buena iluminación. JPG, PNG o WEBP · Máx 5 MB por foto.
-                </span>
-              </div>
-
-              <div className="rg-actions">
-                <button className="rg-btn" onClick={() => photos.length > 0 ? setStep(3) : alert("Agregá al menos una foto")}>
-                  Continuar →
-                </button>
-                <button className="rg-btn-ghost" onClick={() => setStep(1)}>← Volver</button>
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 3: Vibe ── */}
-          {step === 3 && (
-            <div className="rg-content rg-slide-in" key="s3">
-              <div className="rg-eyebrow">🔥 Paso 04</div>
-              <div className="rg-title">Tu vibe</div>
-              <p className="rg-subtitle">Ayudamos a conectarte con personas afines. Todo es opcional pero suma muchísimo.</p>
-
-              <div className="rg-section-hd">
-                <span className="rg-section-ttl">¿Qué buscás?</span>
-                {lookingFor.length > 0 && (
-                  <span className="rg-section-ct">{lookingFor.length} elegido{lookingFor.length > 1 ? "s" : ""}</span>
-                )}
-              </div>
-              <div className="rg-lf-grid">
-                {LOOKING_FOR.map(lf => (
-                  <button
-                    key={lf.id}
-                    className={`rg-lf-card ${lookingFor.includes(lf.id) ? "active" : ""}`}
-                    onClick={() => toggleLookingFor(lf.id)}
-                    type="button"
-                  >
-                    <div className="rg-lf-check">✓</div>
-                    <div className="rg-lf-emoji">{lf.emoji}</div>
-                    <div className="rg-lf-label">{lf.label}</div>
-                    <div className="rg-lf-desc">{lf.desc}</div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="rg-divider">
-                <div className="rg-divider-line" />
-                <div className="rg-divider-txt">Intereses</div>
-                <div className="rg-divider-line" />
-              </div>
-
-              <div className="rg-section-hd">
-                <span className="rg-section-ttl">¿Qué te gusta?</span>
-                <span className="rg-section-ct">{interests.length}/8</span>
-              </div>
-              <div className="rg-tags">
-                {INTERESTS.map(item => (
-                  <button
-                    key={item}
-                    className={`rg-tag ${interests.includes(item) ? "active" : ""}`}
-                    onClick={() => toggleInterest(item)}
-                    type="button"
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-
-              <div className="rg-actions">
-                <button className="rg-btn" onClick={handleFinish} disabled={loading}>
-                  {loading ? "Guardando perfil..." : "¡Empezar a conectar! 🔥"}
-                </button>
-                <button className="rg-btn-ghost" onClick={() => setStep(2)}>← Volver</button>
-              </div>
-            </div>
-          )}
-
-        </main>
+        </div>{/* end rg-inner */}
       </div>
     </>
   );
