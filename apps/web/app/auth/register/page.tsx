@@ -2,9 +2,9 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import img from "../Images/logo.png";
-
-
+import Image from "next/image";
+import img from "../../../Images/logo.png";
+import { supabase } from "@/services/supabase.client";
 
 const LOOKING_FOR = [
   { id:"friends", label:"Amigos",    emoji:"👋", desc:"Sin presiones" },
@@ -449,33 +449,26 @@ textarea.rg-input{resize:none;}
   border:1.5px solid rgba(84,199,248,.1);
   border-radius:12px;
   color:var(--muted);
-  font-family:'Inter',sans-serif;font-size:13px;font-weight:600;
-  cursor:pointer;transition:all .2s;
-  display:flex;align-items:center;justify-content:center;gap:6px;
+  font-family:'Inter',sans-serif;font-size:13px;font-weight:500;
+  cursor:pointer;
+  transition:all .2s;
 }
-.rg-btn-ghost:hover{background:rgba(84,199,248,.05);border-color:rgba(84,199,248,.24);color:rgba(143,212,255,.75);}
-.rg-cta{text-align:center;font-size:12px;color:rgba(84,199,248,.28);padding-top:2px;}
-.rg-cta a{color:var(--sky);text-decoration:none;font-weight:600;cursor:pointer;}
-.rg-cta a:hover{text-decoration:underline;}
-.rg-terms{text-align:center;font-size:10.5px;color:rgba(84,199,248,.15);line-height:1.8;margin-top:14px;}
-.rg-terms a{color:rgba(84,199,248,.3);text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
-.rg-terms a:hover{color:var(--sky);}
+.rg-btn-ghost:hover{border-color:rgba(84,199,248,.28);color:rgba(84,199,248,.75);background:rgba(84,199,248,.04);}
 
-/* Scrollable card content */
-.rg-card-scroll{
-  overflow-y:auto;
-  padding-right:2px;
-}
-.rg-card-scroll::-webkit-scrollbar{width:3px;}
-.rg-card-scroll::-webkit-scrollbar-track{background:transparent;}
-.rg-card-scroll::-webkit-scrollbar-thumb{background:rgba(84,199,248,.1);border-radius:100px;}
+/* Terms */
+.rg-terms{font-size:10px;color:rgba(84,199,248,.18);text-align:center;line-height:1.6;margin-top:10px;}
+.rg-terms a{color:rgba(84,199,248,.35);text-decoration:underline;cursor:pointer;}
 
-/* ── RESPONSIVE: stack on mobile ── */
-@media(max-width:860px){
+/* Card scroll */
+.rg-card-scroll{max-height:calc(100dvh - 80px);overflow-y:auto;overflow-x:hidden;}
+.rg-card-scroll::-webkit-scrollbar{display:none;}
+
+/* Mobile */
+@media(max-width:700px){
   .rg-inner{flex-direction:column;gap:32px;}
-  .rg-left{padding:0;}
+  .rg-left{padding:0;min-width:unset;}
+  .rg-right{flex:unset;width:100%;}
   .rg-divider-v{display:none;}
-  .rg-right{flex:none;width:100%;}
   .rg-hero-sub{max-width:100%;}
   .rg-logo{margin-bottom:24px;}
 }
@@ -512,6 +505,9 @@ export default function RegisterPage() {
   const [animKey, setAnimKey] = useState(0);
   const [error, setError]     = useState("");
 
+  // Guardamos el userId de Supabase Auth entre pasos
+  const [userId, setUserId] = useState<string | null>(null);
+
   const goTo = (n: number) => { setStep(n); setAnimKey(k => k + 1); setError(""); };
   const err  = (msg: string) => { setError(msg); };
 
@@ -531,30 +527,113 @@ export default function RegisterPage() {
 
   // Step 2
   const [lookingFor, setLF] = useState<string[]>([]);
-  const [interests, setInt] = useState<string[]>([]);
 
   const str  = pwStrength(pass);
   const prog = ((step + 1) / STEPS.length) * 100;
 
-  const handleAccount = () => {
+  // ── STEP 0: crear usuario en Supabase Auth ─────────────────────────────
+  const handleAccount = async () => {
     if (!email || !pass) return err("Completá email y contraseña.");
-    if (pass !== conf) return err("Las contraseñas no coinciden.");
+    if (pass !== conf)   return err("Las contraseñas no coinciden.");
     if (pass.length < 6) return err("La contraseña debe tener al menos 6 caracteres.");
+
     setError("");
     setLoading(true);
-    setTimeout(() => { setLoading(false); goTo(1); }, 700);
+
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password: pass,
+      });
+
+      if (signUpError) {
+        // Mensajes de error en español
+        if (signUpError.message.includes("already registered")) {
+          return err("Ya existe una cuenta con ese email.");
+        }
+        return err(signUpError.message);
+      }
+
+      if (!data.user) return err("No se pudo crear la cuenta. Intentá de nuevo.");
+
+      setUserId(data.user.id);
+      goTo(1);
+    } catch (e: any) {
+      err("Error inesperado. Revisá tu conexión.");
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // ── STEP 1: validar perfil (no llama a Supabase todavía, las fotos
+  //   se suben en handleFinish junto con el resto del perfil) ────────────
   const handleProfile = () => {
-    if (!name.trim()) return err("Agregá tu nombre.");
+    if (!name.trim())             return err("Agregá tu nombre.");
     if (!age || parseInt(age) < 18) return err("Debés tener al menos 18 años.");
-    if (photos.length === 0) return err("Subí al menos una foto.");
+    if (photos.length === 0)      return err("Subí al menos una foto.");
     goTo(2);
   };
 
-  const handleFinish = () => {
+  // ── STEP 2: subir fotos y guardar perfil en la tabla profiles ─────────
+  const handleFinish = async () => {
+    if (!userId) return err("Sesión perdida. Volvé al paso 1.");
+
     setLoading(true);
-    setTimeout(() => { setLoading(false); router.push("/discover"); }, 1000);
+    setError("");
+
+    try {
+      // 1. Subir foto principal al storage de Supabase
+      let avatarUrl: string | null = null;
+
+      if (photos.length > 0) {
+        const mainPhoto = photos[0];
+        const ext = mainPhoto.file.name.split(".").pop() ?? "jpg";
+        const path = `${userId}/avatar.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(path, mainPhoto.file, { upsert: true });
+
+        if (uploadError) {
+          console.warn("Error subiendo foto:", uploadError.message);
+          // No bloqueamos el registro por esto
+        } else {
+          const { data: urlData } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(path);
+          avatarUrl = urlData.publicUrl;
+        }
+      }
+
+      // 2. Insertar/actualizar perfil en la tabla profiles
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert({
+          id:         userId,
+          name:       name.trim(),
+          age:        parseInt(age),
+          gender:     gender || null,
+          bio:        bio.trim() || null,
+          avatar_url: avatarUrl,
+          // Guardamos looking_for como array de texto si tu columna lo soporta,
+          // o como string JSON si es text:
+          // looking_for: lookingFor,
+        });
+
+      if (profileError) {
+        console.error("Error guardando perfil:", profileError);
+        return err("Error al guardar el perfil: " + profileError.message);
+      }
+
+      // 3. Todo OK → redirigir a discover
+      router.push("/discover");
+
+    } catch (e: any) {
+      err("Error inesperado al guardar el perfil.");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const addPhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -582,36 +661,31 @@ export default function RegisterPage() {
 
         {/* ══ LEFT: logo + hero text ══ */}
         <div className="rg-left">
-
-          {/* Logo */}
           <div className="rg-logo">
             <div className="rg-logo-icon">
-              <img src="/logo.png" alt="Turrinder logo"/>
+              <Image src={img} alt="Turrinder logo" width={40} height={40}
+                style={{ objectFit: "cover", width: "100%", height: "100%" }}/>
             </div>
             <div>
               <div className="rg-logo-wordmark">Turr<em>inder</em></div>
             </div>
           </div>
 
-          {/* Badge */}
           <div className="rg-hero-badge">
             <div className="rg-live-dot"/>
             Creá tu cuenta — es gratis
           </div>
 
-          {/* Title */}
           <h1 className="rg-hero-title">
             Tu lugar para<br/>
             <span>conectar</span>, crear<br/>
             y debatir.
           </h1>
 
-          {/* Sub */}
           <p className="rg-hero-sub">
             Streamers, debatistas, personas que buscan comunidad o simplemente quieren conocer gente real. Turrinder es para todos.
           </p>
 
-          {/* Feature list */}
           <div className="rg-features">
             <div className="rg-feat">
               <div className="rg-feat-icon">🎙️</div>
@@ -626,7 +700,6 @@ export default function RegisterPage() {
               <div className="rg-feat-text"><strong>Conexiones genuinas</strong> — amigos, citas o comunidad, vos elegís.</div>
             </div>
           </div>
-
         </div>
 
         {/* Vertical divider */}
@@ -636,10 +709,10 @@ export default function RegisterPage() {
         <div className="rg-right">
           <div className="rg-card" key={animKey}>
 
-            {/* Card top: logo badge */}
             <div className="rg-card-badge">
               <div className="rg-card-badge-icon">
-                <img src="/logo.png" alt="Turrinder" style={{width:22,height:22,objectFit:"contain"}}/>
+                <Image src={img} alt="Turrinder logo" width={40} height={40}
+                  style={{ objectFit: "cover", width: "100%", height: "100%" }}/>
               </div>
               <div>
                 <div className="rg-card-badge-text">Turrinder</div>
@@ -647,7 +720,6 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* Step chips */}
             <div className="rg-chips">
               {STEPS.map((s, i) => (
                 <div key={s.label} className={`rg-chip ${i < step ? "c-done" : i === step ? "c-active" : ""}`}>
@@ -656,15 +728,12 @@ export default function RegisterPage() {
               ))}
             </div>
 
-            {/* Progress bar */}
             <div className="rg-prog-wrap">
-              <div className="rg-prog-fill" style={{ width:`${prog}%` }}/>
+              <div className="rg-prog-fill" style={{ width: `${prog}%` }}/>
             </div>
 
-            {/* Scrollable content */}
             <div className="rg-card-scroll">
 
-              {/* Error banner */}
               {error && (
                 <div className="rg-error">
                   <span className="rg-error-icon">⚠️</span>
@@ -675,8 +744,8 @@ export default function RegisterPage() {
               {/* ── STEP 0 ── */}
               {step === 0 && (
                 <>
-                  <h2 className="rg-h2">Creá tu <em>cuenta</em></h2>
-                  <p className="rg-p">En menos de un minuto ya estás adentro.</p>
+                  <h2 className="rg-h2">Tu <em>cuenta</em></h2>
+                  <p className="rg-p">Con esto entrás. Usá un email real.</p>
 
                   <div className="rg-fields">
                     <div className="rg-field">
@@ -838,8 +907,6 @@ export default function RegisterPage() {
                       </button>
                     ))}
                   </div>
-
-                  
 
                   <div className="rg-actions">
                     <button className="rg-btn" onClick={handleFinish} disabled={loading}>
