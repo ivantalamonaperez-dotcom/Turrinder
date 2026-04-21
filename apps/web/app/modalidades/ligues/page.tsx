@@ -48,19 +48,25 @@ export default function LiguesPage() {
   const nextUser = useCallback(async () => {
     if (isBlocked) return;
     try {
-      const currentRoomId = room?.id;
       reportSkip();
-      findNewMatch();
-      if (currentRoomId) {
-        matchingService.endRoom(currentRoomId).catch(err =>
-          console.error("Error limpiando room:", err)
-        );
+      
+      // 1. Notificamos al servidor inmediatamente para romper el match actual.
+      // Esto dispara 'partner-left' al compañero en tiempo real.
+      if (socket?.connected) {
+        socket.emit("leave-matchmaking");
       }
+      
+      // 2. Buscamos un nuevo match tras 1 segundo de espera (para sincronizarse con el otro)
+      findNewMatch(1000);
+
+      // ELIMINADO: matchingService.endRoom(currentRoomId)
+      // Ya no usamos Supabase para gestionar las salas, evitará el error 400.
+
     } catch (error) {
       console.error("❌ Error en nextUser:", error);
       window.location.reload();
     }
-  }, [room, isBlocked, reportSkip, findNewMatch]);
+  }, [isBlocked, reportSkip, findNewMatch, socket]);
 
   return (
     <>

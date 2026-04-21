@@ -41,22 +41,20 @@ export default function DiscoverPage() {
   // porque usamos customControls)
   const [streamerMode, setStreamerMode] = useState(false);
 
-  const nextUser = useCallback(async () => {
-    if (isBlocked) return;
-    try {
-      const currentRoomId = room?.id;
-      reportSkip();
-      findNewMatch();
-      if (currentRoomId) {
-        matchingService.endRoom(currentRoomId).catch(err =>
-          console.error("Error limpiando room:", err)
-        );
-      }
-    } catch (error) {
-      console.error("❌ Error en nextUser:", error);
-      window.location.reload();
-    }
-  }, [room, isBlocked, reportSkip, findNewMatch]);
+ const nextUser = useCallback(async () => {
+  if (isBlocked) return;
+  
+  // 1. Notificar al servidor para que el OTRO usuario reciba 'partner-left'
+  if (socket?.connected) {
+    socket.emit("leave-matchmaking"); 
+  }
+  
+  // 2. Buscar nosotros mismos tras 1 segundo
+  findNewMatch(1000);
+
+  // IMPORTANTE: Quita el matchingService.endRoom(currentRoomId) 
+  // que usaba Supabase, eso es lo que causa el Error 400 ahora.
+}, [isBlocked, socket, findNewMatch]);
 
   return (
     <>

@@ -1,59 +1,55 @@
 "use client";
 
-/**
- * useMatchmaking — SIN LEAVE EN CLEANUP DE EFECTO
- *
- * PROBLEMA RAÍZ del no-match:
- *   El cleanup del useEffect emitía "leave-matchmaking" cada vez que
- *   React desmontaba el componente — lo cual ocurre en cada Fast Refresh,
- *   en StrictMode (doble mount), y en transiciones de ruta.
- *   Resultado: el usuario entraba en cola, React remontaba, el cleanup
- *   lo sacaba, y cuando el otro usuario llegaba la cola estaba vacía.
- *
- * SOLUCIÓN:
- *   - El cleanup del useEffect NO emite leave.
- *   - El leave solo se emite en eventos reales de cierre de página
- *     (beforeunload / visibilitychange a hidden) via un efecto separado
- *     que solo corre una vez al montar.
- *   - Esto es idéntico al comportamiento de la versión original que
- *     funcionaba, más el parámetro de modo.
- */
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSocket } from "@/hooks/useSocket";
 
 export type MatchMode = "discover" | "ligues" | string;
 
-export const useMatchmaking = (mode: MatchMode = "discover") => {
+export const useMatchmaking = (mode: MatchMode) => {
   const { socket, connectCount } = useSocket();
   const [room,      setRoom]      = useState<{ id: string } | null>(null);
   const [searching, setSearching] = useState(false);
+
   const isFindingMatch = useRef(false);
   const searchTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedMode  = useRef<MatchMode | null>(null);
+  const socketRef      = useRef(socket);
+  const prevModeRef    = useRef<MatchMode | null>(null);
 
-  const clearSearchTimeout = () => {
+  useEffect(() => { socketRef.current = socket; }, [socket]);
+
+  // ─── helpers ────────────────────────────────────────────────────────────────
+
+  const clearSearchTimeout = useCallback(() => {
     if (searchTimeout.current) {
       clearTimeout(searchTimeout.current);
       searchTimeout.current = null;
     }
-  };
+  }, []);
 
-  const findNewMatch = useCallback((delayMs = 0) => {
-    if (!socket?.connected) {
-      console.warn("[Matchmaking] Socket no conectado.");
-      return;
+  const emitLeave = useCallback(() => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit("leave-matchmaking");
     }
+  }, []);
+
+  // ─── findNewMatch ────────────────────────────────────────────────────────────
+  // Recibe el modo explícitamente para evitar closures con valor viejo
+
+  const findNewMatch = useCallback((targetMode: MatchMode, delayMs = 0) => {
+    if (!socketRef.current?.connected) return;
     if (isFindingMatch.current) return;
 
     clearSearchTimeout();
 
     const doSearch = () => {
-      if (!socket?.connected) return;
-      console.log(`[Matchmaking] 🔍 Emitiendo find-match (modo: ${mode})...`);
+      if (!socketRef.current?.connected) return;
+      console.log(`[Matchmaking] 🔍 find-match → modo: "${targetMode}"`);
       isFindingMatch.current = true;
+      committedMode.current  = targetMode;
       setSearching(true);
       setRoom(null);
-      socket.emit("find-match", { mode });
+      socketRef.current!.emit("find-match", { mode: targetMode });
     };
 
     if (delayMs > 0) {
@@ -63,90 +59,103 @@ export const useMatchmaking = (mode: MatchMode = "discover") => {
     } else {
       doSearch();
     }
-  }, [socket, mode]);
+  }, [clearSearchTimeout]);
 
-  // ── Listeners — cleanup SIN leave ────────────────────────────────────────
+  // Wrapper público — usa siempre el modo actual del hook
+  const findNewMatchPublic = useCallback((delayMs = 0) => {
+    findNewMatch(mode, delayMs);
+  }, [findNewMatch, mode]);
+
+  // ─── Eventos de socket ───────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!socket) return;
 
-    const handleMatchFound = (data: { partnerId: string; mode?: string }) => {
+    const handleMatchFound = (data: { partnerId: string; mode?: MatchMode }) => {
+      // Si el server nos emparejó en otro modo (race condition), ignorar y re-buscar
+      if (data.mode && data.mode !== committedMode.current) {
+        console.warn(
+          `[Matchmaking] ⚠️ Match en modo "${data.mode}" pero esperaba "${committedMode.current}" — descartando`
+        );
+        isFindingMatch.current = false;
+        findNewMatch(committedMode.current ?? mode, 200);
+        return;
+      }
       clearSearchTimeout();
-      console.log(`[Matchmaking] ✅ Match con: ${data.partnerId} (modo: ${data.mode ?? mode})`);
       setRoom({ id: data.partnerId });
       setSearching(false);
       isFindingMatch.current = false;
     };
 
     const handleWaiting = () => {
-      console.log(`[Matchmaking] ⏳ En cola (modo: ${mode})...`);
       setSearching(true);
       isFindingMatch.current = false;
     };
 
-    const handleError = (err: any) => {
-      console.error("[Matchmaking] ❌ Error:", err);
-      setSearching(false);
-      isFindingMatch.current = false;
-    };
-
     const handlePartnerLeft = () => {
-      console.log("[Matchmaking] 💔 Compañero se fue.");
+      console.log("[Matchmaking] 💔 Partner se fue. Reiniciando...");
       isFindingMatch.current = false;
-      findNewMatch(1000);
+      setRoom(null);
+      findNewMatch(mode, 1500);
     };
 
     socket.on("match-found",  handleMatchFound);
     socket.on("waiting",      handleWaiting);
-    socket.on("error",        handleError);
     socket.on("partner-left", handlePartnerLeft);
 
     return () => {
-      // ← Solo limpiamos listeners y timeout.
-      // NO emitimos leave aquí — evita que Fast Refresh / remounts
-      // saquen al usuario de la cola innecesariamente.
       socket.off("match-found",  handleMatchFound);
       socket.off("waiting",      handleWaiting);
-      socket.off("error",        handleError);
       socket.off("partner-left", handlePartnerLeft);
       clearSearchTimeout();
     };
-  }, [socket, findNewMatch, mode]);
+  }, [socket, mode, findNewMatch, clearSearchTimeout]);
 
-  // ── Leave SOLO al cerrar/salir de la página real ──────────────────────────
+  // ─── Auto-trigger ────────────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!socket) return;
+    if (!socket?.connected || connectCount === 0) return;
 
-    const emitLeave = () => {
-      if (socket.connected) {
-        socket.emit("leave-matchmaking");
-        console.log(`[Matchmaking] 🚪 Página cerrada, leave emitido (modo: ${mode})`);
-      }
-    };
+    const isFirstRun   = prevModeRef.current === null;
+    const modeChanged  = !isFirstRun && prevModeRef.current !== mode;
+    prevModeRef.current = mode;
 
-    // beforeunload: cierre de pestaña / navegador
-    window.addEventListener("beforeunload", emitLeave);
-
-    // visibilitychange: minimizar en móvil o cambiar de pestaña
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") emitLeave();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      window.removeEventListener("beforeunload", emitLeave);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [socket, mode]);
-
-  // ── Disparador automático en cada conexión ───────────────────────────────
-  useEffect(() => {
-    if (connectCount === 0) return;
-    if (!room && !searching && !isFindingMatch.current) {
-      console.log(`[Matchmaking] 🚀 Búsqueda inicial [${mode}] (connectCount=${connectCount})...`);
-      findNewMatch();
+    if (modeChanged) {
+      // Navegación SPA: salir de la sesión anterior, entrar en la nueva cola
+      console.log(`[Matchmaking] 🔄 Modo "${mode}" detectado. Leave + re-search`);
+      emitLeave();
+      isFindingMatch.current = false;
+      setRoom(null);
+      setSearching(false);
+      findNewMatch(mode, 300);
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectCount]);
 
-  return { room, searching, setRoom, findNewMatch };
+    // Primera conexión / reconexión
+    if (!room && !searching && !isFindingMatch.current) {
+      console.log(`[Matchmaking] 🚀 Auto-búsqueda en modo: "${mode}"`);
+      findNewMatch(mode);
+    }
+  // Solo queremos que esto corra cuando el socket conecta o el modo cambia
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectCount, socket?.connected, mode]);
+
+  // ─── Cleanup al desmontar (salir de la página) ───────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      clearSearchTimeout();
+      emitLeave();
+      isFindingMatch.current = false;
+      committedMode.current  = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return {
+    room,
+    searching,
+    setRoom,
+    findNewMatch: findNewMatchPublic,
+  };
 };
