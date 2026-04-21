@@ -300,9 +300,7 @@ export default function VideoPlayer({
               </div>
             )}
 
-            <div className="vp-label" style={{ zIndex: 10 }}>
-              <div className="vp-rec-dot" /> Tú
-            </div>
+            
 
             <div className="vp-corner vp-corner-tl" />
             <div className="vp-corner vp-corner-bl" />

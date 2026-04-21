@@ -452,7 +452,6 @@ export default function SideNav() {
           </div>
           <div>
             <div className="snav-logo-text">Turr<span>inder</span></div>
-            <div className="snav-logo-sub">Tinder meets OmeTV</div>
           </div>
         </div>
 

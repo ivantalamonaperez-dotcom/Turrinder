@@ -4,18 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 
-const INTERESTS_ALL = [
-  "🎵 Música", "🎮 Gaming", "✈️ Viajes", "📚 Libros", "🎬 Cine",
-  "🏋️ Fitness", "🍕 Gastronomía", "🎨 Arte", "📸 Fotografía", "🌿 Naturaleza",
-  "💻 Tecnología", "🎭 Teatro", "🏄 Surf", "🐕 Mascotas", "🧘 Yoga",
-  "🎸 Guitarra", "⚽ Fútbol", "🏀 Básquet", "🎤 Karaoke", "🎲 Juegos de mesa",
-];
-
 const LOOKING_FOR_ALL = [
   { id: "friends", label: "Amigos",      emoji: "👋" },
   { id: "dates",   label: "Citas",       emoji: "💙" },
   { id: "chat",    label: "Charlar",     emoji: "💬" },
-  { id: "network", label: "Networking",  emoji: "🤝" },
+  { id: "network", label: "Streamer",  emoji: "📹" },
 ];
 
 const GENDERS = ["Hombre", "Mujer", "No binario", "Prefiero no decir"];
@@ -144,7 +137,7 @@ export default function ProfilePage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -614,10 +607,6 @@ export default function ProfilePage() {
                 <div className="pf-stat-val">{photos.length}</div>
                 <div className="pf-stat-key">Fotos</div>
               </div>
-              <div className="pf-stat">
-                <div className="pf-stat-val">{interests.length}</div>
-                <div className="pf-stat-key">Intereses</div>
-              </div>
             </div>
           )}
         </div>
@@ -765,21 +754,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                <div className="pf-field">
-                  <div className="pf-section-title">
-                    Intereses · {interests.length}/8
-                  </div>
-                  <div style={{ height: 8 }} />
-                  <div className="pf-tags">
-                    {INTERESTS_ALL.map(item => (
-                      <button key={item}
-                        className={`pf-tag ${interests.includes(item) ? "active" : ""}`}
-                        onClick={() => toggleInterest(item)}>
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          
 
                 <div className="pf-actions">
                   <button

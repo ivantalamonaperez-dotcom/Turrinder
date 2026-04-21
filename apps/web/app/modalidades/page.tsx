@@ -15,11 +15,24 @@ const MODALIDADES = [
     tagline: "Conocé gente nueva en tiempo real",
     description:
       "Video en vivo con personas al azar. Dale like si hay química, pasá si no. Simple.",
-    href: "/modalidades/ligues",
+    href: "/discover",
     active: true,
     accentFrom: "#54c7f8",
     accentTo: "#1a6fa8",
   },
+
+  {
+  id: "debate",
+  label: "Debate",
+  emoji: "🎙️",
+  tagline: "Creá salas y debatí con quien elijas",
+  description: "Iniciá una sala privada o pública e invitá a personas específicas para debatir sobre cualquier tema en tiempo real.",
+  href: "/modalidades/salas",
+  active: true,
+  accentFrom: "#f59e0b",
+  accentTo: "#b45309",
+  },
+  
   {
     id: "amigos",
     label: "Amigos",
@@ -30,17 +43,6 @@ const MODALIDADES = [
     active: false,
     accentFrom: "#34d399",
     accentTo: "#059669",
-  },
-  {
-    id: "debate",
-    label: "Debate",
-    emoji: "🎙️",
-    tagline: "Discutí de lo que sea",
-    description: "Te matcheamos con alguien de opinión contraria. El diálogo empieza solo.",
-    href: "/modalidades/debate",
-    active: false,
-    accentFrom: "#f59e0b",
-    accentTo: "#b45309",
   },
   {
     id: "idiomas",
@@ -69,7 +71,7 @@ export default function ModalidadesPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
 
         .mod-root {
           --sky:      #54c7f8;
