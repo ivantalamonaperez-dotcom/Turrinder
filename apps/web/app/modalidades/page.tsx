@@ -15,7 +15,7 @@ const MODALIDADES = [
     tagline: "Conocé gente nueva en tiempo real",
     description:
       "Video en vivo con personas al azar. Dale like si hay química, pasá si no. Simple.",
-    href: "/discover",
+    href: "/modalidades/ligues",
     active: true,
     accentFrom: "#54c7f8",
     accentTo: "#1a6fa8",
