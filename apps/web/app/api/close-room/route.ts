@@ -4,13 +4,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Cliente con service role para poder actualizar sin auth del usuario
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!  // ← en .env.local (nunca en el cliente)
-);
-
 export async function POST(req: NextRequest) {
+  // Cliente inicializado dentro del handler, no a nivel de módulo
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
   try {
     const { roomId } = await req.json();
     if (!roomId) return NextResponse.json({ error: "roomId required" }, { status: 400 });
