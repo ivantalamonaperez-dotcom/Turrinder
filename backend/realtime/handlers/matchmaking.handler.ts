@@ -1,41 +1,25 @@
 /**
- * matchmaking.handler.ts — COLAS POR MODO + ANTI-LOOP
+ * matchmaking.handler.ts — VERSIÓN SIMPLE + COLAS POR MODO
  *
- * FIXES:
+ * Volvemos a la lógica original que funcionaba, solo agregamos
+ * el soporte de múltiples colas por modo.
  *
- * 1. ANTI-LOOP (causa del ciclo match/romper infinito con 2 usuarios):
- *    Cuando A skipea a B → B recibe "partner-left" → B busca → encuentra A
- *    → match → A skipea → loop eterno.
- *
- *    Solución: cooldown de pareja reciente. Después de un match,
- *    ambos usuarios quedan en `recentPartners` durante RECENT_COOLDOWN_MS.
- *    Al buscar nuevo match, se saltean candidatos recientes y se los
- *    reintegra al final de la cola. Si no hay nadie más disponible,
- *    el usuario queda en cola esperando que expire el cooldown o llegue
- *    un tercero.
- *
- * 2. COLAS POR MODO: cada modo tiene su propia cola independiente.
+ * Sin debounce (causaba que los usuarios salieran de la cola antes
+ * de que el otro llegara). Sin anti-loop por ahora (se puede
+ * agregar después cuando la conexión básica funcione).
  */
 
 import { Socket, Server } from "socket.io";
 import { userSocketMap } from "../../webrtc/webrtc.events";
 import { adManager } from "../../ad/ad.manager";
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
-
 export type MatchMode = "discover" | "ligues" | string;
-
-// ── Config ───────────────────────────────────────────────────────────────────
-
-const RECENT_COOLDOWN_MS = 8_000;
-const MAX_SKIP_ATTEMPTS  = 10;
 
 // ── Estado ───────────────────────────────────────────────────────────────────
 
+/** Una cola por modo */
 const queues        = new Map<MatchMode, string[]>();
-const userMode      = new Map<string, MatchMode>();
 const activeMatches = new Map<string, string>();
-const recentPartners = new Map<string, Set<string>>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,20 +54,6 @@ const breakActiveMatch = (io: Server, userId: string) => {
   }
 };
 
-const markRecentPartners = (a: string, b: string) => {
-  if (!recentPartners.has(a)) recentPartners.set(a, new Set());
-  if (!recentPartners.has(b)) recentPartners.set(b, new Set());
-  recentPartners.get(a)!.add(b);
-  recentPartners.get(b)!.add(a);
-  setTimeout(() => {
-    recentPartners.get(a)?.delete(b);
-    recentPartners.get(b)?.delete(a);
-  }, RECENT_COOLDOWN_MS);
-};
-
-const isRecentPartner = (userId: string, candidateId: string): boolean =>
-  recentPartners.get(userId)?.has(candidateId) ?? false;
-
 // ── Handler ──────────────────────────────────────────────────────────────────
 
 export const matchmakingHandler = {
@@ -97,7 +67,6 @@ export const matchmakingHandler = {
     }
 
     userSocketMap.set(supabaseId, socket.id);
-    userMode.set(supabaseId, mode);
     removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
 
@@ -107,40 +76,23 @@ export const matchmakingHandler = {
     const queue = getQueue(mode);
     queues.set(mode, queue.filter((uid) => isSocketAlive(io, uid)));
 
-    // Buscar candidato que no sea partner reciente
-    let foundPartner: string | null = null;
-    const skipped: string[] = [];
-    let attempts = 0;
+    if (queue.length > 0) {
+      const partnerUUID = queue.shift()!;
 
-    while (queue.length > 0 && attempts < MAX_SKIP_ATTEMPTS) {
-      attempts++;
-      const candidate = queue.shift()!;
-
-      if (!isSocketAlive(io, candidate)) continue;
-
-      if (isRecentPartner(supabaseId, candidate)) {
-        skipped.push(candidate);
-        console.log(`[Matchmaking] ⏭️  Saltando partner reciente: ${candidate}`);
-        continue;
+      if (!isSocketAlive(io, partnerUUID)) {
+        queue.push(supabaseId);
+        socket.emit("waiting", { mode });
+        return;
       }
 
-      foundPartner = candidate;
-      break;
-    }
+      const partnerSocketId = userSocketMap.get(partnerUUID)!;
+      activeMatches.set(supabaseId, partnerUUID);
+      activeMatches.set(partnerUUID, supabaseId);
 
-    // Reintegrar los saltados al final
-    for (const uid of skipped) queue.push(uid);
+      socket.emit("match-found",                { partnerId: partnerUUID, isInitiator: true,  mode });
+      io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId,  isInitiator: false, mode });
 
-    if (foundPartner) {
-      const partnerSocketId = userSocketMap.get(foundPartner)!;
-      activeMatches.set(supabaseId, foundPartner);
-      activeMatches.set(foundPartner, supabaseId);
-      markRecentPartners(supabaseId, foundPartner);
-
-      socket.emit("match-found",           { partnerId: foundPartner, isInitiator: true,  mode });
-      io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId, isInitiator: false, mode });
-
-      console.log(`[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId} <-> ${foundPartner}`);
+      console.log(`[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId} <-> ${partnerUUID}`);
       return;
     }
 
@@ -154,13 +106,9 @@ export const matchmakingHandler = {
     if (!supabaseId) return;
     removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
-    userMode.delete(supabaseId);
     console.log(`[Matchmaking] 🚪 ${supabaseId} salió.`);
   },
 
-  getStats: () => {
-    const stats: Record<string, number> = {};
-    for (const [mode, q] of queues) stats[mode] = q.length;
-    return { queues: stats, activeMatches: activeMatches.size / 2 };
-  },
+  getQueueLength:     () => Array.from(queues.values()).reduce((a, q) => a + q.length, 0),
+  getActiveMatchCount: () => activeMatches.size / 2,
 };

@@ -32,7 +32,7 @@ export default function DiscoverPage() {
   useProfile();
   usePresence();
 
-  const { room, searching, findNewMatch } = useMatchmaking();
+  const { room, searching, findNewMatch } = useMatchmaking("discover");
   const { matchUser } = useMatchUser(room);
 
   const { adMode, skipInfo, isBlocked, adReady, reportSkip, reportAdCompleted } = useAd();

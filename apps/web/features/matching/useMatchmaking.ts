@@ -1,25 +1,22 @@
 "use client";
 
 /**
- * useMatchmaking — CON MODO + CLEANUP AL DESMONTAR
+ * useMatchmaking — SIN LEAVE EN CLEANUP DE EFECTO
  *
- * FIXES:
+ * PROBLEMA RAÍZ del no-match:
+ *   El cleanup del useEffect emitía "leave-matchmaking" cada vez que
+ *   React desmontaba el componente — lo cual ocurre en cada Fast Refresh,
+ *   en StrictMode (doble mount), y en transiciones de ruta.
+ *   Resultado: el usuario entraba en cola, React remontaba, el cleanup
+ *   lo sacaba, y cuando el otro usuario llegaba la cola estaba vacía.
  *
- * 1. MODO INCORRECTO AL NAVEGAR:
- *    Al pasar de /discover a /modalidades/ligues, el hook de discover
- *    se desmontaba sin emitir "leave-matchmaking", dejando al usuario
- *    en la cola de "discover". El nuevo hook de ligues entonces emitía
- *    "find-match" con "ligues" pero el servidor lo sacaba de la cola
- *    equivocada (o encontraba el match en discover).
- *
- *    Solución: emitir "leave-matchmaking" en el cleanup del useEffect
- *    principal, garantizando que al desmontar el usuario salga de
- *    cualquier cola en la que esté.
- *
- * 2. LISTENERS DUPLICADOS:
- *    Con el socket singleton, si dos instancias del hook estaban vivas
- *    a la vez (StrictMode o navegación rápida), los listeners se
- *    acumulaban. Ahora el off() en el cleanup es simétrico al on().
+ * SOLUCIÓN:
+ *   - El cleanup del useEffect NO emite leave.
+ *   - El leave solo se emite en eventos reales de cierre de página
+ *     (beforeunload / visibilitychange a hidden) via un efecto separado
+ *     que solo corre una vez al montar.
+ *   - Esto es idéntico al comportamiento de la versión original que
+ *     funcionaba, más el parámetro de modo.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -68,7 +65,7 @@ export const useMatchmaking = (mode: MatchMode = "discover") => {
     }
   }, [socket, mode]);
 
-  // ── Listeners + cleanup al desmontar ─────────────────────────────────────
+  // ── Listeners — cleanup SIN leave ────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -104,21 +101,42 @@ export const useMatchmaking = (mode: MatchMode = "discover") => {
     socket.on("partner-left", handlePartnerLeft);
 
     return () => {
+      // ← Solo limpiamos listeners y timeout.
+      // NO emitimos leave aquí — evita que Fast Refresh / remounts
+      // saquen al usuario de la cola innecesariamente.
       socket.off("match-found",  handleMatchFound);
       socket.off("waiting",      handleWaiting);
       socket.off("error",        handleError);
       socket.off("partner-left", handlePartnerLeft);
       clearSearchTimeout();
-
-      // ← CLAVE: al desmontar, salimos de la cola del servidor.
-      // Esto evita que el usuario quede "fantasma" en la cola de un modo
-      // después de navegar a otra página o modalidad.
-      if (socket.connected) {
-        socket.emit("leave-matchmaking");
-        console.log(`[Matchmaking] 🚪 Desmontando hook (modo: ${mode}), leave emitido.`);
-      }
     };
   }, [socket, findNewMatch, mode]);
+
+  // ── Leave SOLO al cerrar/salir de la página real ──────────────────────────
+  useEffect(() => {
+    if (!socket) return;
+
+    const emitLeave = () => {
+      if (socket.connected) {
+        socket.emit("leave-matchmaking");
+        console.log(`[Matchmaking] 🚪 Página cerrada, leave emitido (modo: ${mode})`);
+      }
+    };
+
+    // beforeunload: cierre de pestaña / navegador
+    window.addEventListener("beforeunload", emitLeave);
+
+    // visibilitychange: minimizar en móvil o cambiar de pestaña
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") emitLeave();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("beforeunload", emitLeave);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [socket, mode]);
 
   // ── Disparador automático en cada conexión ───────────────────────────────
   useEffect(() => {

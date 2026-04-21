@@ -39,7 +39,7 @@ export default function LiguesPage() {
   useProfile();
   usePresence();
 
-  const { room, searching, findNewMatch } = useMatchmaking();
+  const { room, searching, findNewMatch } = useMatchmaking("ligues");
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
