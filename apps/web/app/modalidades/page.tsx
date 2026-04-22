@@ -175,28 +175,26 @@ export default function ModalidadesPage() {
         }
         .mp-hero-sub{font-size:14px;color:rgba(160,205,240,.45);line-height:1.65;}
 
-        /* ── Bento grid ──
-           Col 1: card 0 (tall) + card 2 (medium)
-           Col 2: card 1 (medium) + card 3 (tall)
-           Heights are set via grid-row spans                        */
+        /* ── Bento grid — CSS columns for true masonry flow ── */
         .mp-bento {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          grid-template-rows: auto;
-          gap: 14px;
+          column-count: 2;
+          column-gap: 14px;
           width: 100%;
-          align-items: start;
         }
 
         /* Card base */
         .mp-card {
           position:relative;
+          break-inside: avoid;
+          display: inline-flex;
+          width: 100%;
+          margin-bottom: 14px;
+          
           border-radius:22px;
           border:1px solid rgba(84,199,248,.10);
           background:rgba(4,12,24,.75);
           backdrop-filter:blur(18px);
           overflow:hidden;
-          display:flex;
           flex-direction:column;
           opacity:0;transform:translateY(28px) scale(.98);
           transition:
@@ -246,6 +244,7 @@ export default function ModalidadesPage() {
 
         .mp-card-img{
           width:100%; height:100%;
+          padding: 36px;
           object-fit: contain;         /* <-- CAMBIO: de 'cover' a 'contain' */
           object-position: center;     /* <-- CAMBIO: centrado en lugar de 'center top' */
           filter:saturate(.82) brightness(.88);
