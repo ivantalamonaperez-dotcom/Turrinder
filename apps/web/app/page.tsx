@@ -4,6 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 import img from "../Images/logo.png";
+import imgLigues      from "../Images/ligues.png";
+import imgDebates     from "../Images/debates.png";
+import imgIdiomas     from "../Images/idiomas.png";
+import imgModalidades from "../Images/modalidades.png";
 
 /* ─── TYPES ──────────────────────────────────────────────────── */
 interface Profile {
@@ -247,125 +251,128 @@ nav{
 .logo-hero .logo-divider{height:38px;}
 
 /* ── HERO ── */
+/* ── HERO ── */
 .hero{
-  align-items:flex-start;
   grid-area:left;
-  display:flex;flex-direction:column;justify-content:center;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;
   padding:60px 52px;
   border-right:1px solid var(--glass-b);
   position:relative;overflow:hidden;
-}
-
-.hero-badge{
-  display:inline-flex;align-items:center;gap:8px;
-  background:rgba(84,199,248,0.08);border:1px solid rgba(84,199,248,0.22);
-  border-radius:100px;padding:6px 16px;width:fit-content;margin-bottom:30px;
-  font-size:12px;color:rgba(143,212,255,0.95);font-weight:500;letter-spacing:0.6px;
-  animation:fadeSlideUp 0.6s 0.15s both;
+  text-align:center;
 }
 
 .hero-title{
   font-family:'Syne',sans-serif;
-  font-size:clamp(40px,5.2vw,64px);
-  font-weight:800;line-height:1.0;
-  letter-spacing:-2px;
-  margin-bottom:22px;
+  font-size:clamp(14px,1.6vw,20px);
+  font-weight:500;line-height:1.4;
+  letter-spacing:0.2px;
+  color:var(--muted);
   animation:fadeSlideUp 0.7s 0.2s both;
-}
-.hero-title .line1{display:block;color:var(--white-arg)}
-.hero-title .line2{
-  background:linear-gradient(135deg,var(--sky) 0%,#8fd4ff 50%,var(--sky2) 100%);
-  -webkit-background-clip:text;
-  -webkit-text-fill-color:transparent;
-  background-clip:text;
+  max-width:320px;
 }
 
-.hero-sub{
-  font-size:15.5px;color:var(--muted);line-height:1.75;max-width:420px;
-  margin-bottom:36px;font-weight:300;
-  animation:fadeSlideUp 0.7s 0.3s both;
+/* ── LOGO HERO — grande y centrado ── */
+.logo-hero{
+  display:flex;flex-direction:row;align-items:center;gap:8px;
+  margin-bottom:14px;
+  margin-top:-40px;
+  cursor:default;
+  animation:fadeSlideUp 0.6s 0.05s both;
 }
+.logo-hero .logo-icon-wrap{width:120px;height:120px;flex-shrink:0;}
+.logo-hero .logo-icon-bg{display:none;}
+.logo-hero .logo-text-group{align-items:flex-start;}
+.logo-hero .logo-wordmark{font-size:82px;letter-spacing:-4.5px;}
+.logo-hero .logo-tagline{font-size:11px;letter-spacing:5px;margin-top:6px;}
 
-.use-cases{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:22px;
-  margin-bottom:10px;
+/* ── CAROUSEL ── */
+.carousel-wrap{
+  position:relative;
+  width:100%;
+  max-width:400px;
+  margin:28px auto 0;
+  display:flex;flex-direction:column;align-items:center;gap:16px;
   animation:fadeSlideUp 0.8s 0.35s both;
 }
 
-.uc-card{
+.carousel-stage{
   position:relative;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:8px;
-  text-align:center;
-  padding:18px 14px;
-
-  background:linear-gradient(
-    145deg,
-    rgba(84,199,248,0.08),
-    rgba(84,199,248,0.02)
-  );
-
-  border:1px solid rgba(84,199,248,0.18);
-  border-radius:18px;
-  cursor:default;
-
-  backdrop-filter:blur(10px);
-
-  transition:all 0.3s cubic-bezier(0.16,1,0.3,1);
+  width:270px;height:270px;
+  display:flex;align-items:center;justify-content:center;
 }
 
-.uc-card::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  border-radius:18px;
-  background:radial-gradient(
-    circle at 50% 0%,
-    rgba(84,199,248,0.18),
-    transparent 60%
-  );
+.carousel-img{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
   opacity:0;
-  transition:opacity 0.3s ease;
+  transform:translateY(18px) scale(0.92);
+  transition:opacity 0.55s cubic-bezier(0.16,1,0.3,1), transform 0.55s cubic-bezier(0.16,1,0.3,1);
+  pointer-events:none;
 }
-
-.uc-card:hover{
-  transform:translateY(-6px) scale(1.02);
-  border-color:rgba(84,199,248,0.35);
-  box-shadow:
-    0 12px 40px rgba(84,199,248,0.18),
-    inset 0 1px 0 rgba(255,255,255,0.08);
-}
-
-.uc-card:hover::before{
+.carousel-img.active{
   opacity:1;
+  transform:translateY(0) scale(1);
+  animation:carouselFloat 4s ease-in-out infinite;
+}
+.carousel-img img{
+  width:240px;height:240px;
+  object-fit:contain;
+  filter:drop-shadow(0 12px 40px rgba(84,199,248,0.35)) brightness(1.05);
 }
 
-/* icono más pro */
-.uc-icon{
-  font-size:26px;
-  line-height:1;
-  filter:drop-shadow(0 0 6px rgba(84,199,248,0.5));
+@keyframes carouselFloat{
+  0%,100%{transform:translateY(0) scale(1);}
+  50%{transform:translateY(-14px) scale(1.03);}
 }
 
-/* título más fuerte */
-.uc-title{
+.carousel-glow{
+  position:absolute;
+  bottom:-14px;left:50%;transform:translateX(-50%);
+  width:140px;height:24px;
+  border-radius:50%;
+  background:radial-gradient(ellipse,rgba(84,199,248,0.3) 0%,transparent 70%);
+  filter:blur(10px);
+  animation:glowBreath 4s ease-in-out infinite;
+}
+@keyframes glowBreath{
+  0%,100%{opacity:0.4;width:110px}
+  50%{opacity:0.8;width:150px}
+}
+
+.carousel-label{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  min-height:50px;
+}
+.carousel-label-name{
   font-family:'Syne',sans-serif;
-  font-size:12px;
-  font-weight:800;
-  color:var(--white-arg);
-  letter-spacing:0.4px;
+  font-size:24px;font-weight:900;
+  letter-spacing:-1px;
+  background:linear-gradient(135deg,var(--sky) 0%,#c8f2ff 50%,var(--sky2) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  opacity:0;transform:translateY(10px);
+  transition:opacity 0.4s ease 0.15s,transform 0.4s ease 0.15s;
 }
+.carousel-label-name.visible{opacity:1;transform:translateY(0);}
+.carousel-label-desc{
+  font-size:12px;color:var(--muted);font-weight:300;
+  opacity:0;transform:translateY(6px);
+  transition:opacity 0.4s ease 0.25s,transform 0.4s ease 0.25s;
+}
+.carousel-label-desc.visible{opacity:1;transform:translateY(0);}
 
-/* descripción más legible */
-.uc-desc{
-  font-size:11px;
-  color:rgba(180,215,240,0.55);
-  line-height:1.5;
-  max-width:120px;
+.carousel-dots{
+  display:flex;gap:7px;align-items:center;
+}
+.carousel-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:rgba(84,199,248,0.2);
+  transition:all 0.35s cubic-bezier(0.34,1.56,0.64,1);
+  cursor:pointer;
+}
+.carousel-dot.active{
+  background:var(--sky);
+  width:22px;border-radius:3px;
+  box-shadow:0 0 8px rgba(84,199,248,0.6);
 }
 
 @keyframes fadeSlideUp{
@@ -509,19 +516,17 @@ nav{
   .auth-panel{padding:40px 24px}
   .strip{padding:14px 24px;flex-direction:column;gap:12px;align-items:flex-start}
   .strip-features{flex-wrap:wrap;gap:12px}
-  .use-cases{grid-template-columns:repeat(2,1fr)}
-  .logo-hero .logo-wordmark{font-size:26px;}
+  .logo-hero .logo-wordmark{font-size:38px;}
 }
 @media(max-width:560px){
   .nav-stats{display:none}
-  .hero-title{font-size:36px;letter-spacing:-1.5px}
   .fields-row{grid-template-columns:1fr}
-  .use-cases{grid-template-columns:repeat(2,1fr)}
-  .logo-hero{gap:13px;}
-  .logo-hero .logo-icon-wrap{width:50px;height:50px;}
-  .logo-hero .logo-wordmark{font-size:22px;}
+  .logo-hero .logo-icon-wrap{width:64px;height:64px;}
+  .logo-hero .logo-wordmark{font-size:30px;}
   .logo-badge{display:none}
   .logo-divider{display:none}
+  .carousel-stage{width:170px;height:170px;}
+  .carousel-img img{width:150px;height:150px;}
 }
 `;
 
@@ -563,6 +568,64 @@ function useFluctuate(base: number, range: number) {
   return value.toLocaleString("es-AR");
 }
 
+/* ─── HERO CAROUSEL ──────────────────────────────────────────── */
+const carouselSlides = [
+  { img: imgLigues,      name: "Ligues",      desc: "Conocé gente nueva en tiempo real" },
+  { img: imgDebates,     name: "Debates",     desc: "Discutí ideas con cualquier persona" },
+  { img: imgModalidades, name: "Modalidades", desc: "Elegí cómo querés conectar" },
+  { img: imgIdiomas,     name: "Idiomas",     desc: "Practicá con hablantes nativos" },
+];
+
+function HeroCarousel() {
+  const [current, setCurrent] = useState(0);
+  const [labelVisible, setLabelVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLabelVisible(false);
+      setTimeout(() => {
+        setCurrent(c => (c + 1) % carouselSlides.length);
+        setLabelVisible(true);
+      }, 350);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, []);
+
+  const slide = carouselSlides[current];
+
+  return (
+    <div className="carousel-wrap">
+      <div className="carousel-stage">
+        {carouselSlides.map((s, i) => (
+          <div key={i} className={`carousel-img ${i === current ? "active" : ""}`}>
+            <img src={(s.img as any).src ?? s.img} alt={s.name} />
+          </div>
+        ))}
+        <div className="carousel-glow" />
+      </div>
+
+      <div className="carousel-label">
+        <div className={`carousel-label-name ${labelVisible ? "visible" : ""}`}>
+          {slide.name}
+        </div>
+        <div className={`carousel-label-desc ${labelVisible ? "visible" : ""}`}>
+          {slide.desc}
+        </div>
+      </div>
+
+      <div className="carousel-dots">
+        {carouselSlides.map((_, i) => (
+          <div
+            key={i}
+            className={`carousel-dot ${i === current ? "active" : ""}`}
+            onClick={() => { setLabelVisible(false); setTimeout(() => { setCurrent(i); setLabelVisible(true); }, 200); }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── LOGO COMPONENT ─────────────────────────────────────────── */
 function Logo({ variant = "nav" }: { variant?: "nav" | "hero" }) {
   const isHero = variant === "hero";
@@ -579,7 +642,6 @@ function Logo({ variant = "nav" }: { variant?: "nav" | "hero" }) {
         <span className="logo-wordmark">
           Turr<em>inder</em>
         </span>
-        <span className="logo-tagline">Conectá · Creá · Debatí</span>
       </div>
 
       
@@ -782,47 +844,15 @@ export default function Turrinder() {
         {/* NAV — logo compacto */}
         
 
-        {/* HERO — logo grande */}
+        {/* HERO — logo grande + carousel */}
         <section className="hero">
           <Logo variant="hero" />
 
           <h1 className="hero-title">
-            <span className="line1">Tu espacio para</span>
-            <span className="line2">conectar, crear y debatir.</span>
+            El lugar donde streamers, debatistas y personas reales se encuentran.
           </h1>
 
-          <p className="hero-sub">
-            Para streamers que quieren audiencia, debatistas que buscan ideas contrarias,
-            comunidades que necesitan un lugar y personas que quieren conocer a otras personas reales.
-            Turrinder es para todos.
-          </p>
-
-        <div className="use-cases">
-  <div className="uc-card">
-    <div className="uc-icon">🎙️</div>
-    <div className="uc-title">Streamers</div>
-    <div className="uc-desc">Hablá en vivo con tu audiencia</div>
-  </div>
-
-  <div className="uc-card">
-    <div className="uc-icon">💬</div>
-    <div className="uc-title">Debates</div>
-    <div className="uc-desc">Discutí ideas con extraños</div>
-  </div>
-
-  <div className="uc-card">
-    <div className="uc-icon">🤝</div>
-    <div className="uc-title">Comunidad</div>
-    <div className="uc-desc">Grupos y salas temáticas</div>
-  </div>
-
-  <div className="uc-card">
-    <div className="uc-icon">❤️</div>
-    <div className="uc-title">Conectar</div>
-    <div className="uc-desc">Conocé gente nueva del mundo</div>
-  </div>
-</div>
-          
+          <HeroCarousel />
         </section>
 
         {/* AUTH PANEL */}
