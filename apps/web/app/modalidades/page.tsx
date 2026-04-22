@@ -80,7 +80,7 @@ export default function ModalidadesPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         .mp {
@@ -164,7 +164,7 @@ export default function ModalidadesPage() {
         }
         @keyframes eyePulse{0%,100%{opacity:.7}50%{opacity:1}}
         .mp-hero-h1{
-          font-family:'Syne',sans-serif;
+          font-family: sans-serif;
           font-size:clamp(36px,1vw,56px);
           font-weight:900;color:#eef5ff;letter-spacing:-2px;line-height:1.0;margin-bottom:14px;
         }

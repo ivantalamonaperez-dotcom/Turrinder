@@ -521,7 +521,7 @@ export default function ProfilePage() {
           width: 100%; padding: 15px;
           background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
           border: none; border-radius: 14px; color: #020d18;
-          font-family: 'Syne', sans-serif;
+          font-family:  sans-serif;
           font-size: 15px; font-weight: 800; letter-spacing: 0.3px;
           cursor: pointer; transition: all 0.2s;
           box-shadow: 0 8px 24px rgba(84,199,248,0.35);

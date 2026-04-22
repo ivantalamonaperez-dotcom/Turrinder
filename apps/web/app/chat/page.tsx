@@ -165,7 +165,7 @@ export default function ChatPage() {
         .cl-header { padding: 56px 24px 20px; position: relative; z-index: 1; }
         .cl-header-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; }
         .cl-label { font-size:11px; font-weight:600; letter-spacing:2.5px; text-transform:uppercase; color:var(--sky); margin-bottom:6px; opacity:0.8; }
-        .cl-title { font-family:'Syne',sans-serif; font-size:34px; font-weight:900; color:var(--w); letter-spacing:-1px; line-height:1; }
+        .cl-title { font-family:sans-serif; font-size:34px; font-weight:900; color:var(--w); letter-spacing:-1px; line-height:1; }
         .cl-count { background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 50%,var(--sky3) 100%); color:#020d18; font-family:'Syne',sans-serif; font-size:13px; font-weight:800; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-top:4px; box-shadow:0 4px 16px rgba(84,199,248,0.45); }
 
         /* ── Ad slot ── */
@@ -260,9 +260,9 @@ export default function ChatPage() {
         /* ── Empty ── */
         .cl-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 40px; gap:16px; text-align:center; position:relative; z-index:1; }
         .cl-empty-icon { font-size:64px; filter:grayscale(0.2); margin-bottom:8px; }
-        .cl-empty-title { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; color:rgba(240,248,255,0.55); letter-spacing:-0.5px; }
+        .cl-empty-title { font-family:sans-serif; font-size:22px; font-weight:800; color:rgba(240,248,255,0.55); letter-spacing:-0.5px; }
         .cl-empty-sub { font-size:14px; color:var(--muted); line-height:1.7; max-width:260px; }
-        .cl-empty-btn { margin-top:12px; padding:14px 32px; background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 50%,var(--sky3) 100%); border:none; border-radius:100px; color:#020d18; font-family:'Syne',sans-serif; font-size:14px; font-weight:800; cursor:pointer; letter-spacing:0.3px; box-shadow:0 8px 24px rgba(84,199,248,0.4); position:relative; overflow:hidden; transition:all 0.25s cubic-bezier(0.16,1,0.3,1); }
+        .cl-empty-btn { margin-top:12px; padding:14px 32px; background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 50%,var(--sky3) 100%); border:none; border-radius:100px; color:#020d18; font-family:sans-serif; font-size:14px; font-weight:800; cursor:pointer; letter-spacing:0.3px; box-shadow:0 8px 24px rgba(84,199,248,0.4); position:relative; overflow:hidden; transition:all 0.25s cubic-bezier(0.16,1,0.3,1); }
         .cl-empty-btn::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,rgba(255,255,255,0.2),transparent 55%); }
         .cl-empty-btn:hover { transform:translateY(-2px); box-shadow:0 14px 36px rgba(84,199,248,0.55); }
         .cl-empty-btn:active { transform:translateY(0); }
