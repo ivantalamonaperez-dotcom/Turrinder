@@ -19,14 +19,11 @@ interface Profile {
   tag: string;
 }
 
-
-
 const recentNames = [
   "ValenStream de Córdoba","Lucía de Bs As","Martina de Rosario",
   "Agustín de Mendoza","Sofía de Montevideo","Diego de Santiago",
   "Camila de Lima","Nicolás de Bogotá",
 ];
-
 
 const spAvatars = [
   "https://randomuser.me/api/portraits/women/12.jpg",
@@ -139,32 +136,17 @@ nav{
 }
 .nav-stat strong{color:var(--white-arg);font-weight:700;font-size:14px}
 
-/* ══════════════════════════════════════
-   LOGO — versión premium
-══════════════════════════════════════ */
-
-/* contenedor del logo en el nav */
 .logo-nav{
   display:flex;align-items:center;gap:14px;cursor:pointer;
   user-select:none;
   animation:fadeSlideUp 0.5s 0s both;
 }
-
-/* ícono con marco glassmorphism + glow */
-.logo-icon-wrap{
-  position:relative;
-  width:44px;height:44px;flex-shrink:0;
-}
+.logo-icon-wrap{position:relative;width:44px;height:44px;flex-shrink:0;}
 .logo-icon-bg{
-  position:absolute;inset:0;
-  border-radius:13px;
+  position:absolute;inset:0;border-radius:13px;
   background:linear-gradient(145deg,rgba(84,199,248,0.18),rgba(59,158,218,0.08));
-  border:1px solid rgba(84,199,248,0.28);
-  backdrop-filter:blur(8px);
-  box-shadow:
-    0 0 0 1px rgba(84,199,248,0.06),
-    0 4px 16px rgba(84,199,248,0.15),
-    inset 0 1px 0 rgba(255,255,255,0.1);
+  border:1px solid rgba(84,199,248,0.28);backdrop-filter:blur(8px);
+  box-shadow:0 0 0 1px rgba(84,199,248,0.06),0 4px 16px rgba(84,199,248,0.15),inset 0 1px 0 rgba(255,255,255,0.1);
   animation:iconHalo 3.5s ease-in-out infinite alternate;
 }
 @keyframes iconHalo{
@@ -172,85 +154,41 @@ nav{
   to  {box-shadow:0 0 0 1px rgba(84,199,248,0.14),0 6px 28px rgba(84,199,248,0.32),inset 0 1px 0 rgba(255,255,255,0.15)}
 }
 .logo-icon-img{
-  position:absolute;inset:0;
-  width:100%;height:100%;
-  object-fit:contain;
-  padding:6px;
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:contain;padding:6px;
   filter:drop-shadow(0 0 6px rgba(84,199,248,0.55)) brightness(1.08);
 }
-
-/* texto del logo */
-.logo-text-group{
-  display:flex;flex-direction:column;gap:1px;
-  line-height:1;
-}
+.logo-text-group{display:flex;flex-direction:column;gap:1px;line-height:1;}
 .logo-wordmark{
-  font-family:'Syne',sans-serif;
-  font-size:20px;
-  font-weight:800;
-  letter-spacing:-0.8px;
-  color:var(--white-arg);
-  line-height:1;
+  font-family:'Syne',sans-serif;font-size:20px;font-weight:800;
+  letter-spacing:-0.8px;color:var(--white-arg);line-height:1;
 }
 .logo-wordmark em{
   font-style:normal;
   background:linear-gradient(120deg,var(--sky) 0%,#a8e6ff 55%,var(--sky2) 100%);
-  -webkit-background-clip:text;
-  -webkit-text-fill-color:transparent;
-  background-clip:text;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
 }
-.logo-tagline{
-  font-size:9px;
-  font-weight:500;
-  letter-spacing:2.8px;
-  text-transform:uppercase;
-  color:rgba(84,199,248,0.4);
-  line-height:1;
-  padding-left:1px;
-}
-
-/* divider vertical entre wordmark y badge */
-.logo-divider{
-  width:1px;height:28px;
-  background:linear-gradient(to bottom,transparent,rgba(84,199,248,0.25),transparent);
-  flex-shrink:0;
-}
-
-/* badge "BETA" */
+.logo-tagline{font-size:9px;font-weight:500;letter-spacing:2.8px;text-transform:uppercase;color:rgba(84,199,248,0.4);line-height:1;padding-left:1px;}
+.logo-divider{width:1px;height:28px;background:linear-gradient(to bottom,transparent,rgba(84,199,248,0.25),transparent);flex-shrink:0;}
 .logo-badge{
   display:flex;align-items:center;gap:5px;
-  background:rgba(84,199,248,0.08);
-  border:1px solid rgba(84,199,248,0.2);
-  border-radius:100px;
-  padding:3px 10px;
-  font-size:9px;
-  font-weight:700;
-  
-  letter-spacing:1.5px;
-  color:rgba(143,212,255,0.8);
-  text-transform:uppercase;
+  background:rgba(84,199,248,0.08);border:1px solid rgba(84,199,248,0.2);
+  border-radius:100px;padding:3px 10px;font-size:9px;font-weight:700;
+  letter-spacing:1.5px;color:rgba(143,212,255,0.8);text-transform:uppercase;
 }
-.logo-badge-dot{
-  width:5px;height:5px;border-radius:50%;
-  background:var(--sky);
-  animation:skyPulse 2s infinite;
-}
+.logo-badge-dot{width:5px;height:5px;border-radius:50%;background:var(--sky);animation:skyPulse 2s infinite;}
 
-/* ── HERO VERSION DEL LOGO (más grande) ── */
 .logo-hero{
-  display:flex;align-items:center;gap:18px;
-  margin-bottom:34px;
-  cursor:default;
+  display:flex;flex-direction:row;align-items:center;gap:8px;
+  margin-bottom:14px;margin-top:-40px;cursor:default;
   animation:fadeSlideUp 0.6s 0.05s both;
 }
-.logo-hero .logo-icon-wrap{width:62px;height:62px;}
-.logo-hero .logo-icon-bg{border-radius:18px;}
-.logo-hero .logo-wordmark{font-size:32px;letter-spacing:-1.5px;}
-.logo-hero .logo-tagline{font-size:9.5px;letter-spacing:3.2px;margin-top:4px;}
-.logo-hero .logo-badge{padding:4px 12px;font-size:9.5px;}
-.logo-hero .logo-divider{height:38px;}
+.logo-hero .logo-icon-wrap{width:120px;height:120px;flex-shrink:0;}
+.logo-hero .logo-icon-bg{display:none;}
+.logo-hero .logo-text-group{align-items:flex-start;}
+.logo-hero .logo-wordmark{font-size:82px;letter-spacing:-4.5px;}
+.logo-hero .logo-tagline{font-size:11px;letter-spacing:5px;margin-top:6px;}
 
-/* ── HERO ── */
 /* ── HERO ── */
 .hero{
   grid-area:left;
@@ -260,125 +198,58 @@ nav{
   position:relative;overflow:hidden;
   text-align:center;
 }
-
 .hero-title{
   font-family:'Syne',sans-serif;
   font-size:clamp(14px,1.6vw,20px);
-  font-weight:500;line-height:1.4;
-  letter-spacing:0.2px;
+  font-weight:500;line-height:1.4;letter-spacing:0.2px;
   color:var(--muted);
   animation:fadeSlideUp 0.7s 0.2s both;
   max-width:320px;
 }
 
-/* ── LOGO HERO — grande y centrado ── */
-.logo-hero{
-  display:flex;flex-direction:row;align-items:center;gap:8px;
-  margin-bottom:14px;
-  margin-top:-40px;
-  cursor:default;
-  animation:fadeSlideUp 0.6s 0.05s both;
-}
-.logo-hero .logo-icon-wrap{width:120px;height:120px;flex-shrink:0;}
-.logo-hero .logo-icon-bg{display:none;}
-.logo-hero .logo-text-group{align-items:flex-start;}
-.logo-hero .logo-wordmark{font-size:82px;letter-spacing:-4.5px;}
-.logo-hero .logo-tagline{font-size:11px;letter-spacing:5px;margin-top:6px;}
-
 /* ── CAROUSEL ── */
 .carousel-wrap{
-  position:relative;
-  width:100%;
-  max-width:400px;
+  position:relative;width:100%;max-width:400px;
   margin:28px auto 0;
   display:flex;flex-direction:column;align-items:center;gap:16px;
   animation:fadeSlideUp 0.8s 0.35s both;
 }
-
-.carousel-stage{
-  position:relative;
-  width:270px;height:270px;
-  display:flex;align-items:center;justify-content:center;
-}
-
+.carousel-stage{position:relative;width:270px;height:270px;display:flex;align-items:center;justify-content:center;}
 .carousel-img{
-  position:absolute;inset:0;
-  display:flex;align-items:center;justify-content:center;
-  opacity:0;
-  transform:translateY(18px) scale(0.92);
-  transition:opacity 0.55s cubic-bezier(0.16,1,0.3,1), transform 0.55s cubic-bezier(0.16,1,0.3,1);
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  opacity:0;transform:translateY(18px) scale(0.92);
+  transition:opacity 0.55s cubic-bezier(0.16,1,0.3,1),transform 0.55s cubic-bezier(0.16,1,0.3,1);
   pointer-events:none;
 }
-.carousel-img.active{
-  opacity:1;
-  transform:translateY(0) scale(1);
-  animation:carouselFloat 4s ease-in-out infinite;
-}
-.carousel-img img{
-  width:240px;height:240px;
-  object-fit:contain;
-  filter:drop-shadow(0 12px 40px rgba(84,199,248,0.35)) brightness(1.05);
-}
-
-@keyframes carouselFloat{
-  0%,100%{transform:translateY(0) scale(1);}
-  50%{transform:translateY(-14px) scale(1.03);}
-}
-
+.carousel-img.active{opacity:1;transform:translateY(0) scale(1);animation:carouselFloat 4s ease-in-out infinite;}
+.carousel-img img{width:240px;height:240px;object-fit:contain;filter:drop-shadow(0 12px 40px rgba(84,199,248,0.35)) brightness(1.05);}
+@keyframes carouselFloat{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-14px) scale(1.03);}}
 .carousel-glow{
-  position:absolute;
-  bottom:-14px;left:50%;transform:translateX(-50%);
-  width:140px;height:24px;
-  border-radius:50%;
+  position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);
+  width:140px;height:24px;border-radius:50%;
   background:radial-gradient(ellipse,rgba(84,199,248,0.3) 0%,transparent 70%);
-  filter:blur(10px);
-  animation:glowBreath 4s ease-in-out infinite;
+  filter:blur(10px);animation:glowBreath 4s ease-in-out infinite;
 }
-@keyframes glowBreath{
-  0%,100%{opacity:0.4;width:110px}
-  50%{opacity:0.8;width:150px}
-}
-
-.carousel-label{
-  display:flex;flex-direction:column;align-items:center;gap:5px;
-  min-height:50px;
-}
+@keyframes glowBreath{0%,100%{opacity:0.4;width:110px}50%{opacity:0.8;width:150px}}
+.carousel-label{display:flex;flex-direction:column;align-items:center;gap:5px;min-height:50px;}
 .carousel-label-name{
-  font-family:'Syne',sans-serif;
-  font-size:24px;font-weight:900;
-  letter-spacing:-1px;
+  font-family:'Syne',sans-serif;font-size:24px;font-weight:900;letter-spacing:-1px;
   background:linear-gradient(135deg,var(--sky) 0%,#c8f2ff 50%,var(--sky2) 100%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
   opacity:0;transform:translateY(10px);
   transition:opacity 0.4s ease 0.15s,transform 0.4s ease 0.15s;
 }
 .carousel-label-name.visible{opacity:1;transform:translateY(0);}
-.carousel-label-desc{
-  font-size:12px;color:var(--muted);font-weight:300;
-  opacity:0;transform:translateY(6px);
-  transition:opacity 0.4s ease 0.25s,transform 0.4s ease 0.25s;
-}
+.carousel-label-desc{font-size:12px;color:var(--muted);font-weight:300;opacity:0;transform:translateY(6px);transition:opacity 0.4s ease 0.25s,transform 0.4s ease 0.25s;}
 .carousel-label-desc.visible{opacity:1;transform:translateY(0);}
-
-.carousel-dots{
-  display:flex;gap:7px;align-items:center;
-}
+.carousel-dots{display:flex;gap:7px;align-items:center;}
 .carousel-dot{
-  width:6px;height:6px;border-radius:50%;
-  background:rgba(84,199,248,0.2);
-  transition:all 0.35s cubic-bezier(0.34,1.56,0.64,1);
-  cursor:pointer;
+  width:6px;height:6px;border-radius:50%;background:rgba(84,199,248,0.2);
+  transition:all 0.35s cubic-bezier(0.34,1.56,0.64,1);cursor:pointer;
 }
-.carousel-dot.active{
-  background:var(--sky);
-  width:22px;border-radius:3px;
-  box-shadow:0 0 8px rgba(84,199,248,0.6);
-}
+.carousel-dot.active{background:var(--sky);width:22px;border-radius:3px;box-shadow:0 0 8px rgba(84,199,248,0.6);}
 
-@keyframes fadeSlideUp{
-  from{opacity:0;transform:translateY(26px)}
-  to{opacity:1;transform:translateY(0)}
-}
+@keyframes fadeSlideUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
 
 /* ── AUTH PANEL ── */
 .auth-panel{
@@ -388,10 +259,7 @@ nav{
   background:rgba(3,10,22,0.35);
   animation:fadeSlideUp 0.9s 0.2s both;
 }
-.auth-heading{
-  font-family:'Syne',sans-serif;font-size:28px;font-weight:800;
-  letter-spacing:-0.5px;color:var(--white-arg);margin-bottom:6px;
-}
+.auth-heading{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:var(--white-arg);margin-bottom:6px;}
 .auth-sub{font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.6}
 
 .field{display:flex;flex-direction:column;gap:7px;margin-bottom:15px}
@@ -399,31 +267,22 @@ nav{
 .input{
   width:100%;background:rgba(84,199,248,0.04);border:1px solid var(--glass-b);
   border-radius:13px;padding:14px 16px;font-size:15px;color:var(--white-arg);
-  font-family:'DM Sans',sans-serif;outline:none;
-  transition:all 0.2s ease;
+  font-family:'DM Sans',sans-serif;outline:none;transition:all 0.2s ease;
 }
 .input::placeholder{color:rgba(143,212,255,0.2)}
-.input:focus{
-  border-color:rgba(84,199,248,0.5);
-  background:rgba(84,199,248,0.06);
-  box-shadow:0 0 0 3px rgba(84,199,248,0.1);
-}
+.input:focus{border-color:rgba(84,199,248,0.5);background:rgba(84,199,248,0.06);box-shadow:0 0 0 3px rgba(84,199,248,0.1);}
 .fields-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 .btn-primary{
   width:100%;padding:15px;
   background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 50%,var(--sky3) 100%);
   border:none;border-radius:13px;color:#02080f;
-  font-family:'Syne',sans-serif;font-size:15px;font-weight:800;
-  letter-spacing:0.3px;cursor:pointer;margin-top:6px;
-  position:relative;overflow:hidden;
+  font-family:'Syne',sans-serif;font-size:15px;font-weight:800;letter-spacing:0.3px;
+  cursor:pointer;margin-top:6px;position:relative;overflow:hidden;
   transition:all 0.25s cubic-bezier(0.16,1,0.3,1);
   box-shadow:0 8px 32px rgba(84,199,248,0.4);
 }
-.btn-primary::before{
-  content:'';position:absolute;inset:0;
-  background:linear-gradient(135deg,rgba(255,255,255,0.22),transparent 55%);
-}
+.btn-primary::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.22),transparent 55%);}
 .btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 44px rgba(84,199,248,0.55)}
 .btn-primary:active{transform:translateY(0)}
 
@@ -439,11 +298,23 @@ nav{
   transition:all 0.2s ease;
   display:flex;align-items:center;justify-content:center;gap:8px;
 }
-.btn-ghost:hover{
-  background:rgba(84,199,248,0.09);
-  color:rgba(143,212,255,0.8);
-  border-color:rgba(84,199,248,0.25);
+.btn-ghost:hover{background:rgba(84,199,248,0.09);color:rgba(143,212,255,0.8);border-color:rgba(84,199,248,0.25);}
+
+/* ── GOOGLE BTN ── */
+.btn-google{
+  width:100%;padding:14px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:13px;
+  color:rgba(240,248,255,0.75);
+  font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;
+  cursor:pointer;transition:all 0.2s ease;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin-bottom:10px;
 }
+.btn-google:hover{background:rgba(255,255,255,0.09);border-color:rgba(255,255,255,0.25);color:rgba(240,248,255,0.95);}
+.btn-google:disabled{opacity:0.5;cursor:not-allowed;}
+.google-icon{width:18px;height:18px;flex-shrink:0;}
 
 .social-proof{
   margin-top:18px;padding:14px 18px;
@@ -471,10 +342,7 @@ nav{
 .strip-left{display:flex;align-items:center;gap:24px}
 .strip-stat{display:flex;flex-direction:column}
 .strip-stat-num{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--white-arg);line-height:1;}
-.strip-stat-num span{
-  background:linear-gradient(135deg,var(--sky),var(--sky2));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-}
+.strip-stat-num span{background:linear-gradient(135deg,var(--sky),var(--sky2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 .strip-stat-label{font-size:10px;color:var(--muted);letter-spacing:0.5px;margin-top:2px}
 .strip-divider{width:1px;height:32px;background:var(--glass-b)}
 .strip-features{display:flex;align-items:center;gap:20px}
@@ -492,21 +360,6 @@ nav{
   100%{transform:translate(var(--dx,0),var(--dy,0)) scale(0.3);opacity:0}
 }
 #particles{position:fixed;inset:0;pointer-events:none;z-index:1;}
-
-/* ── MARQUEE ── */
-.marquee-wrap{
-  overflow:hidden;white-space:nowrap;
-  border-bottom:1px solid var(--glass-b);
-  background:rgba(3,10,20,0.55);padding:10px 0;position:relative;z-index:1;
-}
-.marquee-inner{display:inline-block;animation:marquee 32s linear infinite;}
-.marquee-inner:hover{animation-play-state:paused}
-@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.marquee-item{
-  display:inline-flex;align-items:center;gap:6px;
-  margin-right:44px;font-size:12px;color:rgba(143,212,255,0.28);letter-spacing:0.5px;
-}
-.marquee-item .m-dot{width:4px;height:4px;border-radius:50%;background:var(--sky);opacity:0.55;display:inline-block;}
 
 @media(max-width:900px){
   .page{grid-template-columns:1fr;grid-template-areas:"nav""right""left""strip"}
@@ -631,23 +484,28 @@ function Logo({ variant = "nav" }: { variant?: "nav" | "hero" }) {
   const isHero = variant === "hero";
   return (
     <div className={isHero ? "logo-hero" : "logo-nav"}>
-      {/* ícono con halo */}
       <div className="logo-icon-wrap">
         <div className="logo-icon-bg" />
         <img src={img.src} alt="Turrinder" className="logo-icon-img" />
       </div>
-
-      {/* wordmark + tagline */}
       <div className="logo-text-group">
         <span className="logo-wordmark">
           Turr<em>inder</em>
         </span>
       </div>
-
-      
-
-
     </div>
+  );
+}
+
+/* ─── GOOGLE ICON SVG ────────────────────────────────────────── */
+function GoogleIcon() {
+  return (
+    <svg className="google-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
   );
 }
 
@@ -707,28 +565,71 @@ function Particles() {
   return <div id="particles" />;
 }
 
+/* ─── LOGIN FORM ─────────────────────────────────────────────── */
 function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = async () => {
-    if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
-    setLoading(true);
+  const getSupabase = async () => {
     const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
+    return createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+  };
+
+  // ── Login con email/contraseña ────────────────────────────────
+  const handleLogin = async () => {
+    if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
+    setLoading(true);
+    const supabase = await getSupabase();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+
     if (error) {
       onToast("Email o contraseña incorrectos ❌");
       setLoading(false);
       return;
     }
-    onToast("¡Bienvenido/a! Redirigiendo... 🚀");
-    setTimeout(() => router.push("/discover"), 1200);
+
+    // Verificar si el usuario tiene perfil completo
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, name")
+      .eq("id", data.user.id)
+      .single();
+
+    if (!profile || !profile.name) {
+      // No tiene perfil → mandarlo a completarlo
+      onToast("Completá tu perfil para continuar 📝");
+      setTimeout(() => router.push("/auth/register?from=google"), 1000);
+    } else {
+      onToast("¡Bienvenido/a! Redirigiendo... 🚀");
+      setTimeout(() => router.push("/discover"), 1200);
+    }
+  };
+
+  // ── Login/Registro con Google ─────────────────────────────────
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    const supabase = await getSupabase();
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        // Después del callback de Google, redirige a esta URL
+        // que verifica si el perfil está completo
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      onToast("Error al conectar con Google ❌");
+      setGoogleLoading(false);
+    }
+    // Si no hay error, el browser redirige a Google automáticamente
   };
 
   const goToRegister = () => {
@@ -737,6 +638,22 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
 
   return (
     <div>
+      {/* Botón Google — arriba, prominente */}
+      <button
+        className="btn-google"
+        onClick={handleGoogleLogin}
+        disabled={googleLoading}
+      >
+        <GoogleIcon />
+        {googleLoading ? "Conectando con Google..." : "Continuar con Google"}
+      </button>
+
+      <div className="divider">
+        <div className="divider-line" />
+        <span className="divider-text">o con email</span>
+        <div className="divider-line" />
+      </div>
+
       <div className="field">
         <label className="label">Email</label>
         <input className="input" type="email" placeholder="tu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
@@ -750,53 +667,27 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
         style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
         {loading ? "Ingresando..." : "Iniciar sesión →"}
       </button>
+
+      <div style={{ marginTop: 16, textAlign: "center" }}>
+        <span style={{ color: "var(--muted)", fontSize: 13 }}>¿No tenés cuenta?{" "}</span>
+        <button onClick={goToRegister} style={{ background:"none", border:"none", color:"#54c7f8", cursor:"pointer", fontWeight:700, fontSize:13 }}>
+          Registrate
+        </button>
+      </div>
+
       <div className="divider">
-        <div style={{ marginTop: 16, textAlign: "center" }}>
-          <span style={{ color: "var(--muted)", fontSize: 13 }}>¿No tenés cuenta?{" "}</span>
-          <button onClick={goToRegister} style={{ background:"none", border:"none", color:"#54c7f8", cursor:"pointer", fontWeight:700, fontSize:13 }}>
-            Registrate
-          </button>
-        </div>
         <div className="divider-line" /><span className="divider-text">o</span><div className="divider-line" />
       </div>
-      <button
-  className="btn-ghost"
-  onClick={() => {
-    onToast("Entrando como invitado... ⚡");
-    setTimeout(() => router.push("/discover"), 1000);
-  }}
->
-  <div className="dot-sky" />
-  Entrar como invitado (sin cuenta)
-</button>
-    </div>
-  );
-}
 
-function RegisterForm({ goToRegister }: { goToRegister: () => void }) {
-  return (
-    <div>
-      <div className="fields-row">
-        <div className="field">
-          <label className="label">Nombre</label>
-          <input className="input" type="text" placeholder="Tu nombre" />
-        </div>
-        <div className="field">
-          <label className="label">Edad</label>
-          <input className="input" type="number" placeholder="25" min={18} max={99}
-            onChange={(e) => { const v = Number(e.target.value); if (v < 18) e.target.value = "18"; }} />
-        </div>
-      </div>
-      <div className="field">
-        <label className="label">Email</label>
-        <input className="input" type="email" placeholder="tu@email.com" />
-      </div>
-      <div className="field">
-        <label className="label">Contraseña</label>
-        <input className="input" type="password" placeholder="Mínimo 6 caracteres" />
-      </div>
-      <button className="btn-primary" style={{ marginTop: 10 }} onClick={goToRegister}>
-        Crear cuenta gratis →
+      <button
+        className="btn-ghost"
+        onClick={() => {
+          onToast("Entrando como invitado... ⚡");
+          setTimeout(() => router.push("/discover"), 1000);
+        }}
+      >
+        <div className="dot-sky" />
+        Entrar como invitado (sin cuenta)
       </button>
     </div>
   );
@@ -828,9 +719,6 @@ export default function Turrinder() {
     return () => clearInterval(interval);
   }, []);
 
-
-  
-
   return (
     <>
       <style>{globalStyles}</style>
@@ -838,24 +726,15 @@ export default function Turrinder() {
       <div className="aurora" />
       <Particles />
 
-      
-
       <div className="page">
-        {/* NAV — logo compacto */}
-        
-
-        {/* HERO — logo grande + carousel */}
         <section className="hero">
           <Logo variant="hero" />
-
           <h1 className="hero-title">
             El lugar donde streamers, debatistas y personas reales se encuentran.
           </h1>
-
           <HeroCarousel />
         </section>
 
-        {/* AUTH PANEL */}
         <section className="auth-panel">
           <h2 className="auth-heading">Empezá ahora</h2>
           <p className="auth-sub">En 60 segundos ya estás adentro — sin importar para qué venís.</p>
@@ -883,8 +762,6 @@ export default function Turrinder() {
             Turrinder © 2025 · Para mayores de 18 años · Plataforma para todos.
           </div>
         </section>
-
-        
       </div>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
