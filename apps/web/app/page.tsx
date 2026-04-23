@@ -255,80 +255,186 @@ nav{
 .auth-panel{
   grid-area:right;
   display:flex;flex-direction:column;justify-content:center;
-  padding:60px 52px;
+  padding:60px 56px;
   background:rgba(3,10,22,0.35);
-  animation:fadeSlideUp 0.9s 0.2s both;
+  position:relative;overflow:hidden;
 }
-.auth-heading{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:var(--white-arg);margin-bottom:6px;}
-.auth-sub{font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.6}
+/* línea superior animada */
+.auth-panel::before{
+  content:'';position:absolute;top:0;left:10%;right:10%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(84,199,248,0.25) 40%,rgba(84,199,248,0.25) 60%,transparent);
+  animation:scanLine 4s ease-in-out infinite alternate;
+}
+@keyframes scanLine{from{opacity:0.4;left:10%;right:10%}to{opacity:1;left:20%;right:20%}}
 
-.field{display:flex;flex-direction:column;gap:7px;margin-bottom:15px}
-.label{font-size:10px;font-weight:500;letter-spacing:1.8px;text-transform:uppercase;color:rgba(143,212,255,0.28)}
-.input{
-  width:100%;background:rgba(84,199,248,0.04);border:1px solid var(--glass-b);
-  border-radius:13px;padding:14px 16px;font-size:15px;color:var(--white-arg);
-  font-family:'DM Sans',sans-serif;outline:none;transition:all 0.2s ease;
+/* entrada escalonada para los hijos */
+.auth-panel > *{
+  opacity:0;
+  animation:authItemIn 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
 }
-.input::placeholder{color:rgba(143,212,255,0.2)}
-.input:focus{border-color:rgba(84,199,248,0.5);background:rgba(84,199,248,0.06);box-shadow:0 0 0 3px rgba(84,199,248,0.1);}
+.auth-panel > *:nth-child(1){animation-delay:0.15s}
+.auth-panel > *:nth-child(2){animation-delay:0.25s}
+.auth-panel > *:nth-child(3){animation-delay:0.35s}
+@keyframes authItemIn{
+  from{opacity:0;transform:translateY(18px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.auth-heading{
+  font-family:'Syne',sans-serif;font-size:30px;font-weight:800;
+  letter-spacing:-0.8px;color:var(--white-arg);margin-bottom:5px;line-height:1.1;
+}
+.auth-heading em{
+  font-style:normal;
+  background:linear-gradient(120deg,var(--sky) 0%,#c8f2ff 55%,var(--sky2) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.auth-sub{font-size:13.5px;color:var(--muted);margin-bottom:32px;line-height:1.65;font-weight:300;}
+
+/* campos */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:13px}
+.label{font-size:9.5px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:rgba(143,212,255,0.28)}
+.input-wrap{position:relative;}
+.input{
+  width:100%;background:rgba(84,199,248,0.035);
+  border:1px solid rgba(84,199,248,0.1);
+  border-radius:12px;padding:13px 16px;font-size:14.5px;color:var(--white-arg);
+  font-family:'DM Sans',sans-serif;outline:none;
+  transition:border-color 0.25s ease,background 0.25s ease,box-shadow 0.25s ease;
+}
+.input::placeholder{color:rgba(143,212,255,0.18)}
+.input:focus{
+  border-color:rgba(84,199,248,0.45);
+  background:rgba(84,199,248,0.055);
+  box-shadow:0 0 0 3px rgba(84,199,248,0.08),0 1px 12px rgba(84,199,248,0.06);
+}
+/* shimmer al enfocar */
+.input-wrap::after{
+  content:'';position:absolute;inset:0;border-radius:12px;
+  background:linear-gradient(105deg,transparent 40%,rgba(84,199,248,0.06) 50%,transparent 60%);
+  background-size:200% 100%;
+  opacity:0;pointer-events:none;
+  transition:opacity 0.3s;
+}
+.input-wrap:focus-within::after{opacity:1;animation:inputShimmer 1.2s ease forwards;}
+@keyframes inputShimmer{
+  from{background-position:200% 0}to{background-position:-200% 0}
+}
 .fields-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
+/* forgot */
+.forgot-row{display:flex;justify-content:flex-end;margin-top:-6px;margin-bottom:14px;}
+.forgot-btn{
+  background:none;border:none;padding:0;
+  font-size:12px;color:rgba(84,199,248,0.38);
+  cursor:pointer;transition:color 0.2s;font-family:'DM Sans',sans-serif;
+  position:relative;
+}
+.forgot-btn::after{
+  content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;
+  background:rgba(84,199,248,0.35);transform:scaleX(0);transform-origin:left;
+  transition:transform 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.forgot-btn:hover{color:rgba(84,199,248,0.75);}
+.forgot-btn:hover::after{transform:scaleX(1);}
+
+/* btn principal */
 .btn-primary{
-  width:100%;padding:15px;
-  background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 50%,var(--sky3) 100%);
-  border:none;border-radius:13px;color:#02080f;
-  font-family:'Syne',sans-serif;font-size:15px;font-weight:800;letter-spacing:0.3px;
-  cursor:pointer;margin-top:6px;position:relative;overflow:hidden;
-  transition:all 0.25s cubic-bezier(0.16,1,0.3,1);
-  box-shadow:0 8px 32px rgba(84,199,248,0.4);
+  width:100%;padding:14px;
+  background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 55%,var(--sky3) 100%);
+  border:none;border-radius:12px;color:#02080f;
+  font-family:'Syne',sans-serif;font-size:14.5px;font-weight:800;letter-spacing:0.2px;
+  cursor:pointer;position:relative;overflow:hidden;
+  transition:transform 0.25s cubic-bezier(0.16,1,0.3,1),box-shadow 0.25s cubic-bezier(0.16,1,0.3,1);
+  box-shadow:0 6px 24px rgba(84,199,248,0.35);
 }
-.btn-primary::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.22),transparent 55%);}
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 44px rgba(84,199,248,0.55)}
-.btn-primary:active{transform:translateY(0)}
+.btn-primary::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.2),transparent 55%);
+}
+/* efecto ripple/glow al hover */
+.btn-primary::after{
+  content:'';position:absolute;inset:-1px;border-radius:13px;
+  background:linear-gradient(135deg,var(--sky),var(--sky2));
+  opacity:0;filter:blur(12px);z-index:-1;
+  transition:opacity 0.3s;
+}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 36px rgba(84,199,248,0.5);}
+.btn-primary:hover::after{opacity:0.6;}
+.btn-primary:active{transform:translateY(0);}
+.btn-primary:disabled{opacity:0.45;cursor:not-allowed;transform:none;box-shadow:none;}
 
-.divider{display:flex;align-items:center;gap:12px;margin:18px 0}
+/* spinner inline */
+.btn-spinner{
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(2,8,15,0.3);border-top-color:#02080f;
+  animation:spin 0.7s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* divider */
+.divider{display:flex;align-items:center;gap:12px;margin:20px 0}
 .divider-line{flex:1;height:1px;background:rgba(84,199,248,0.07)}
-.divider-text{font-size:11px;color:rgba(143,212,255,0.18);letter-spacing:1px}
+.divider-text{font-size:10.5px;color:rgba(143,212,255,0.2);letter-spacing:1px;white-space:nowrap;}
 
-.btn-ghost{
-  width:100%;padding:14px;
-  background:rgba(84,199,248,0.04);border:1px solid var(--glass-b);
-  border-radius:13px;color:rgba(143,212,255,0.45);
-  font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;
-  transition:all 0.2s ease;
-  display:flex;align-items:center;justify-content:center;gap:8px;
-}
-.btn-ghost:hover{background:rgba(84,199,248,0.09);color:rgba(143,212,255,0.8);border-color:rgba(84,199,248,0.25);}
-
-/* ── GOOGLE BTN ── */
+/* google */
 .btn-google{
-  width:100%;padding:14px;
-  background:rgba(255,255,255,0.04);
-  border:1px solid rgba(255,255,255,0.12);
-  border-radius:13px;
-  color:rgba(240,248,255,0.75);
+  width:100%;padding:13px;
+  background:rgba(255,255,255,0.035);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:12px;
+  color:rgba(240,248,255,0.65);
   font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;
-  cursor:pointer;transition:all 0.2s ease;
+  cursor:pointer;
+  transition:background 0.2s,border-color 0.2s,color 0.2s,transform 0.2s;
   display:flex;align-items:center;justify-content:center;gap:10px;
-  margin-bottom:10px;
+  position:relative;overflow:hidden;
 }
-.btn-google:hover{background:rgba(255,255,255,0.09);border-color:rgba(255,255,255,0.25);color:rgba(240,248,255,0.95);}
-.btn-google:disabled{opacity:0.5;cursor:not-allowed;}
+.btn-google::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,0.04) 50%,transparent 70%);
+  transform:translateX(-100%);
+  transition:transform 0.5s ease;
+}
+.btn-google:hover{
+  background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.22);
+  color:rgba(240,248,255,0.9);transform:translateY(-1px);
+}
+.btn-google:hover::before{transform:translateX(100%);}
+.btn-google:disabled{opacity:0.45;cursor:not-allowed;transform:none;}
 .google-icon{width:18px;height:18px;flex-shrink:0;}
 
-.social-proof{
-  margin-top:18px;padding:14px 18px;
-  background:var(--glass);border:1px solid var(--glass-b);
-  border-radius:14px;display:flex;align-items:center;gap:14px;
+/* fila de abajo — ¿no tenés cuenta? + invitado */
+.auth-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-top:22px;padding-top:18px;
+  border-top:1px solid rgba(84,199,248,0.07);
+  gap:12px;
+  flex-wrap:wrap;
 }
-.sp-avatars{display:flex}
-.sp-av{width:30px;height:30px;border-radius:50%;border:2px solid var(--bg);overflow:hidden;margin-left:-8px;}
-.sp-av:first-child{margin-left:0}
-.sp-av img{width:100%;height:100%;object-fit:cover}
-.sp-text{flex:1;font-size:12px;color:rgba(143,212,255,0.45);line-height:1.5}
-.sp-text strong{color:rgba(200,235,255,0.75);font-weight:600}
+.auth-footer-link{
+  font-size:12.5px;color:var(--muted);
+}
+.auth-footer-link button{
+  background:none;border:none;
+  color:rgba(84,199,248,0.65);cursor:pointer;
+  font-size:12.5px;font-weight:600;
+  font-family:'DM Sans',sans-serif;
+  transition:color 0.2s;padding:0;
+}
+.auth-footer-link button:hover{color:var(--sky);}
 
-.terms-text{margin-top:14px;font-size:10px;color:rgba(143,212,255,0.18);text-align:center;letter-spacing:0.3px;line-height:1.8;}
+.btn-guest{
+  display:flex;align-items:center;gap:6px;
+  background:none;border:none;padding:0;
+  font-size:12.5px;color:rgba(143,212,255,0.3);
+  cursor:pointer;font-family:'DM Sans',sans-serif;
+  transition:color 0.2s;
+}
+.btn-guest:hover{color:rgba(143,212,255,0.6);}
+.btn-guest .dot-sky{width:5px;height:5px;}
+
+.terms-text{margin-top:16px;font-size:10px;color:rgba(143,212,255,0.14);text-align:center;letter-spacing:0.3px;line-height:1.9;}
 
 /* ── STRIP ── */
 .strip{
@@ -571,6 +677,7 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
   const router = useRouter();
 
   const getSupabase = async () => {
@@ -581,71 +688,54 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
     );
   };
 
-  // ── Login con email/contraseña ────────────────────────────────
   const handleLogin = async () => {
     if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
     setLoading(true);
     const supabase = await getSupabase();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
-
     if (error) {
       onToast("Email o contraseña incorrectos ❌");
       setLoading(false);
       return;
     }
-
-    // Verificar si el usuario tiene perfil completo
     const { data: profile } = await supabase
-      .from("profiles")
-      .select("id, name")
-      .eq("id", data.user.id)
-      .single();
-
+      .from("profiles").select("id, name").eq("id", data.user.id).single();
     if (!profile || !profile.name) {
-      // No tiene perfil → mandarlo a completarlo
       onToast("Completá tu perfil para continuar 📝");
       setTimeout(() => router.push("/auth/register?from=google"), 1000);
     } else {
-      onToast("¡Bienvenido/a! Redirigiendo... 🚀");
+      onToast("¡Bienvenido/a! 🚀");
       setTimeout(() => router.push("/discover"), 1200);
     }
   };
 
-  // ── Login/Registro con Google ─────────────────────────────────
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     const supabase = await getSupabase();
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        // Después del callback de Google, redirige a esta URL
-        // que verifica si el perfil está completo
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
-
-    if (error) {
-      onToast("Error al conectar con Google ❌");
-      setGoogleLoading(false);
-    }
-    // Si no hay error, el browser redirige a Google automáticamente
+    if (error) { onToast("Error al conectar con Google ❌"); setGoogleLoading(false); }
   };
 
-  const goToRegister = () => {
-    router.push("/auth/register");
+  const handleForgotPassword = async () => {
+    if (!email) { onToast("Ingresá tu email primero 📧"); return; }
+    setForgotLoading(true);
+    const supabase = await getSupabase();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    setForgotLoading(false);
+    if (error) { onToast("No se pudo enviar el email ❌"); }
+    else { onToast("Revisá tu bandeja de entrada 📬"); }
   };
 
   return (
     <div>
-      {/* Botón Google — arriba, prominente */}
-      <button
-        className="btn-google"
-        onClick={handleGoogleLogin}
-        disabled={googleLoading}
-      >
+      <button className="btn-google" onClick={handleGoogleLogin} disabled={googleLoading}>
         <GoogleIcon />
-        {googleLoading ? "Conectando con Google..." : "Continuar con Google"}
+        {googleLoading ? "Conectando..." : "Continuar con Google"}
       </button>
 
       <div className="divider">
@@ -656,39 +746,45 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
 
       <div className="field">
         <label className="label">Email</label>
-        <input className="input" type="email" placeholder="tu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+        <div className="input-wrap">
+          <input className="input" type="email" placeholder="tu@email.com"
+            value={email} onChange={e => setEmail(e.target.value)} />
+        </div>
       </div>
+
       <div className="field">
         <label className="label">Contraseña</label>
-        <input className="input" type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && handleLogin()} />
+        <div className="input-wrap">
+          <input className="input" type="password" placeholder="••••••••"
+            value={pass} onChange={e => setPass(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleLogin()} />
+        </div>
       </div>
-      <button className="btn-primary" onClick={handleLogin} disabled={loading}
-        style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
-        {loading ? "Ingresando..." : "Iniciar sesión →"}
-      </button>
 
-      <div style={{ marginTop: 16, textAlign: "center" }}>
-        <span style={{ color: "var(--muted)", fontSize: 13 }}>¿No tenés cuenta?{" "}</span>
-        <button onClick={goToRegister} style={{ background:"none", border:"none", color:"#54c7f8", cursor:"pointer", fontWeight:700, fontSize:13 }}>
-          Registrate
+      <div className="forgot-row">
+        <button className="forgot-btn" onClick={handleForgotPassword} disabled={forgotLoading}>
+          {forgotLoading ? "Enviando..." : "¿Olvidaste tu contraseña?"}
         </button>
       </div>
 
-      <div className="divider">
-        <div className="divider-line" /><span className="divider-text">o</span><div className="divider-line" />
-      </div>
+      <button className="btn-primary" onClick={handleLogin} disabled={loading}>
+        {loading && <span className="btn-spinner" />}
+        {loading ? "Ingresando..." : "Iniciar sesión →"}
+      </button>
 
-      <button
-        className="btn-ghost"
-        onClick={() => {
+      <div className="auth-footer">
+        <span className="auth-footer-link">
+          ¿No tenés cuenta?{" "}
+          <button onClick={() => router.push("/auth/register")}>Registrate</button>
+        </span>
+        <button className="btn-guest" onClick={() => {
           onToast("Entrando como invitado... ⚡");
           setTimeout(() => router.push("/discover"), 1000);
-        }}
-      >
-        <div className="dot-sky" />
-        Entrar como invitado (sin cuenta)
-      </button>
+        }}>
+          <div className="dot-sky" />
+          Entrar sin cuenta
+        </button>
+      </div>
     </div>
   );
 }
@@ -696,9 +792,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
 /* ─── MAIN COMPONENT ─────────────────────────────────────────── */
 export default function Turrinder() {
   const [toast, setToast] = useState<string | null>(null);
-  const [spIdx, setSpIdx] = useState(0);
-  const [spCount, setSpCount] = useState(2847);
-  const [spVisible, setSpVisible] = useState(true);
   const stripRef = useRef<HTMLDivElement>(null);
 
   const onlineCount = useFluctuate(8342, 120);
@@ -706,18 +799,6 @@ export default function Turrinder() {
   const s1 = useCountUp(284700, "+", stripRef);
   const s2 = useCountUp(1820000, "+", stripRef);
   const s3 = useCountUp(430000, "+", stripRef);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSpVisible(false);
-      setTimeout(() => {
-        setSpIdx(i => (i + 1) % recentNames.length);
-        setSpCount(c => c + Math.floor(Math.random() * 3 + 1));
-        setSpVisible(true);
-      }, 300);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
 
   return (
     <>
@@ -736,30 +817,14 @@ export default function Turrinder() {
         </section>
 
         <section className="auth-panel">
-          <h2 className="auth-heading">Empezá ahora</h2>
-          <p className="auth-sub">En 60 segundos ya estás adentro — sin importar para qué venís.</p>
+          <h2 className="auth-heading">Empezá <em>ahora</em></h2>
+          <p className="auth-sub">En 60 segundos ya estás adentro.</p>
 
           <LoginForm onToast={setToast} />
 
-          <div className="social-proof">
-            <div className="sp-avatars">
-              {spAvatars.map((src, i) => (
-                <div key={i} className="sp-av">
-                  <img src={src} alt="" loading="lazy" />
-                </div>
-              ))}
-            </div>
-            <div className="sp-text">
-              <strong>{spCount.toLocaleString("es-AR")}</strong> personas se unieron hoy.<br />
-              <span style={{ opacity: spVisible ? 1 : 0, transition: "opacity 0.4s" }}>
-                {recentNames[spIdx]}
-              </span> se unió hace 3 minutos.
-            </div>
-          </div>
-
           <div className="terms-text">
             Al continuar aceptás los términos de uso y la política de privacidad.<br />
-            Turrinder © 2025 · Para mayores de 18 años · Plataforma para todos.
+            Turrinder © 2025 · Para mayores de 18 años.
           </div>
         </section>
       </div>
