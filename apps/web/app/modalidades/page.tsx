@@ -287,10 +287,14 @@ export default function ModalidadesPage() {
         .card-wide {
           grid-column: span 2;
           min-height: 400px;
-          flex-direction: row;
-          align-items: flex-end;
+          flex-direction: column;
+          justify-content: flex-end;
         }
-        .card-wide .card-content { max-width: 52%; }
+        .card-wide .card-content {
+          max-width: 55%;
+          position: relative;
+          z-index: 3;
+        }
 
         /* Tarjeta 4 (2 columnas, segunda fila) */
         .card-wide-bottom {
@@ -377,17 +381,17 @@ export default function ModalidadesPage() {
         /* ─── GLOW DE FONDO ─── */
         .card-glow {
           position: absolute;
-          width: 280px; height: 280px;
+          width: 320px; height: 320px;
           background: var(--card-accent-color, rgba(84,199,248,0.1));
-          filter: blur(80px);
+          filter: blur(90px);
           opacity: 0.12;
           border-radius: 50%;
-          top: -60px; right: -40px;
+          top: -80px; right: -60px;
           z-index: 0;
           pointer-events: none;
           transition: opacity 0.5s ease;
         }
-        .card:not(.inactive):hover .card-glow { opacity: 0.3; }
+        .card:not(.inactive):hover .card-glow { opacity: 0.28; }
 
         /* Borde brillante animado en hover */
         .card-shimmer {
@@ -444,10 +448,11 @@ export default function ModalidadesPage() {
 
         /* Ajustes de posición de imagen por tarjeta */
         .card-wide .card-image-wrapper {
-          right: 0;
-          bottom: -5%;
-          width: 46%;
-          height: 120%;
+          right: 2%;
+          bottom: -8%;
+          top: auto;
+          width: 44%;
+          height: 130%;
         }
 
         @keyframes floatImage {
