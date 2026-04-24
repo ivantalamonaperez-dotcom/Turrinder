@@ -373,23 +373,28 @@ nav{
    MOBILE — logo móvil en el panel de auth
    ═══════════════════════════════════════════════════════════════ */
 
-/* Logo compacto que solo aparece en mobile dentro del auth-panel */
+/* Logo que solo aparece en mobile dentro del auth-panel */
 .logo-mobile-auth{
   display:none; /* oculto en desktop */
-  flex-direction:column;align-items:center;gap:4px;
-  margin-bottom:28px;
+  flex-direction:column;align-items:center;gap:6px;
+  margin-bottom:30px;
   animation:fadeSlideUp 0.5s 0s both;
 }
 .logo-mobile-auth .logo-icon-wrap{
-  width:64px;height:64px;
-  margin-bottom:4px;
+  width:96px;height:96px;
+  margin-bottom:6px;
 }
+/* Sin caja ni borde en mobile */
 .logo-mobile-auth .logo-icon-bg{
-  border-radius:18px;
+  display:none;
+}
+.logo-mobile-auth .logo-icon-img{
+  padding:0;
+  filter:drop-shadow(0 0 18px rgba(84,199,248,0.65)) brightness(1.1);
 }
 .logo-mobile-auth .logo-wordmark{
-  font-family:'Syne',sans-serif;font-size:32px;font-weight:800;
-  letter-spacing:-1.5px;color:var(--white-arg);line-height:1;
+  font-family:'Syne',sans-serif;font-size:42px;font-weight:800;
+  letter-spacing:-2px;color:var(--white-arg);line-height:1;
 }
 .logo-mobile-auth .logo-wordmark em{
   font-style:normal;
@@ -402,70 +407,39 @@ nav{
   line-height:1;padding-left:1px;
 }
 
-/* Barra de stats compacta para mobile (debajo del logo) */
-.mobile-stats-bar{
-  display:none;
-  align-items:center;justify-content:center;gap:16px;
-  margin-bottom:22px;
-  padding:10px 16px;
-  background:rgba(84,199,248,0.04);
-  border:1px solid var(--glass-b);
-  border-radius:100px;
-  animation:fadeSlideUp 0.6s 0.1s both;
-}
-.mobile-stats-bar .nav-stat{
-  font-size:12px;
-}
-.mobile-stats-bar .nav-stat strong{
-  font-size:13px;
-}
-.mobile-stat-sep{
-  width:1px;height:16px;
-  background:rgba(84,199,248,0.15);
-}
+
 
 /* ─── RESPONSIVE BREAKPOINTS ─────────────────────────────────── */
 @media(max-width:900px){
   .page{
     grid-template-columns:1fr;
-    grid-template-areas:"nav""right""strip";
+    grid-template-areas:"right";
   }
   /* Ocultar sección hero (izquierda) completamente en tablet/mobile */
   .hero{ display:none; }
-
-  nav{padding:16px 24px}
-  .nav-stats{gap:14px}
+  /* Ocultar nav y strip en mobile */
+  nav{ display:none; }
+  .strip{ display:none; }
 
   .auth-panel{
-    padding:40px 28px 60px;
-    min-height:calc(100vh - 68px);
+    padding:60px 28px 60px;
+    min-height:100vh;
     justify-content:flex-start;
-    padding-top:36px;
+    padding-top:56px;
   }
 
   /* Mostrar logo mobile dentro del auth-panel */
   .logo-mobile-auth{ display:flex; }
 
-  /* Mostrar stats bar en mobile */
-  .mobile-stats-bar{ display:flex; }
-
-  .strip{padding:14px 24px;flex-direction:column;gap:12px;align-items:flex-start}
-  .strip-features{flex-wrap:wrap;gap:12px}
 }
 
 @media(max-width:560px){
-  nav{padding:14px 18px}
-  /* Nav minimalista en mobile: solo logo */
-  .nav-stats{display:none}
-  .logo-badge{display:none}
-  .logo-divider{display:none}
-
   .auth-panel{
-    padding:28px 20px 80px;
+    padding:48px 20px 80px;
   }
 
-  .logo-mobile-auth .logo-icon-wrap{width:52px;height:52px;}
-  .logo-mobile-auth .logo-wordmark{font-size:28px;letter-spacing:-1.2px;}
+  .logo-mobile-auth .logo-icon-wrap{width:80px;height:80px;}
+  .logo-mobile-auth .logo-wordmark{font-size:36px;letter-spacing:-1.8px;}
   .logo-mobile-auth .logo-tagline{font-size:7px;letter-spacing:2.8px;}
 
   .auth-heading{font-size:24px;}
@@ -897,18 +871,6 @@ export default function Turrinder() {
           {/* Logo mobile: solo visible en pantallas pequeñas */}
           <Logo variant="mobile-auth" />
 
-          {/* Stats bar compacta: solo visible en mobile */}
-          <div className="mobile-stats-bar">
-            <div className="nav-stat">
-              <div className="dot-live" />
-              <strong>{onlineCount}</strong> en línea
-            </div>
-            <div className="mobile-stat-sep" />
-            <div className="nav-stat">
-              <div className="dot-sky" />
-              <strong>{videoCount}</strong> en call
-            </div>
-          </div>
 
           <h2 className="auth-heading">Empezá ahora</h2>
           <p className="auth-sub">En 60 segundos ya estás adentro — sin importar para qué venís.</p>
