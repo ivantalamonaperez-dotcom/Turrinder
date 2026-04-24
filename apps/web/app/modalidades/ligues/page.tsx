@@ -2,12 +2,9 @@
 
 /**
  * /modalidades/ligues/page.tsx
- *
- * Modalidad "Ligues" — igual que discover pero con los 3 botones:
- * like, skip y modo streamer. Incluye MatchModal.
  */
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 
@@ -18,7 +15,6 @@ import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
 import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
-import { matchingService } from "@/features/matching/matching.service";
 
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
@@ -28,10 +24,22 @@ export default function LiguesPage() {
   const router = useRouter();
   const { socket } = useSocket();
 
+  // Perfil propio para mostrar en el modal
+  const [myProfile, setMyProfile] = useState<{ name?: string; avatar_url?: string } | null>(null);
+
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
-      if (!data.user) router.push("/");
+      if (!data.user) { router.push("/"); return; }
+
+      // Cargar mi perfil para el modal
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name, avatar_url")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile) setMyProfile(profile);
     };
     checkUser();
   }, [router]);
@@ -49,19 +57,10 @@ export default function LiguesPage() {
     if (isBlocked) return;
     try {
       reportSkip();
-      
-      // 1. Notificamos al servidor inmediatamente para romper el match actual.
-      // Esto dispara 'partner-left' al compañero en tiempo real.
       if (socket?.connected) {
         socket.emit("leave-matchmaking");
       }
-      
-      // 2. Buscamos un nuevo match tras 1 segundo de espera (para sincronizarse con el otro)
       findNewMatch(1000);
-
-      // ELIMINADO: matchingService.endRoom(currentRoomId)
-      // Ya no usamos Supabase para gestionar las salas, evitará el error 400.
-
     } catch (error) {
       console.error("❌ Error en nextUser:", error);
       window.location.reload();
@@ -123,7 +122,6 @@ export default function LiguesPage() {
           overflow: hidden; position: relative; z-index: 1;
         }
 
-        /* ── Header flotante ── */
         .lp-header {
           position: absolute;
           top: 3px; left: 0; right: 0;
@@ -166,7 +164,6 @@ export default function LiguesPage() {
           display: flex; align-items: center; gap: 7px; pointer-events: all;
         }
 
-        /* Skip counter */
         .lp-skips {
           display: flex; align-items: center; gap: 7px;
           background: rgba(3,10,20,0.58); border: 1px solid var(--glass-b);
@@ -192,7 +189,6 @@ export default function LiguesPage() {
           letter-spacing:0.5px; white-space:nowrap;
         }
 
-        /* Back pill */
         .lp-back {
           display:flex; align-items:center; gap:6px;
           background:rgba(3,10,20,0.58); border:1px solid var(--glass-b);
@@ -205,8 +201,14 @@ export default function LiguesPage() {
         .lp-back:hover { color:var(--sky); background:rgba(84,199,248,0.08); }
       `}</style>
 
-      {/* Modals */}
-      <MatchModal visible={isMatch} onClose={() => setIsMatch(false)} user={matchUser} />
+      {/* Modal de match — pasa myProfile para mostrar mi foto */}
+      <MatchModal
+        visible={isMatch}
+        onClose={() => setIsMatch(false)}
+        user={matchUser}
+        myProfile={myProfile ?? undefined}
+      />
+
       <AdOverlay
         visible={adMode === "AD_THANKS"}
         onContinue={reportAdCompleted}
@@ -219,7 +221,6 @@ export default function LiguesPage() {
         <div className="lp-aurora" />
         <div className="lp-flag" />
 
-        {/* Header flotante sobre el video */}
         <header className="lp-header">
           <div className="lp-logo-wrap">
             <span className="lp-logo-t">Turr</span>
@@ -244,7 +245,6 @@ export default function LiguesPage() {
           </div>
         </header>
 
-        {/* VideoPlayer — con los 3 botones por defecto (VideoControls interno) */}
         <div className="lp-video">
           <VideoPlayer
             room={room}

@@ -1,41 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/services/supabase.client";
 
-export const useLike = (room: any) => {
-  const [liked, setLiked] = useState(false);
+export const useLike = (room: { id: string } | null) => {
+  const [liked,   setLiked]   = useState(false);
   const [isMatch, setIsMatch] = useState(false);
+  const isProcessing = useRef(false);
 
-  // Verificar si ya hubo match previo entre estos dos usuarios
+  // ── Reset cuando cambia la pareja ────────────────────────────────────────
+  const prevRoomId = useRef<string | null>(null);
   useEffect(() => {
-    if (!room) return;
+    if (prevRoomId.current !== (room?.id ?? null)) {
+      prevRoomId.current = room?.id ?? null;
+      setLiked(false);
+      setIsMatch(false);
+      isProcessing.current = false;
+    }
+  }, [room?.id]);
 
-    const checkExistingMatch = async () => {
-      const { data: me } = await supabase.auth.getUser();
-      if (!me.user) return;
-
-      const myId = me.user.id;
-      const otherId = room.user1 === myId ? room.user2 : room.user1;
-
-      const { data: existing } = await supabase
-        .from("matches")
-        .select("id")
-        .or(`and(user1.eq.${myId},user2.eq.${otherId}),and(user1.eq.${otherId},user2.eq.${myId})`)
-        .maybeSingle();
-
-      if (existing) {
-        setLiked(true);
-        console.log("ℹ️ Ya hubo match previo con este usuario");
-      }
-    };
-
-    checkExistingMatch();
-  }, [room]);
-
-  // Escuchar INSERT en matches — filtrando por user (sin room_id)
+  // ── Realtime: escuchar match insertado por la otra persona ───────────────
   useEffect(() => {
-    if (!room) return;
+    if (!room?.id) return;
 
     let myId: string;
 
@@ -43,100 +29,112 @@ export const useLike = (room: any) => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
       myId = data.user.id;
+      const partnerId = room.id;
 
-      const otherId = room.user1 === myId ? room.user2 : room.user1;
+      console.log("[useLike] 🔔 Suscribiendo realtime. myId:", myId, "partnerId:", partnerId);
 
       const channel = supabase
-        .channel("matches-users-" + myId + "-" + otherId)
+        .channel(`matches-${myId}-${partnerId}`)
         .on(
           "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "matches",
-          },
+          { event: "INSERT", schema: "public", table: "matches" },
           (payload) => {
+            console.log("[useLike] 📡 Realtime INSERT en matches:", payload.new);
             const match = payload.new;
-            // Verificar que el match es entre estos dos usuarios
             const isMyMatch =
-              (match.user1 === myId && match.user2 === otherId) ||
-              (match.user1 === otherId && match.user2 === myId);
+              (match.user1 === myId && match.user2 === partnerId) ||
+              (match.user1 === partnerId && match.user2 === myId);
 
+            console.log("[useLike] isMyMatch:", isMyMatch);
             if (isMyMatch) {
-              console.log("🎉 MATCH detectado via realtime");
               setIsMatch(true);
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log("[useLike] Canal realtime status:", status);
+        });
 
-      return () => supabase.removeChannel(channel);
+      return () => { supabase.removeChannel(channel); };
     };
 
     let cleanup: (() => void) | undefined;
     setup().then((fn) => { cleanup = fn; });
-
     return () => { cleanup?.(); };
-  }, [room]);
+  }, [room?.id]);
 
+  // ── likeUser ─────────────────────────────────────────────────────────────
   const likeUser = async () => {
-    if (!room || liked) return;
+    console.log("[useLike] likeUser llamado. room:", room, "liked:", liked, "processing:", isProcessing.current);
 
-    const { data: me } = await supabase.auth.getUser();
-    if (!me.user) return;
+    if (!room?.id)            { console.warn("[useLike] ⛔ Sin room"); return; }
+    if (liked)                { console.warn("[useLike] ⛔ Ya liked"); return; }
+    if (isProcessing.current) { console.warn("[useLike] ⛔ Ya procesando"); return; }
 
-    const myId = me.user.id;
-    const otherId = room.user1 === myId ? room.user2 : room.user1;
+    isProcessing.current = true;
 
-    // Verificar match existente antes de insertar
-    const { data: existingMatch } = await supabase
-      .from("matches")
-      .select("id")
-      .or(`and(user1.eq.${myId},user2.eq.${otherId}),and(user1.eq.${otherId},user2.eq.${myId})`)
-      .maybeSingle();
+    try {
+      const { data: me, error: authError } = await supabase.auth.getUser();
+      console.log("[useLike] Auth user:", me?.user?.id, "authError:", authError);
+      if (!me?.user) return;
 
-    if (existingMatch) {
-      console.log("ℹ️ Match ya existente, no se repite");
-      setLiked(true);
-      return;
-    }
+      const myId      = me.user.id;
+      const partnerId = room.id;
 
-    setLiked(true);
+      console.log("[useLike] myId:", myId, "partnerId:", partnerId);
 
-    // ✅ Insertar like SIN room_id (evita el problema de FK con rooms borradas)
-    const { error } = await supabase.from("likes").insert({
-      from_user: myId,
-      to_user: otherId,
-    });
+      if (myId === partnerId) { console.warn("[useLike] ⛔ Self-like"); return; }
 
-    if (error) {
-      console.error("❌ Error guardando like:", JSON.stringify(error), error.message);
-      setLiked(false);
-      return;
-    }
+      // 1. Insertar like
+      const { error: likeError } = await supabase
+        .from("likes")
+        .upsert(
+          { from_user: myId, to_user: partnerId },
+          { onConflict: "from_user,to_user", ignoreDuplicates: true }
+        );
 
-    // Verificar si el otro ya dio like (sin filtrar por room_id)
-    const { data: otherLike } = await supabase
-      .from("likes")
-      .select("id")
-      .eq("from_user", otherId)
-      .eq("to_user", myId)
-      .maybeSingle();
+      console.log("[useLike] upsert like → error:", likeError);
 
-    if (otherLike) {
-      // ✅ MATCH MUTUAL — upsert con ignoreDuplicates para que si ambos usuarios
-      // detectan el match al mismo tiempo y los dos intentan insertar,
-      // el segundo simplemente se ignore sin error 409.
-      const { error: matchError } = await supabase.from("matches").upsert(
-        { user1: myId, user2: otherId },
-        { onConflict: "user1,user2", ignoreDuplicates: true }
-      );
-
-      if (!matchError) {
-        setIsMatch(true);
-      } else {
-        console.error("❌ Error guardando match:", JSON.stringify(matchError));
+      if (likeError) {
+        console.error("❌ Error guardando like:", likeError.message);
+        return;
       }
+
+      setLiked(true);
+      console.log("[useLike] ❤️ Like guardado OK");
+
+      // 2. Verificar like inverso
+      const { data: otherLike, error: checkError } = await supabase
+        .from("likes")
+        .select("id")
+        .eq("from_user", partnerId)
+        .eq("to_user", myId)
+        .maybeSingle();
+
+      console.log("[useLike] Like inverso encontrado:", otherLike, "checkError:", checkError);
+
+      if (otherLike) {
+        const [user1, user2] = [myId, partnerId].sort();
+        console.log("[useLike] 🎉 Match mutuo! Insertando en matches:", user1, "<->", user2);
+
+        const { error: matchError } = await supabase
+          .from("matches")
+          .upsert(
+            { user1, user2 },
+            { onConflict: "user1,user2", ignoreDuplicates: true }
+          );
+
+        console.log("[useLike] upsert match → error:", matchError);
+
+        if (!matchError) {
+          console.log("[useLike] ✅ setIsMatch(true) — el modal DEBE aparecer ahora");
+          setIsMatch(true);
+        }
+      } else {
+        console.log("[useLike] ℹ️ No hay like inverso aún. Esperando que el otro dé like (realtime activo)...");
+      }
+    } finally {
+      isProcessing.current = false;
     }
   };
 
