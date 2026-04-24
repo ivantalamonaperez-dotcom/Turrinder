@@ -95,6 +95,7 @@ body::before{
   opacity:0.7;
 }
 
+/* ─── PAGE LAYOUT ─────────────────────────────────────────────── */
 .page{
   position:relative;z-index:1;
   min-height:100vh;
@@ -368,25 +369,141 @@ nav{
 }
 #particles{position:fixed;inset:0;pointer-events:none;z-index:1;}
 
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE — logo móvil en el panel de auth
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Logo compacto que solo aparece en mobile dentro del auth-panel */
+.logo-mobile-auth{
+  display:none; /* oculto en desktop */
+  flex-direction:column;align-items:center;gap:4px;
+  margin-bottom:28px;
+  animation:fadeSlideUp 0.5s 0s both;
+}
+.logo-mobile-auth .logo-icon-wrap{
+  width:64px;height:64px;
+  margin-bottom:4px;
+}
+.logo-mobile-auth .logo-icon-bg{
+  border-radius:18px;
+}
+.logo-mobile-auth .logo-wordmark{
+  font-family:'Syne',sans-serif;font-size:32px;font-weight:800;
+  letter-spacing:-1.5px;color:var(--white-arg);line-height:1;
+}
+.logo-mobile-auth .logo-wordmark em{
+  font-style:normal;
+  background:linear-gradient(120deg,var(--sky) 0%,#a8e6ff 55%,var(--sky2) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.logo-mobile-auth .logo-tagline{
+  font-size:8px;font-weight:500;letter-spacing:3px;
+  text-transform:uppercase;color:rgba(84,199,248,0.35);
+  line-height:1;padding-left:1px;
+}
+
+/* Barra de stats compacta para mobile (debajo del logo) */
+.mobile-stats-bar{
+  display:none;
+  align-items:center;justify-content:center;gap:16px;
+  margin-bottom:22px;
+  padding:10px 16px;
+  background:rgba(84,199,248,0.04);
+  border:1px solid var(--glass-b);
+  border-radius:100px;
+  animation:fadeSlideUp 0.6s 0.1s both;
+}
+.mobile-stats-bar .nav-stat{
+  font-size:12px;
+}
+.mobile-stats-bar .nav-stat strong{
+  font-size:13px;
+}
+.mobile-stat-sep{
+  width:1px;height:16px;
+  background:rgba(84,199,248,0.15);
+}
+
+/* ─── RESPONSIVE BREAKPOINTS ─────────────────────────────────── */
 @media(max-width:900px){
-  .page{grid-template-columns:1fr;grid-template-areas:"nav""right""left""strip"}
+  .page{
+    grid-template-columns:1fr;
+    grid-template-areas:"nav""right""strip";
+  }
+  /* Ocultar sección hero (izquierda) completamente en tablet/mobile */
+  .hero{ display:none; }
+
   nav{padding:16px 24px}
   .nav-stats{gap:14px}
-  .hero{padding:40px 24px;border-right:none;border-top:1px solid var(--glass-b)}
-  .auth-panel{padding:40px 24px}
+
+  .auth-panel{
+    padding:40px 28px 60px;
+    min-height:calc(100vh - 68px);
+    justify-content:flex-start;
+    padding-top:36px;
+  }
+
+  /* Mostrar logo mobile dentro del auth-panel */
+  .logo-mobile-auth{ display:flex; }
+
+  /* Mostrar stats bar en mobile */
+  .mobile-stats-bar{ display:flex; }
+
   .strip{padding:14px 24px;flex-direction:column;gap:12px;align-items:flex-start}
   .strip-features{flex-wrap:wrap;gap:12px}
-  .logo-hero .logo-wordmark{font-size:38px;}
 }
+
 @media(max-width:560px){
+  nav{padding:14px 18px}
+  /* Nav minimalista en mobile: solo logo */
   .nav-stats{display:none}
-  .fields-row{grid-template-columns:1fr}
-  .logo-hero .logo-icon-wrap{width:64px;height:64px;}
-  .logo-hero .logo-wordmark{font-size:30px;}
   .logo-badge{display:none}
   .logo-divider{display:none}
-  .carousel-stage{width:170px;height:170px;}
-  .carousel-img img{width:150px;height:150px;}
+
+  .auth-panel{
+    padding:28px 20px 80px;
+  }
+
+  .logo-mobile-auth .logo-icon-wrap{width:52px;height:52px;}
+  .logo-mobile-auth .logo-wordmark{font-size:28px;letter-spacing:-1.2px;}
+  .logo-mobile-auth .logo-tagline{font-size:7px;letter-spacing:2.8px;}
+
+  .auth-heading{font-size:24px;}
+  .auth-sub{font-size:13px;margin-bottom:22px;}
+
+  .fields-row{grid-template-columns:1fr}
+
+  .input{padding:13px 15px;font-size:15px;border-radius:12px;}
+  .btn-primary{padding:15px;font-size:15px;border-radius:12px;}
+  .btn-google{padding:13px;font-size:14px;border-radius:12px;}
+  .btn-ghost{padding:13px;font-size:13px;border-radius:12px;}
+
+  /* Toast más bajo para no tapar el teclado */
+  .toast-wrap{ bottom:100px !important; }
+
+  .strip{display:none}
+}
+
+/* Safe area para iPhones con notch/home indicator */
+@supports(padding-bottom:env(safe-area-inset-bottom)){
+  @media(max-width:560px){
+    .auth-panel{
+      padding-bottom:calc(80px + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* Tap highlight elimination en mobile */
+@media(hover:none){
+  .btn-primary:hover{ transform:none; box-shadow:0 8px 32px rgba(84,199,248,0.4); }
+  .btn-google:hover{ background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12); }
+  .btn-ghost:hover{ background:rgba(84,199,248,0.04); }
+  button{ -webkit-tap-highlight-color:transparent; }
+
+  /* Active states más responsivos al toque */
+  .btn-primary:active{ transform:scale(0.98); opacity:0.9; }
+  .btn-google:active{ transform:scale(0.98); opacity:0.9; }
+  .btn-ghost:active{ transform:scale(0.98); }
 }
 `;
 
@@ -487,18 +604,22 @@ function HeroCarousel() {
 }
 
 /* ─── LOGO COMPONENT ─────────────────────────────────────────── */
-function Logo({ variant = "nav" }: { variant?: "nav" | "hero" }) {
+function Logo({ variant = "nav" }: { variant?: "nav" | "hero" | "mobile-auth" }) {
   const isHero = variant === "hero";
+  const isMobileAuth = variant === "mobile-auth";
   return (
-    <div className={isHero ? "logo-hero" : "logo-nav"}>
+    <div className={isHero ? "logo-hero" : isMobileAuth ? "logo-mobile-auth" : "logo-nav"}>
       <div className="logo-icon-wrap">
         <div className="logo-icon-bg" />
-        <img src={img.src} alt="Turrinder" className="logo-icon-img" />
+        <img src={(img as any).src ?? img} alt="Turrinder" className="logo-icon-img" />
       </div>
       <div className="logo-text-group">
         <span className="logo-wordmark">
           Turr<em>inder</em>
         </span>
+        {isMobileAuth && (
+          <span className="logo-tagline">connect · debate · grow</span>
+        )}
       </div>
     </div>
   );
@@ -528,7 +649,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     return () => clearTimeout(t);
   }, [onDone]);
   return (
-    <div style={{
+    <div className="toast-wrap" style={{
       position: "fixed", bottom: 80, left: "50%",
       transform: visible ? "translateX(-50%) translateY(0)" : "translateX(-50%) translateY(10px)",
       background: "linear-gradient(135deg,#54c7f8,#3b9eda)",
@@ -555,12 +676,10 @@ function Particles() {
       const size = 1.5 + Math.random() * 5;
       const color = particleColors[Math.floor(Math.random() * particleColors.length)];
       const op = 0.3 + Math.random() * 0.45;
-      const dur = 12 + Math.random() * 14;           // más rápidas: 12-26s (antes 18-38s)
-      // Las primeras 30 arrancan de inmediato (delay 0-2s), el resto escalonado
+      const dur = 12 + Math.random() * 14;
       const delay = i < 30 ? Math.random() * 2 : 2 + Math.random() * 6;
       const dx = (Math.random() - 0.5) * 260;
       const startX = Math.random() * 100;
-      // Alternar entre dos animaciones para más variedad de trayectoria
       const anim = i % 3 === 0 ? "particleFloatB" : "particleFloat";
       const blur = size > 4 ? `blur(${(size * 0.3).toFixed(1)}px)` : "none";
       p.style.cssText = `
@@ -594,7 +713,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
     );
   };
 
-  // ── Login con email/contraseña ────────────────────────────────
   const handleLogin = async () => {
     if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
     setLoading(true);
@@ -607,7 +725,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       return;
     }
 
-    // Verificar si el usuario tiene perfil completo
     const { data: profile } = await supabase
       .from("profiles")
       .select("id, name")
@@ -615,7 +732,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       .single();
 
     if (!profile || !profile.name) {
-      // No tiene perfil → mandarlo a completarlo
       onToast("Completá tu perfil para continuar 📝");
       setTimeout(() => router.push("/auth/register?from=google"), 1000);
     } else {
@@ -624,7 +740,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
     }
   };
 
-  // ── Login/Registro con Google ─────────────────────────────────
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     const supabase = await getSupabase();
@@ -632,8 +747,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        // Después del callback de Google, redirige a esta URL
-        // que verifica si el perfil está completo
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
@@ -642,7 +755,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       onToast("Error al conectar con Google ❌");
       setGoogleLoading(false);
     }
-    // Si no hay error, el browser redirige a Google automáticamente
   };
 
   const goToRegister = () => {
@@ -669,12 +781,27 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
 
       <div className="field">
         <label className="label">Email</label>
-        <input className="input" type="email" placeholder="tu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+        <input
+          className="input"
+          type="email"
+          placeholder="tu@email.com"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          autoComplete="email"
+          inputMode="email"
+        />
       </div>
       <div className="field">
         <label className="label">Contraseña</label>
-        <input className="input" type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && handleLogin()} />
+        <input
+          className="input"
+          type="password"
+          placeholder="••••••••"
+          value={pass}
+          onChange={e => setPass(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          autoComplete="current-password"
+        />
       </div>
       <button className="btn-primary" onClick={handleLogin} disabled={loading}
         style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
@@ -740,6 +867,22 @@ export default function Turrinder() {
       <Particles />
 
       <div className="page">
+        {/* NAV: siempre visible en desktop, minimalista en mobile */}
+        <nav>
+          <Logo variant="nav" />
+          <div className="nav-stats">
+            <div className="nav-stat">
+              <div className="dot-live" />
+              <strong>{onlineCount}</strong> en línea
+            </div>
+            <div className="nav-stat">
+              <div className="dot-sky" />
+              <strong>{videoCount}</strong> en videocall
+            </div>
+          </div>
+        </nav>
+
+        {/* HERO (solo desktop) */}
         <section className="hero">
           <Logo variant="hero" />
           <h1 className="hero-title">
@@ -748,7 +891,25 @@ export default function Turrinder() {
           <HeroCarousel />
         </section>
 
+        {/* AUTH PANEL: en mobile ocupa toda la pantalla */}
         <section className="auth-panel">
+
+          {/* Logo mobile: solo visible en pantallas pequeñas */}
+          <Logo variant="mobile-auth" />
+
+          {/* Stats bar compacta: solo visible en mobile */}
+          <div className="mobile-stats-bar">
+            <div className="nav-stat">
+              <div className="dot-live" />
+              <strong>{onlineCount}</strong> en línea
+            </div>
+            <div className="mobile-stat-sep" />
+            <div className="nav-stat">
+              <div className="dot-sky" />
+              <strong>{videoCount}</strong> en call
+            </div>
+          </div>
+
           <h2 className="auth-heading">Empezá ahora</h2>
           <p className="auth-sub">En 60 segundos ya estás adentro — sin importar para qué venís.</p>
 
@@ -775,6 +936,33 @@ export default function Turrinder() {
             Turrinder © 2025 · Para mayores de 18 años · Plataforma para todos.
           </div>
         </section>
+
+        {/* STRIP: oculto en mobile pequeño */}
+        <div className="strip" ref={stripRef}>
+          <div className="strip-left">
+            <div className="strip-stat">
+              <div className="strip-stat-num"><span>{s1}</span></div>
+              <div className="strip-stat-label">usuarios registrados</div>
+            </div>
+            <div className="strip-divider" />
+            <div className="strip-stat">
+              <div className="strip-stat-num"><span>{s2}</span></div>
+              <div className="strip-stat-label">mensajes enviados</div>
+            </div>
+            <div className="strip-divider" />
+            <div className="strip-stat">
+              <div className="strip-stat-num"><span>{s3}</span></div>
+              <div className="strip-stat-label">videocalls realizadas</div>
+            </div>
+          </div>
+          <div className="strip-features">
+            <div className="sf"><div className="sf-dot" />Ligues</div>
+            <div className="sf"><div className="sf-dot" />Debates</div>
+            <div className="sf"><div className="sf-dot" />Idiomas</div>
+            <div className="sf"><div className="sf-dot" />Modalidades</div>
+          </div>
+          <div className="strip-right">Turrinder © 2025</div>
+        </div>
       </div>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
