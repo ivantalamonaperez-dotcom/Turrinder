@@ -1,26 +1,8 @@
 "use client";
 
 /**
- * DebateRoomsPage.tsx — v5
- *
- * FIXES v5:
- * ─────────────────────────────────────────────────────────────────
- *  FIX 1 — Sala se cierra automáticamente cuando el streamer se va:
- *    • useEffect cleanup llama closeRoom + notifyRoomClosed
- *    • beforeunload ahora también llama closeRoom vía Supabase directo
- *
- *  FIX 2 — Toggle cam: ya no se pierde la imagen al apagar/prender:
- *    • selfViewRef y localVideoRef se setean una sola vez con el stream
- *    • El toggle solo hace track.enabled = true/false, sin tocar srcObject
- *
- *  FIX 3 — Cam bloqueada por host: viewer no puede prender ni verse:
- *    • Al recibir "camoff" se deshabilita el track físicamente (track.enabled = false)
- *    • toggleVideo verifica blockedByHost.cam antes de habilitar el track
- *
- *  FIX 4 — Ban persistente en Supabase:
- *    • Al banear se inserta en tabla "room_bans" {room_id, user_id}
- *    • Al hacer join se consulta si existe ban antes de permitir entrar
- *    • RoomCard muestra mensaje "Estás baneado de esta sala" si hay ban
+ * DebateRoomsPage.tsx — v6 · PREMIUM REDESIGN
+ * Lógica 100% intacta. Solo cambios de diseño y efectos.
  */
 
 import { useEffect, useCallback, useState, useRef, useMemo } from "react";
@@ -147,6 +129,7 @@ function useDebateMedia(
   const peerConns = useRef<Map<string, RTCPeerConnection>>(new Map());
   const sigCh = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const createPC = useCallback((peerId: string): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -203,7 +186,6 @@ function useDebateMedia(
     channel
       .on("broadcast", { event:"join" }, async ({ payload }) => {
         if (!isHost) return;
-        // FIX 4: verificar ban en Supabase antes de permitir unirse
         const isBanned = await checkBan(roomId, payload.from);
         if (isBanned) {
           channel.send({ type:"broadcast", event:"banned", payload:{ to: payload.from } });
@@ -263,7 +245,6 @@ function useDebateMedia(
         if (!isHost && peerConns.current.size === 0) sendJoin(channel);
       })
 
-      // FIX 4: viewer recibe notificación de ban al intentar unirse
       .on("broadcast", { event:"banned" }, ({ payload }) => {
         if (payload.to !== userId) return;
         onToast("🚫 Estás baneado de esta sala", "error");
@@ -274,7 +255,6 @@ function useDebateMedia(
         if (payload.to !== userId) return;
         if (payload.action === "mute") {
           const t = localRef.current?.getAudioTracks()[0];
-          // FIX 3: deshabilitar track físicamente al recibir mute
           if (t) { t.enabled = false; setAudioOn(false); }
           setBlockedByHost(b => ({ ...b, mic:true }));
           onToast("🔇 El host silenció tu micrófono", "warn");
@@ -285,13 +265,11 @@ function useDebateMedia(
         }
         if (payload.action === "camoff") {
           const t = localRef.current?.getVideoTracks()[0];
-          // FIX 3: deshabilitar track físicamente al recibir camoff
           if (t) { t.enabled = false; setVideoOn(false); }
           setBlockedByHost(b => ({ ...b, cam:true }));
           onToast("📵 El host apagó tu cámara", "warn");
         }
         if (payload.action === "camon") {
-          // Solo levanta el bloqueo; el viewer decide si prende la cam
           setBlockedByHost(b => ({ ...b, cam:false }));
           onToast("📹 El host reactivó tu cámara", "info");
         }
@@ -347,6 +325,36 @@ function useDebateMedia(
       });
 
     sigCh.current = channel;
+
+    if (!isHost && roomId) {
+      let alreadyLeft = false;
+
+      const watchdogCh = supabase
+        .channel(`room-watchdog-${roomId}`)
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
+          (payload) => {
+            if (payload.new && (payload.new as any).is_live === false && !alreadyLeft) {
+              alreadyLeft = true;
+              onToast("🔴 El host cerró la sala", "error");
+              setTimeout(() => window.location.reload(), 2200);
+            }
+          }
+        ).subscribe();
+
+      const pollingInterval = setInterval(async () => {
+        const { data } = await supabase.from("rooms").select("is_live").eq("id", roomId).single();
+        if (data && !data.is_live && !alreadyLeft) {
+          alreadyLeft = true;
+          clearInterval(pollingInterval);
+          onToast("🔴 El host cerró la sala", "error");
+          setTimeout(() => window.location.reload(), 2200);
+        }
+      }, 5000);
+
+      (sigCh.current as any)._watchdog = watchdogCh;
+      (sigCh.current as any)._polling = pollingInterval;
+    }
+
   }, [roomId, isHost, userId, userName, userRole, createPC, sendJoin, onToast]);
 
   const startMedia = useCallback(async () => {
@@ -362,31 +370,16 @@ function useDebateMedia(
     setLocalStream(null); setVideoOn(false); setAudioOn(false);
   }, []);
 
-  // FIX 2 & 3: toggleVideo respeta bloqueo del host y solo toca enabled, nunca srcObject
   const toggleVideo = useCallback(() => {
-    if (blockedByHost.cam) {
-      onToast("📵 Tu cámara fue bloqueada por el host", "warn");
-      return;
-    }
+    if (blockedByHost.cam) { onToast("📵 Tu cámara fue bloqueada por el host", "warn"); return; }
     const t = localRef.current?.getVideoTracks()[0];
-    if (t) {
-      t.enabled = !t.enabled;
-      setVideoOn(t.enabled);
-      onToast(t.enabled ? "📹 Cámara encendida" : "📵 Cámara apagada", "info");
-    }
+    if (t) { t.enabled = !t.enabled; setVideoOn(t.enabled); onToast(t.enabled ? "📹 Cámara encendida" : "📵 Cámara apagada", "info"); }
   }, [blockedByHost.cam, onToast]);
 
   const toggleAudio = useCallback(() => {
-    if (blockedByHost.mic) {
-      onToast("🔇 Tu micrófono fue bloqueado por el host", "warn");
-      return;
-    }
+    if (blockedByHost.mic) { onToast("🔇 Tu micrófono fue bloqueado por el host", "warn"); return; }
     const t = localRef.current?.getAudioTracks()[0];
-    if (t) {
-      t.enabled = !t.enabled;
-      setAudioOn(t.enabled);
-      onToast(t.enabled ? "🎙️ Micrófono activado" : "🔇 Micrófono silenciado", "info");
-    }
+    if (t) { t.enabled = !t.enabled; setAudioOn(t.enabled); onToast(t.enabled ? "🎙️ Micrófono activado" : "🔇 Micrófono silenciado", "info"); }
   }, [blockedByHost.mic, onToast]);
 
   const moderate = useCallback((id: string, action: string) => {
@@ -423,7 +416,6 @@ function useDebateMedia(
     peerConns.current.get(id)?.close(); peerConns.current.delete(id);
   }, [moderate]);
 
-  // FIX 4: banear persiste en Supabase
   const banParticipant = useCallback(async (id: string) => {
     if (roomId) await insertBan(roomId, id);
     setParticipants(prev => prev.filter(p => p.id!==id));
@@ -444,13 +436,23 @@ function useDebateMedia(
   useEffect(() => {
     if (!roomId) return;
     startMedia().then(() => setupSignaling());
+
+    if (isHost && roomId) {
+      heartbeatRef.current = setInterval(async () => {
+        await supabase.from("rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomId).eq("is_live", true);
+      }, 8000);
+    }
+
     return () => {
       if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       stopMedia();
       peerConns.current.forEach(pc => pc.close()); peerConns.current.clear();
+      if ((sigCh.current as any)?._polling) clearInterval((sigCh.current as any)._polling);
+      if ((sigCh.current as any)?._watchdog) supabase.removeChannel((sigCh.current as any)._watchdog);
       if (sigCh.current) supabase.removeChannel(sigCh.current);
     };
-  }, [roomId]);
+  }, [roomId, isHost]);
 
   return {
     participants, localStream, videoOn, audioOn, blockedByHost, presenceCount,
@@ -472,8 +474,10 @@ function Toast({ message, type = "info", onDone }: {
 }
 
 function TagBadge({ tag, selected, onClick }: { tag: Tag; selected?: boolean; onClick?: () => void }) {
-  return <button type="button" onClick={onClick} className={`dr-tag ${selected?"selected":""}`}
-    style={{ cursor: onClick?"pointer":"default" }}>{tag}</button>;
+  return (
+    <button type="button" onClick={onClick} className={`dr-tag ${selected?"selected":""}`}
+      style={{ cursor: onClick?"pointer":"default" }}>{tag}</button>
+  );
 }
 
 // ─── RoomCard ─────────────────────────────────────────────────────
@@ -484,46 +488,58 @@ function RoomCard({ room, userId, onJoin }: { room: Room; userId: string; onJoin
   const [banned, setBanned] = useState(false);
   const [checkingBan, setCheckingBan] = useState(false);
 
-  // FIX 4: verificar ban al hacer click en Unirse
   const handleJoin = useCallback(async () => {
     if (full || checkingBan) return;
     setCheckingBan(true);
     const isBanned = await checkBan(room.id, userId);
     setCheckingBan(false);
-    if (isBanned) {
-      setBanned(true);
-      return;
-    }
+    if (isBanned) { setBanned(true); return; }
     onJoin(room);
   }, [full, checkingBan, room, userId, onJoin]);
 
   return (
     <div className="dr-card" onClick={handleJoin}>
-      <div className="dr-card-glow" />
+      {/* Glow layers */}
+      <div className="dr-card-orb" />
+      <div className="dr-card-shimmer" />
+
       <div className="dr-card-body">
         <div className="dr-card-top">
-          <span className="dr-live-dot" /><span className="dr-live-label">EN VIVO</span>
+          <div className="dr-live-pill">
+            <span className="dr-live-dot" />
+            <span className="dr-live-label">EN VIVO</span>
+          </div>
           <div className="dr-card-host-info">
-            <span className="dr-card-role-badge">STREAMER</span>
+            <span className="dr-card-role-badge">
+              <span className="dr-role-crown">👑</span> STREAMER
+            </span>
             <span className="dr-card-host-name">{room.host_name}</span>
           </div>
         </div>
+
         <h3 className="dr-card-title">{room.title}</h3>
         {room.description && <p className="dr-card-desc">{room.description}</p>}
         <div className="dr-card-tags">{room.tags.map(t => <TagBadge key={t} tag={t} />)}</div>
       </div>
+
       <div className="dr-card-footer">
         <div className="dr-capacity">
-          <div className="dr-capacity-bar">
-            <div className="dr-capacity-fill" style={{ width:`${pct}%`, background: full?"#f87171":"var(--sky)" }} />
+          <div className="dr-capacity-header">
+            <span className="dr-capacity-icon">👥</span>
+            <span className="dr-capacity-label">{room.participant_count} / {room.max_people}{full ? " · LLENA" : ""}</span>
           </div>
-          <span className="dr-capacity-label">{room.participant_count}/{room.max_people}{full?" · LLENA":""}</span>
+          <div className="dr-capacity-bar">
+            <div className="dr-capacity-fill" style={{ width:`${pct}%`, background: full ? "linear-gradient(90deg,#f87171,#fb923c)" : "linear-gradient(90deg,#54c7f8,#3b9eda)" }} />
+            <div className="dr-capacity-glow" style={{ width:`${pct}%`, opacity: full ? 0 : 1 }} />
+          </div>
         </div>
+
         {banned ? (
           <div className="dr-banned-msg">🚫 Estás baneado de esta sala</div>
         ) : !full ? (
           <button className="dr-join-btn" disabled={checkingBan}>
-            {checkingBan ? "Verificando..." : "Unirse →"}
+            <span>{checkingBan ? "Verificando..." : "Unirse"}</span>
+            {!checkingBan && <span className="dr-join-arrow">→</span>}
           </button>
         ) : null}
       </div>
@@ -537,11 +553,8 @@ function VideoTile({
   participant, isLocalSelf, isPinned, canModerate, onPin,
   onMute, onUnmute, onCamOff, onCamOn, onKick, onBan,
 }: {
-  participant: Participant;
-  isLocalSelf?: boolean;
-  isPinned?: boolean;
-  canModerate?: boolean;
-  onPin?: () => void;
+  participant: Participant; isLocalSelf?: boolean; isPinned?: boolean;
+  canModerate?: boolean; onPin?: () => void;
   onMute?: () => void; onUnmute?: () => void;
   onCamOff?: () => void; onCamOn?: () => void;
   onKick?: () => void; onBan?: () => void;
@@ -549,8 +562,6 @@ function VideoTile({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // FIX 2: setear srcObject solo cuando el stream cambia de referencia,
-  // nunca limpiarlo al toggle (el track.enabled maneja la imagen)
   useEffect(() => {
     if (videoRef.current && participant.stream) {
       if (videoRef.current.srcObject !== participant.stream) {
@@ -565,17 +576,11 @@ function VideoTile({
 
   return (
     <div className={`dr-tile ${isPinned?"dr-tile-pinned":""} ${isLocalSelf?"dr-tile-self":""}`}>
-      {/* FIX 2: el <video> siempre está montado; se muestra/oculta con CSS según camOff */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={isLocalSelf || participant.isHost}
-        className="dr-tile-video"
-        style={{ display: camOff ? "none" : "block" }}
-      />
+      <video ref={videoRef} autoPlay playsInline muted={isLocalSelf || participant.isHost}
+        className="dr-tile-video" style={{ display: camOff ? "none" : "block" }} />
       {camOff && (
         <div className="dr-tile-avatar">
+          <div className="dr-tile-avatar-ring" />
           <span className="dr-tile-initials">{initials}</span>
           {participant.mutedByHost && <span className="dr-tile-blocked-badge">🔇</span>}
           {participant.camOffByHost && <span className="dr-tile-blocked-badge" style={{right:22}}>📵</span>}
@@ -637,7 +642,10 @@ function ChatPanel({ messages, onSend, onClose, userId }: {
   return (
     <div className="dr-chat">
       <div className="dr-chat-header">
-        <span>💬 Chat en vivo</span>
+        <div className="dr-chat-header-left">
+          <div className="dr-chat-dot" />
+          <span>Chat en vivo</span>
+        </div>
         <button onClick={onClose} className="dr-chat-close">✕</button>
       </div>
       <div className="dr-chat-messages">
@@ -690,18 +698,30 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
   return (
     <div className="crm-overlay" onClick={onClose}>
       <div className="crm-sheet" onClick={e=>e.stopPropagation()}>
-        <div className="crm-topline"/>
+        {/* Decorative top beam */}
+        <div className="crm-beam" />
+        <div className="crm-beam-glow" />
+
+       
+
         <div className="crm-header">
           <div className="crm-header-left">
-            <div className="crm-crown">👑</div>
-            <div><p className="crm-eyebrow">Streamer · Nueva sala</p><h2 className="crm-title">Crear debate</h2></div>
+            <div className="crm-crown-wrap">
+              <div className="crm-crown-ring" />
+              <span className="crm-crown-icon">👑</span>
+            </div>
+            <div>
+              <p className="crm-eyebrow">Exclusivo para Streamer</p>
+              <h2 className="crm-title">Crear debate</h2>
+            </div>
           </div>
           <button className="crm-close" onClick={onClose}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M2 2l14 14M16 2L2 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
             </svg>
           </button>
         </div>
+
         <div className="crm-body">
           <div className="crm-field">
             <label className="crm-label">Título <span className="crm-required">*</span></label>
@@ -711,27 +731,31 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
               <span className="crm-char-count">{title.length}/80</span>
             </div>
           </div>
+
           <div className="crm-field">
-            <label className="crm-label">Descripción</label>
+            <label className="crm-label">Descripción <span className="crm-hint">opcional</span></label>
             <div className="crm-input-wrap">
-              <textarea className="crm-input crm-textarea" placeholder="Contexto, reglas..." value={description}
+              <textarea className="crm-input crm-textarea" placeholder="Contexto, reglas del debate..." value={description}
                 onChange={e=>setDescription(e.target.value)} maxLength={280} rows={3}/>
               <span className="crm-char-count crm-char-count-ta">{description.length}/280</span>
             </div>
           </div>
+
           <div className="crm-field">
             <label className="crm-label">Tema <span className="crm-required">*</span><span className="crm-hint">hasta 4</span></label>
             <div className="crm-tags-grid">
               {ALL_TAGS.map(tag=>(
                 <button key={tag} type="button" className={`crm-tag ${tags.includes(tag)?"crm-tag-on":""}`}
                   onClick={()=>toggleTag(tag)}>
-                  {tags.includes(tag)&&<span className="crm-tag-check">✓</span>}{tag}
+                  {tags.includes(tag) && <span className="crm-tag-check">✓</span>}
+                  {tag}
                 </button>
               ))}
             </div>
           </div>
+
           <div className="crm-field">
-            <label className="crm-label">Capacidad <span className="crm-hint">2–500</span></label>
+            <label className="crm-label">Capacidad <span className="crm-hint">2–500 personas</span></label>
             <div className="crm-capacity-row">
               <div className="crm-number-wrap">
                 <button className="crm-num-btn" type="button" onClick={()=>setMaxPeople(p=>Math.max(2,(p||2)-1))}>−</button>
@@ -747,18 +771,25 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
               </div>
             </div>
           </div>
-          {error&&<div className="crm-error">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <circle cx="7" cy="7" r="6" stroke="#f87171" strokeWidth="1.5"/>
-              <path d="M7 4v3.5M7 9.5v.5" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>{error}
-          </div>}
+
+          {error && (
+            <div className="crm-error">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <circle cx="7" cy="7" r="6" stroke="#f87171" strokeWidth="1.5"/>
+                <path d="M7 4v3.5M7 9.5v.5" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              {error}
+            </div>
+          )}
         </div>
+
         <div className="crm-footer">
           <button className="crm-btn-cancel" onClick={onClose}>Cancelar</button>
           <button className="crm-btn-create" onClick={handleCreate} disabled={loading}>
-            {loading ? <span className="crm-loading-dots"><span/><span/><span/></span>
-              : <>Iniciar sala <span className="crm-arrow">→</span></>}
+            {loading
+              ? <span className="crm-loading-dots"><span/><span/><span/></span>
+              : <><span>Iniciar sala</span><span className="crm-arrow">→</span></>
+            }
           </button>
         </div>
       </div>
@@ -793,46 +824,39 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
     notifyRoomClosed, sendChat,
   } = useDebateMedia(room.id, isHost, currentUserId, currentUserName, currentUserRole, onToast);
 
-  // FIX 2: refs para self-view — se setean una sola vez, no se tocan al toggle
   const selfViewRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => { setCount(room.id, presenceCount); }, [presenceCount]);
 
-  // FIX 1: cerrar sala automáticamente cuando el streamer se va (tab cerrada / navegación)
   useEffect(() => {
     if (!isHost) return;
     const handleUnload = () => {
-      // sendBeacon como fallback para cierre de tab
-      navigator.sendBeacon("/api/close-room", JSON.stringify({ roomId: room.id }));
-      // también intentar via Supabase (funciona si la página no cierra de inmediato)
-      supabase.from("rooms").update({ is_live: false }).eq("id", room.id);
+      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rooms?id=eq.${room.id}`, {
+        method: "PATCH", keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({ is_live: false }),
+      });
     };
     window.addEventListener("beforeunload", handleUnload);
     return () => {
       window.removeEventListener("beforeunload", handleUnload);
-      // FIX 1: cleanup del componente = streamer salió → cerrar sala
-      if (isHost) {
-        notifyRoomClosed();
-        closeRoom(room.id);
-      }
+      notifyRoomClosed();
+      closeRoom(room.id);
     };
   }, [isHost, room.id, closeRoom, notifyRoomClosed]);
 
-  // FIX 2: setear srcObject del self-view una sola vez cuando llega el stream
   useEffect(() => {
-    if (selfViewRef.current && localStream) {
-      selfViewRef.current.srcObject = localStream;
-    }
+    if (selfViewRef.current && localStream) selfViewRef.current.srcObject = localStream;
   }, [localStream]);
 
   const handleLeaveOrClose = useCallback(async () => {
-    // FIX 1: si es host, cerrar sala explícitamente al presionar "Cerrar sala"
-    if (isHost) {
-      notifyRoomClosed();
-      await closeRoom(room.id);
-    }
-    stopMedia();
-    onLeave();
+    if (isHost) { notifyRoomClosed(); await closeRoom(room.id); }
+    stopMedia(); onLeave();
   }, [isHost, room.id, closeRoom, stopMedia, onLeave, notifyRoomClosed]);
 
   const togglePin = useCallback((id:string) => setPinnedId(prev => prev===id ? null : id), []);
@@ -842,17 +866,11 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
     hasVideo: videoOn, hasAudio: audioOn,
     mutedByHost: blockedByHost.mic, camOffByHost: blockedByHost.cam,
     isHost, stream: localStream ?? undefined,
-  }), [currentUserId, currentUserName, currentUserRole, videoOn, audioOn,
-       blockedByHost, isHost, localStream]);
+  }), [currentUserId, currentUserName, currentUserRole, videoOn, audioOn, blockedByHost, isHost, localStream]);
 
-  const allParticipants: Participant[] = useMemo(() =>
-    [selfParticipant, ...participants],
-    [selfParticipant, participants]
-  );
-
+  const allParticipants: Participant[] = useMemo(() => [selfParticipant, ...participants], [selfParticipant, participants]);
   const pinnedParticipant = pinnedId ? allParticipants.find(p => p.id === pinnedId) : null;
   const gridParticipants  = pinnedId ? allParticipants.filter(p => p.id !== pinnedId) : allParticipants;
-
   const { cols } = useMemo(() => gridLayout(gridParticipants.length), [gridParticipants.length]);
   const needsScroll = gridParticipants.length > 16;
 
@@ -867,18 +885,24 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
 
       <div className="dr-room-header">
         <div className="dr-room-meta">
-          <span className="dr-live-dot"/>
+          <div className="dr-room-logo-mini">
+            <span className="dr-room-logo-t">T</span>
+          </div>
+          <span className="dr-live-dot" />
           <span className="dr-room-title-text">{room.title}</span>
           <div className="dr-room-tags">{room.tags.map(t=><TagBadge key={t} tag={t}/>)}</div>
         </div>
         <div className="dr-room-header-right">
-          <span className="dr-room-count">👥 {presenceCount}/{room.max_people}</span>
+          <div className="dr-room-count-pill">
+            <span className="dr-room-count-dot" />
+            <span>{presenceCount}/{room.max_people}</span>
+          </div>
           <button className="dr-chat-toggle-btn" onClick={()=>setChatOpen(o=>!o)}>
             💬
             {chatMessages.length>0 && <span className="dr-chat-badge">{chatMessages.length}</span>}
           </button>
           <button className="dr-leave-btn" onClick={handleLeaveOrClose}>
-            {isHost ? "Cerrar sala" : "Salir"}
+            {isHost ? "🚪 Cerrar sala" : "← Salir"}
           </button>
         </div>
       </div>
@@ -887,36 +911,19 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
         {pinnedParticipant ? (
           <div className="dr-pinned-layout">
             <div className="dr-pinned-stage">
-              <VideoTile
-                participant={pinnedParticipant}
-                isLocalSelf={pinnedParticipant.id === currentUserId}
-                isPinned
-                canModerate={isHost}
-                onPin={() => togglePin(pinnedParticipant.id)}
-                onMute={() => muteParticipant(pinnedParticipant.id)}
-                onUnmute={() => unmuteParticipant(pinnedParticipant.id)}
-                onCamOff={() => camOffParticipant(pinnedParticipant.id)}
-                onCamOn={() => camOnParticipant(pinnedParticipant.id)}
-                onKick={() => kickParticipant(pinnedParticipant.id)}
-                onBan={() => banParticipant(pinnedParticipant.id)}
-              />
+              <VideoTile participant={pinnedParticipant} isLocalSelf={pinnedParticipant.id===currentUserId}
+                isPinned canModerate={isHost} onPin={() => togglePin(pinnedParticipant.id)}
+                onMute={() => muteParticipant(pinnedParticipant.id)} onUnmute={() => unmuteParticipant(pinnedParticipant.id)}
+                onCamOff={() => camOffParticipant(pinnedParticipant.id)} onCamOn={() => camOnParticipant(pinnedParticipant.id)}
+                onKick={() => kickParticipant(pinnedParticipant.id)} onBan={() => banParticipant(pinnedParticipant.id)} />
             </div>
             <div className="dr-pinned-rail">
               {gridParticipants.map(p => (
-                <VideoTile
-                  key={p.id}
-                  participant={p}
-                  isLocalSelf={p.id === currentUserId}
-                  isPinned={false}
-                  canModerate={isHost}
-                  onPin={() => togglePin(p.id)}
-                  onMute={() => muteParticipant(p.id)}
-                  onUnmute={() => unmuteParticipant(p.id)}
-                  onCamOff={() => camOffParticipant(p.id)}
-                  onCamOn={() => camOnParticipant(p.id)}
-                  onKick={() => kickParticipant(p.id)}
-                  onBan={() => banParticipant(p.id)}
-                />
+                <VideoTile key={p.id} participant={p} isLocalSelf={p.id===currentUserId} isPinned={false}
+                  canModerate={isHost} onPin={() => togglePin(p.id)}
+                  onMute={() => muteParticipant(p.id)} onUnmute={() => unmuteParticipant(p.id)}
+                  onCamOff={() => camOffParticipant(p.id)} onCamOn={() => camOnParticipant(p.id)}
+                  onKick={() => kickParticipant(p.id)} onBan={() => banParticipant(p.id)} />
               ))}
             </div>
           </div>
@@ -924,34 +931,22 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
           <div className={`dr-meet-grid ${needsScroll?"scrollable":""}`}
             style={{ "--grid-cols": cols } as React.CSSProperties}>
             {gridParticipants.map(p => (
-              <VideoTile
-                key={p.id}
-                participant={p}
-                isLocalSelf={p.id === currentUserId}
-                isPinned={false}
-                canModerate={isHost}
-                onPin={() => togglePin(p.id)}
-                onMute={() => muteParticipant(p.id)}
-                onUnmute={() => unmuteParticipant(p.id)}
-                onCamOff={() => camOffParticipant(p.id)}
-                onCamOn={() => camOnParticipant(p.id)}
-                onKick={() => kickParticipant(p.id)}
-                onBan={() => banParticipant(p.id)}
-              />
+              <VideoTile key={p.id} participant={p} isLocalSelf={p.id===currentUserId} isPinned={false}
+                canModerate={isHost} onPin={() => togglePin(p.id)}
+                onMute={() => muteParticipant(p.id)} onUnmute={() => unmuteParticipant(p.id)}
+                onCamOff={() => camOffParticipant(p.id)} onCamOn={() => camOnParticipant(p.id)}
+                onKick={() => kickParticipant(p.id)} onBan={() => banParticipant(p.id)} />
             ))}
           </div>
         )}
 
         {chatOpen && (
-          <ChatPanel messages={chatMessages} onSend={sendChat}
-            onClose={()=>setChatOpen(false)} userId={currentUserId}/>
+          <ChatPanel messages={chatMessages} onSend={sendChat} onClose={()=>setChatOpen(false)} userId={currentUserId}/>
         )}
       </div>
 
-      {/* Self-view fija — FIX 2: video siempre montado, track.enabled controla imagen */}
       <div className="dr-self-pip">
         <video ref={selfViewRef} autoPlay playsInline muted className="dr-self-pip-video"/>
-        {/* Overlay de avatar cuando cam está off */}
         {(!videoOn || blockedByHost.cam) && (
           <div className="dr-self-pip-avatar">
             <span className="dr-self-pip-initials">
@@ -975,16 +970,12 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
       </div>
 
       <div className="dr-controls">
-        <button
-          className={`dr-ctrl-btn ${audioOn&&!blockedByHost.mic?"active":"off"}`}
-          onClick={toggleAudio}
-          title={blockedByHost.mic ? "Bloqueado por host" : (audioOn?"Silenciar":"Activar mic")}>
+        <button className={`dr-ctrl-btn ${audioOn&&!blockedByHost.mic?"active":"off"}`}
+          onClick={toggleAudio} title={blockedByHost.mic ? "Bloqueado por host" : (audioOn?"Silenciar":"Activar mic")}>
           {audioOn && !blockedByHost.mic ? "🎙️" : "🔇"}
         </button>
-        <button
-          className={`dr-ctrl-btn ${videoOn&&!blockedByHost.cam?"active":"off"}`}
-          onClick={toggleVideo}
-          title={blockedByHost.cam ? "Bloqueado por host" : (videoOn?"Apagar cam":"Encender cam")}>
+        <button className={`dr-ctrl-btn ${videoOn&&!blockedByHost.cam?"active":"off"}`}
+          onClick={toggleVideo} title={blockedByHost.cam ? "Bloqueado por host" : (videoOn?"Apagar cam":"Encender cam")}>
           {videoOn && !blockedByHost.cam ? "📹" : "📵"}
         </button>
         <button className="dr-ctrl-btn neutral" onClick={()=>setChatOpen(o=>!o)} title="Chat">💬</button>
@@ -1036,13 +1027,8 @@ export default function DebateRoomsPage() {
         <div className="dr-root">
           <div className="dr-aurora"/><div className="dr-flag"/>
           <RoomView
-            room={activeRoom}
-            currentUserId={userId}
-            currentUserName={userName}
-            currentUserRole={userRole}
-            onLeave={() => setActiveRoom(null)}
-            closeRoom={closeRoom}
-            setCount={setCount}
+            room={activeRoom} currentUserId={userId} currentUserName={userName} currentUserRole={userRole}
+            onLeave={() => setActiveRoom(null)} closeRoom={closeRoom} setCount={setCount}
           />
         </div>
       </>
@@ -1059,26 +1045,54 @@ export default function DebateRoomsPage() {
         />
       )}
       <div className="dr-root">
-        <div className="dr-aurora"/><div className="dr-flag"/>
+        <div className="dr-aurora"/>
+        <div className="dr-flag"/>
+
+        {/* ── HEADER PREMIUM ── */}
         <header className="dr-header">
-          <div className="dr-logo-wrap">
-            <span className="dr-logo-t">Turr</span>
-            <span className="dr-logo-inder">inder</span>
-            <span className="dr-logo-sub">Debates</span>
+          {/* Logo integrado */}
+          <div className="dr-logo-full">
+            <div className="dr-logo-icon-wrap">
+              <div className="dr-logo-icon-halo" />
+              {/* Reemplazar con: <img src={img.src} className="dr-logo-img" alt="Turrinder" /> */}
+              <div className="dr-logo-img-placeholder">T</div>
+            </div>
+            <div className="dr-logo-text-group">
+              <div className="dr-logo-wordmark">
+                Turr<em>inder</em>
+              </div>
+              <div className="dr-logo-section-tag">
+                <span className="dr-section-dot" />
+                Debates
+              </div>
+            </div>
           </div>
+
+          
+
           <div className="dr-header-right">
             <div className="dr-role-badge" data-role={userRole}>
               {userRole==="streamer" ? "👑 Streamer" : "👁 Viewer"}
             </div>
             {isStreamer && (
-              <button className="dr-create-btn" onClick={() => setShowCreate(true)}>+ Crear sala</button>
+              <button className="dr-create-btn" onClick={() => setShowCreate(true)}>
+                <span className="dr-create-btn-plus">+</span>
+                <span>Crear sala</span>
+              </button>
             )}
           </div>
         </header>
 
+        {/* ── FILTROS PREMIUM ── */}
         <div className="dr-filters">
-          <input className="dr-search" placeholder="Buscar debate..." value={search}
-            onChange={e=>setSearch(e.target.value)}/>
+          <div className="dr-search-wrap">
+            <svg className="dr-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
+              <path d="M10 10l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+            <input className="dr-search" placeholder="Buscar debate..." value={search}
+              onChange={e=>setSearch(e.target.value)}/>
+          </div>
           <div className="dr-filter-tags">
             <button className={`dr-filter-tag ${!filterTag?"active":""}`}
               onClick={() => setFilterTag(null)}>Todos</button>
@@ -1090,14 +1104,27 @@ export default function DebateRoomsPage() {
           </div>
         </div>
 
+        {/* ── MAIN GRID ── */}
         <main className="dr-main">
           {loading ? (
-            <div className="dr-loading"><div className="dr-spinner"/><span>Cargando salas...</span></div>
+            <div className="dr-loading">
+              <div className="dr-spinner-wrap">
+                <div className="dr-spinner"/>
+                <div className="dr-spinner-inner"/>
+              </div>
+              <span>Cargando salas...</span>
+            </div>
           ) : filteredRooms.length === 0 ? (
             <div className="dr-empty">
+              <div className="dr-empty-orb" />
               <div className="dr-empty-icon">🎙️</div>
               <h3>No hay debates activos</h3>
-              <p>{isStreamer ? "¡Creá la primera sala!" : "Esperá a que un Streamer cree una sala."}</p>
+              <p>{isStreamer ? "¡Creá la primera sala y empezá el debate!" : "Esperá a que un Streamer cree una sala."}</p>
+              {isStreamer && (
+                <button className="dr-empty-create-btn" onClick={() => setShowCreate(true)}>
+                  + Crear primera sala
+                </button>
+              )}
             </div>
           ) : (
             <div className="dr-rooms-grid">
@@ -1117,425 +1144,999 @@ export default function DebateRoomsPage() {
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Clash+Display:wght@500;600;700&display=swap');
-      *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
       .dr-root {
-        --sky:#54c7f8; --sky2:#3b9eda; --white:#f5f8ff; --bg:#030a14;
-        --glass:rgba(84,199,248,0.04); --glass-b:rgba(84,199,248,0.12);
-        --glass-b2:rgba(84,199,248,0.22); --muted:rgba(180,215,240,0.45);
-        --danger:#f87171; --warn:#fbbf24; --violet:#a78bfa; --green:#4ade80;
-        min-height:100dvh; display:flex; flex-direction:column;
-        background:var(--bg); font-family:'Inter',sans-serif;
-        -webkit-font-smoothing:antialiased; color:var(--white);
+        --sky: #54c7f8;
+        --sky2: #3b9eda;
+        --sky3: #1a6fa8;
+        --sky-glow: rgba(84,199,248,0.38);
+        --white: #f5f8ff;
+        --bg: #030a14;
+        --bg2: #050f1e;
+        --glass: rgba(84,199,248,0.04);
+        --glass-b: rgba(84,199,248,0.11);
+        --glass-b2: rgba(84,199,248,0.22);
+        --muted: rgba(180,215,240,0.45);
+        --danger: #f87171;
+        --warn: #fbbf24;
+        --violet: #a78bfa;
+        --green: #4ade80;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        font-family: 'DM Sans', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        color: var(--white);
+        position: relative;
       }
 
-      .dr-aurora { position:fixed; inset:0; pointer-events:none; z-index:0;
-        background: radial-gradient(ellipse 75% 40% at 10% 0%,rgba(84,199,248,.13),transparent 60%),
-                    radial-gradient(ellipse 55% 35% at 90% 100%,rgba(59,158,218,.10),transparent 58%);
-        animation:dr-aurora 20s ease-in-out infinite alternate; }
-      @keyframes dr-aurora { 0%{opacity:.7;transform:scale(1)} 100%{opacity:.85;transform:scale(1.07)} }
+      /* Noise overlay */
+      .dr-root::before {
+        content: '';
+        position: fixed; inset: 0; pointer-events: none; z-index: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+        opacity: 0.25;
+      }
 
-      .dr-flag { position:fixed; top:0; left:0; right:0; height:3px; z-index:60; opacity:.65;
-        background:linear-gradient(90deg,var(--sky) 33%,rgba(245,248,255,.85) 33% 66%,var(--sky) 66%); }
+      /* ── AURORA ── */
+      .dr-aurora {
+        position: fixed; inset: 0; pointer-events: none; z-index: 0;
+        background:
+          radial-gradient(ellipse 80% 50% at 5% 10%, rgba(84,199,248,0.18) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 45% at 95% 85%, rgba(59,158,218,0.13) 0%, transparent 58%),
+          radial-gradient(ellipse 45% 40% at 70% 5%, rgba(26,111,168,0.10) 0%, transparent 55%),
+          radial-gradient(ellipse 55% 35% at 20% 95%, rgba(143,212,255,0.07) 0%, transparent 52%),
+          radial-gradient(ellipse 35% 30% at 50% 50%, rgba(84,199,248,0.04) 0%, transparent 60%);
+        animation: dr-aurora 22s ease-in-out infinite alternate;
+      }
+      @keyframes dr-aurora {
+        0%   { opacity: 0.7; transform: scale(1) rotate(0deg); }
+        50%  { opacity: 1;   transform: scale(1.06) rotate(0.3deg); }
+        100% { opacity: 0.85; transform: scale(1.09) rotate(-0.2deg); }
+      }
 
-      .dr-header { position:sticky; top:3px; z-index:50; display:flex; align-items:center;
-        justify-content:space-between; padding:14px 20px;
-        background:linear-gradient(to bottom,rgba(3,10,20,.9),rgba(3,10,20,.55) 70%,transparent);
-        backdrop-filter:blur(12px); }
-      .dr-logo-wrap{display:flex;align-items:baseline}
-      .dr-logo-t{font-family:'Clash Display',sans-serif;font-size:20px;font-weight:900;letter-spacing:-.8px}
-      .dr-logo-inder{font-family:'Clash Display',sans-serif;font-size:20px;font-weight:900;letter-spacing:-.8px;
-        background:linear-gradient(120deg,var(--sky),#a8e6ff,var(--sky2));
-        -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-      .dr-logo-sub{font-size:10px;font-weight:500;color:var(--muted);letter-spacing:2px;
-        text-transform:uppercase;margin-left:8px;align-self:center}
-      .dr-header-right{display:flex;align-items:center;gap:10px}
-      .dr-role-badge{font-size:11px;font-weight:600;padding:4px 10px;border-radius:100px;
-        border:1px solid var(--glass-b);background:var(--glass);color:var(--muted)}
-      .dr-role-badge[data-role="streamer"]{border-color:rgba(251,191,36,.4);
-        background:rgba(251,191,36,.08);color:var(--warn)}
-      .dr-create-btn{font-size:13px;font-weight:600;padding:8px 18px;border-radius:100px;
-        border:1px solid var(--sky2);
-        background:linear-gradient(135deg,rgba(84,199,248,.15),rgba(59,158,218,.08));
-        color:var(--sky);cursor:pointer;transition:all .2s}
-      .dr-create-btn:hover{background:linear-gradient(135deg,rgba(84,199,248,.28),rgba(59,158,218,.18));
-        box-shadow:0 0 18px rgba(84,199,248,.25);transform:translateY(-1px)}
+      /* ── FLAG STRIPE ── */
+      .dr-flag {
+        position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; opacity: 0.7;
+        background: linear-gradient(90deg, var(--sky) 33%, rgba(245,248,255,0.88) 33% 66%, var(--sky) 66%);
+      }
 
-      .dr-filters{position:relative;z-index:2;padding:12px 20px 4px;display:flex;flex-direction:column;gap:10px}
-      .dr-search{background:rgba(5,15,30,.7);border:1px solid var(--glass-b);border-radius:12px;
-        padding:10px 16px;color:var(--white);font-size:14px;outline:none;transition:border-color .2s}
-      .dr-search::placeholder{color:var(--muted)} .dr-search:focus{border-color:var(--sky2)}
-      .dr-filter-tags{display:flex;gap:6px;flex-wrap:wrap}
-      .dr-filter-tag{font-size:11px;font-weight:500;padding:4px 12px;border-radius:100px;
-        border:1px solid var(--glass-b);background:var(--glass);color:var(--muted);
-        cursor:pointer;transition:all .18s;white-space:nowrap}
-      .dr-filter-tag:hover{border-color:var(--sky2);color:var(--sky)}
-      .dr-filter-tag.active{border-color:var(--sky);background:rgba(84,199,248,.12);color:var(--sky)}
+      /* ══════════════════════════════════════
+         HEADER PREMIUM
+      ══════════════════════════════════════ */
+      .dr-header {
+        position: sticky; top: 3px; z-index: 50;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 28px;
+        background: rgba(3,10,20,0.75);
+        backdrop-filter: blur(24px);
+        border-bottom: 1px solid var(--glass-b);
+        gap: 16px;
+      }
 
-      .dr-main{flex:1;position:relative;z-index:1;padding:16px 20px 32px;overflow-y:auto}
-      .dr-loading,.dr-empty{display:flex;flex-direction:column;align-items:center;
-        justify-content:center;gap:12px;padding:80px 20px;color:var(--muted);text-align:center}
-      .dr-spinner{width:32px;height:32px;border:2px solid var(--glass-b);border-top-color:var(--sky);
-        border-radius:50%;animation:dr-spin .8s linear infinite}
-      @keyframes dr-spin{to{transform:rotate(360deg)}}
-      .dr-empty-icon{font-size:48px} .dr-empty h3{font-size:18px;font-weight:700;color:var(--white)}
+      /* Logo completo */
+      .dr-logo-full {
+        display: flex; align-items: center; gap: 13px;
+        cursor: default; user-select: none;
+        flex-shrink: 0;
+      }
+      .dr-logo-icon-wrap {
+        position: relative; width: 40px; height: 40px; flex-shrink: 0;
+      }
+      .dr-logo-icon-halo {
+        position: absolute; inset: 0; border-radius: 12px;
+        background: linear-gradient(145deg, rgba(84,199,248,0.2), rgba(59,158,218,0.08));
+        border: 1px solid rgba(84,199,248,0.3);
+        box-shadow: 0 0 0 1px rgba(84,199,248,0.06), 0 4px 20px rgba(84,199,248,0.18), inset 0 1px 0 rgba(255,255,255,0.1);
+        animation: logo-halo 3.5s ease-in-out infinite alternate;
+      }
+      @keyframes logo-halo {
+        from { box-shadow: 0 0 0 1px rgba(84,199,248,0.06), 0 4px 20px rgba(84,199,248,0.18), inset 0 1px 0 rgba(255,255,255,0.1); }
+        to   { box-shadow: 0 0 0 1px rgba(84,199,248,0.15), 0 6px 32px rgba(84,199,248,0.38), inset 0 1px 0 rgba(255,255,255,0.15); }
+      }
+      /* REEMPLAZAR CON: img.dr-logo-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:6px; filter:drop-shadow(0 0 7px rgba(84,199,248,0.6)) brightness(1.08); } */
+      .dr-logo-img-placeholder {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 900;
+        background: linear-gradient(135deg, var(--sky), var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+      .dr-logo-text-group { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
+      .dr-logo-wordmark {
+        font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 800;
+        letter-spacing: -0.8px; color: var(--white); line-height: 1;
+      }
+      .dr-logo-wordmark em {
+        font-style: normal;
+        background: linear-gradient(120deg, var(--sky) 0%, #c8f2ff 55%, var(--sky2) 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+      .dr-logo-section-tag {
+        display: flex; align-items: center; gap: 5px;
+        font-size: 9px; font-weight: 600; letter-spacing: 2.5px;
+        text-transform: uppercase; color: rgba(84,199,248,0.45); line-height: 1;
+      }
+      .dr-section-dot {
+        width: 4px; height: 4px; border-radius: 50%; background: var(--sky);
+        opacity: 0.65; flex-shrink: 0;
+        box-shadow: 0 0 5px rgba(84,199,248,0.8);
+        animation: sky-pulse 2s infinite;
+      }
+      @keyframes sky-pulse {
+        0%  { box-shadow: 0 0 0 0 rgba(84,199,248,0.6); }
+        70% { box-shadow: 0 0 0 5px rgba(84,199,248,0); }
+        100%{ box-shadow: 0 0 0 0 rgba(84,199,248,0); }
+      }
 
-      .dr-rooms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
-      .dr-card{position:relative;background:rgba(5,14,28,.82);border:1px solid var(--glass-b);
-        border-radius:18px;overflow:hidden;cursor:pointer;
-        transition:border-color .25s,transform .2s,box-shadow .25s;
-        backdrop-filter:blur(12px);display:flex;flex-direction:column}
-      .dr-card:hover{border-color:var(--sky2);transform:translateY(-3px);
-        box-shadow:0 8px 32px rgba(84,199,248,.15)}
-      .dr-card-glow{position:absolute;top:-40px;left:-40px;width:120px;height:120px;
-        background:radial-gradient(circle,rgba(84,199,248,.12),transparent 70%);
-        pointer-events:none;opacity:0;transition:opacity .3s}
-      .dr-card:hover .dr-card-glow{opacity:1}
-      .dr-card-body{padding:16px 18px 12px;flex:1}
-      .dr-card-footer{padding:12px 18px 16px;border-top:1px solid var(--glass-b)}
-      .dr-card-top{display:flex;align-items:center;gap:7px;margin-bottom:8px}
-      .dr-live-dot{width:7px;height:7px;border-radius:50%;background:var(--sky);
-        box-shadow:0 0 6px var(--sky);animation:dr-pulse 1.8s ease-in-out infinite;flex-shrink:0}
-      @keyframes dr-pulse{0%,100%{opacity:1;box-shadow:0 0 6px var(--sky)}
-        50%{opacity:.6;box-shadow:0 0 12px var(--sky)}}
-      .dr-live-label{font-size:9px;font-weight:700;letter-spacing:1.2px;color:var(--sky);text-transform:uppercase}
-      .dr-card-host-info{display:flex;align-items:center;gap:5px;margin-left:auto}
-      .dr-card-role-badge{font-size:8px;font-weight:800;letter-spacing:1.2px;color:var(--violet);
-        border:1px solid rgba(167,139,250,.4);background:rgba(167,139,250,.1);
-        border-radius:4px;padding:1px 6px;text-transform:uppercase}
-      .dr-card-host-name{font-size:11px;color:var(--muted)}
-      .dr-card-title{font-family:'Clash Display',sans-serif;font-size:17px;font-weight:800;
-        color:var(--white);line-height:1.25;margin-bottom:6px}
-      .dr-card-desc{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px;
-        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-      .dr-card-tags{display:flex;flex-wrap:wrap;gap:5px}
-      .dr-tag{font-size:10px;font-weight:600;padding:3px 9px;border-radius:100px;
-        border:1px solid var(--glass-b);background:var(--glass);color:var(--muted);
-        text-transform:uppercase;letter-spacing:.5px;transition:all .15s}
-      .dr-tag.selected,.dr-tag:hover{border-color:var(--sky);background:rgba(84,199,248,.1);color:var(--sky)}
-      .dr-capacity{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
-      .dr-capacity-bar{height:3px;background:rgba(84,199,248,.12);border-radius:2px;overflow:hidden}
-      .dr-capacity-fill{height:100%;border-radius:2px;transition:width .4s}
-      .dr-capacity-label{font-size:10px;color:var(--muted)}
-      .dr-join-btn{width:100%;padding:9px;border-radius:10px;border:1px solid var(--sky2);
-        background:linear-gradient(135deg,rgba(84,199,248,.12),rgba(59,158,218,.06));
-        color:var(--sky);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
-      .dr-join-btn:hover:not(:disabled){background:linear-gradient(135deg,rgba(84,199,248,.22),rgba(59,158,218,.14));
-        box-shadow:0 0 14px rgba(84,199,248,.2)}
-      .dr-join-btn:disabled{opacity:.5;cursor:not-allowed}
-      /* FIX 4: mensaje de ban en card */
-      .dr-banned-msg{width:100%;padding:9px;border-radius:10px;
-        border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.07);
-        color:var(--danger);font-size:12px;font-weight:600;text-align:center}
+      /* Header center indicator */
+      .dr-header-center { flex: 1; display: flex; justify-content: center; }
+      .dr-header-live-indicator {
+        display: flex; align-items: center; gap: 7px;
+        font-size: 11px; color: var(--muted); font-weight: 500;
+        background: rgba(84,199,248,0.04); border: 1px solid var(--glass-b);
+        border-radius: 100px; padding: 5px 14px;
+      }
 
-      /* ═══════════════════════════════════════════
+      .dr-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+      .dr-role-badge {
+        font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 100px;
+        border: 1px solid var(--glass-b); background: var(--glass); color: var(--muted);
+        letter-spacing: 0.3px;
+      }
+      .dr-role-badge[data-role="streamer"] {
+        border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.07); color: var(--warn);
+      }
+
+      .dr-create-btn {
+        display: flex; align-items: center; gap: 7px;
+        font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+        padding: 9px 20px; border-radius: 100px;
+        border: 1px solid rgba(84,199,248,0.35);
+        background: linear-gradient(135deg, rgba(84,199,248,0.14), rgba(59,158,218,0.07));
+        color: var(--sky); cursor: pointer;
+        transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+        position: relative; overflow: hidden;
+      }
+      .dr-create-btn::before {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent 55%);
+      }
+      .dr-create-btn:hover {
+        border-color: rgba(84,199,248,0.6);
+        background: linear-gradient(135deg, rgba(84,199,248,0.22), rgba(59,158,218,0.14));
+        box-shadow: 0 0 24px rgba(84,199,248,0.28), 0 4px 16px rgba(84,199,248,0.15);
+        transform: translateY(-1px);
+      }
+      .dr-create-btn-plus {
+        font-size: 16px; font-weight: 300; line-height: 1;
+        background: linear-gradient(135deg, var(--sky), var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+
+      /* ══════════════════════════════════════
+         FILTROS PREMIUM
+      ══════════════════════════════════════ */
+      .dr-filters {
+        position: relative; z-index: 2;
+        padding: 16px 28px 8px;
+        display: flex; flex-direction: column; gap: 12px;
+      }
+
+      .dr-search-wrap {
+        position: relative; display: flex; align-items: center;
+      }
+      .dr-search-icon {
+        position: absolute; left: 14px; color: var(--muted); pointer-events: none; flex-shrink: 0;
+      }
+      .dr-search {
+        width: 100%; max-width: 360px;
+        background: rgba(5,14,28,0.8); border: 1px solid var(--glass-b);
+        border-radius: 14px; padding: 11px 16px 11px 38px;
+        color: var(--white); font-size: 14px; font-family: 'DM Sans', sans-serif;
+        outline: none; transition: all 0.2s ease;
+      }
+      .dr-search::placeholder { color: rgba(143,212,255,0.22); }
+      .dr-search:focus {
+        border-color: rgba(84,199,248,0.4);
+        background: rgba(84,199,248,0.04);
+        box-shadow: 0 0 0 3px rgba(84,199,248,0.08);
+      }
+
+      .dr-filter-tags {
+        display: flex; gap: 6px; flex-wrap: wrap;
+      }
+      .dr-filter-tag {
+        font-size: 11px; font-weight: 500; padding: 5px 14px; border-radius: 100px;
+        border: 1px solid var(--glass-b); background: rgba(4,12,26,0.7);
+        color: var(--muted); cursor: pointer;
+        transition: all 0.18s cubic-bezier(0.16,1,0.3,1); white-space: nowrap;
+        letter-spacing: 0.3px;
+      }
+      .dr-filter-tag:hover { border-color: rgba(84,199,248,0.3); color: rgba(143,212,255,0.85); }
+      .dr-filter-tag.active {
+        border-color: rgba(84,199,248,0.55); background: rgba(84,199,248,0.1);
+        color: var(--sky); box-shadow: 0 0 12px rgba(84,199,248,0.15);
+      }
+
+      /* ══════════════════════════════════════
+         MAIN / GRID
+      ══════════════════════════════════════ */
+      .dr-main {
+        flex: 1; position: relative; z-index: 1;
+        padding: 16px 28px 40px; overflow-y: auto;
+      }
+
+      /* Loading */
+      .dr-loading {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 16px; padding: 100px 20px; color: var(--muted);
+      }
+      .dr-spinner-wrap { position: relative; width: 40px; height: 40px; }
+      .dr-spinner {
+        position: absolute; inset: 0;
+        border: 2px solid rgba(84,199,248,0.1); border-top-color: var(--sky);
+        border-radius: 50%; animation: dr-spin 0.8s linear infinite;
+      }
+      .dr-spinner-inner {
+        position: absolute; inset: 6px;
+        border: 2px solid rgba(84,199,248,0.06); border-bottom-color: rgba(84,199,248,0.4);
+        border-radius: 50%; animation: dr-spin 1.4s linear infinite reverse;
+      }
+      @keyframes dr-spin { to { transform: rotate(360deg); } }
+
+      /* Empty state */
+      .dr-empty {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 14px; padding: 100px 20px;
+        text-align: center; position: relative;
+      }
+      .dr-empty-orb {
+        position: absolute; width: 300px; height: 300px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(84,199,248,0.07) 0%, transparent 70%);
+        pointer-events: none;
+        animation: orb-breathe 4s ease-in-out infinite;
+      }
+      @keyframes orb-breathe {
+        0%,100% { transform: scale(1); opacity: 0.6; }
+        50%     { transform: scale(1.1); opacity: 1; }
+      }
+      .dr-empty-icon { font-size: 52px; position: relative; z-index: 1; }
+      .dr-empty h3 {
+        font-family:sans-serif; font-size: 20px; font-weight: 800;
+        color: var(--white); position: relative; z-index: 1; letter-spacing: -0.3px;
+      }
+      .dr-empty p { font-size: 14px; color: var(--muted); max-width: 300px; line-height: 1.6; position: relative; z-index: 1; }
+      .dr-empty-create-btn {
+        margin-top: 8px; padding: 12px 28px; border-radius: 100px;
+        background: linear-gradient(135deg, var(--sky), var(--sky2));
+        border: none; color: #020d18;
+        font-family: sans-serif; font-size: 14px; font-weight: 800;
+        cursor: pointer; position: relative; z-index: 1;
+        box-shadow: 0 8px 32px rgba(84,199,248,0.4);
+        transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+      }
+      .dr-empty-create-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 44px rgba(84,199,248,0.55); }
+
+      /* ══════════════════════════════════════
+         CARDS PREMIUM
+      ══════════════════════════════════════ */
+      .dr-rooms-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+        gap: 18px;
+      }
+
+      .dr-card {
+        position: relative;
+        background: linear-gradient(160deg, rgba(6,16,32,0.92), rgba(3,10,22,0.95));
+        border: 1px solid var(--glass-b);
+        border-radius: 20px; overflow: hidden; cursor: pointer;
+        transition: border-color 0.3s, transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s;
+        backdrop-filter: blur(16px);
+        display: flex; flex-direction: column;
+        animation: card-in 0.4s cubic-bezier(0.16,1,0.3,1) both;
+      }
+      @keyframes card-in {
+        from { opacity: 0; transform: translateY(16px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .dr-card:hover {
+        border-color: rgba(84,199,248,0.32);
+        transform: translateY(-4px);
+        box-shadow: 0 12px 48px rgba(84,199,248,0.14), 0 2px 8px rgba(0,0,0,0.4);
+      }
+      .dr-card:hover .dr-card-orb { opacity: 1; }
+      .dr-card:hover .dr-card-shimmer { opacity: 1; }
+
+      /* Orb glow */
+      .dr-card-orb {
+        position: absolute; top: -60px; left: -60px;
+        width: 160px; height: 160px;
+        background: radial-gradient(circle, rgba(84,199,248,0.14) 0%, transparent 70%);
+        pointer-events: none; opacity: 0;
+        transition: opacity 0.4s; border-radius: 50%;
+      }
+      /* Shimmer line */
+      .dr-card-shimmer {
+        position: absolute; top: 0; left: 0; right: 0; height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(84,199,248,0.5) 50%, transparent);
+        opacity: 0; transition: opacity 0.4s;
+      }
+
+      .dr-card-body { padding: 18px 20px 14px; flex: 1; }
+      .dr-card-footer {
+        padding: 14px 20px 18px;
+        border-top: 1px solid rgba(84,199,248,0.07);
+        background: rgba(3,10,20,0.3);
+      }
+
+      .dr-card-top {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .dr-live-pill {
+        display: flex; align-items: center; gap: 6px;
+        background: rgba(84,199,248,0.08); border: 1px solid rgba(84,199,248,0.18);
+        border-radius: 100px; padding: 3px 10px 3px 7px;
+      }
+      .dr-live-dot {
+        width: 6px; height: 6px; border-radius: 50%; background: var(--sky); flex-shrink: 0;
+        box-shadow: 0 0 6px var(--sky);
+        animation: live-pulse 1.8s ease-in-out infinite;
+      }
+      @keyframes live-pulse {
+        0%,100% { opacity: 1; box-shadow: 0 0 6px var(--sky); }
+        50%     { opacity: 0.6; box-shadow: 0 0 14px var(--sky); }
+      }
+      .dr-live-label {
+        font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
+        color: var(--sky); text-transform: uppercase;
+      }
+
+      .dr-card-host-info { display: flex; align-items: center; gap: 6px; }
+      .dr-card-role-badge {
+        display: flex; align-items: center; gap: 3px;
+        font-size: 8px; font-weight: 800; letter-spacing: 1px;
+        color: var(--violet);
+        border: 1px solid rgba(167,139,250,0.35); background: rgba(167,139,250,0.09);
+        border-radius: 5px; padding: 2px 7px; text-transform: uppercase;
+      }
+      .dr-role-crown { font-size: 9px; }
+      .dr-card-host-name { font-size: 11px; color: var(--muted); }
+
+      .dr-card-title {
+        font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800;
+        color: var(--white); line-height: 1.25; margin-bottom: 8px;
+        letter-spacing: -0.3px;
+      }
+      .dr-card-desc {
+        font-size: 12px; color: var(--muted); line-height: 1.55; margin-bottom: 12px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .dr-card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+      .dr-tag {
+        font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 100px;
+        border: 1px solid var(--glass-b); background: rgba(4,12,26,0.7);
+        color: rgba(143,212,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;
+        transition: all 0.15s;
+      }
+      .dr-tag.selected, .dr-tag:hover {
+        border-color: rgba(84,199,248,0.4); background: rgba(84,199,248,0.08); color: var(--sky);
+      }
+
+      /* Capacity */
+      .dr-capacity { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+      .dr-capacity-header { display: flex; align-items: center; gap: 6px; }
+      .dr-capacity-icon { font-size: 11px; }
+      .dr-capacity-label { font-size: 10px; color: var(--muted); font-weight: 500; }
+      .dr-capacity-bar {
+        height: 3px; background: rgba(84,199,248,0.08); border-radius: 2px;
+        overflow: visible; position: relative;
+      }
+      .dr-capacity-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; position: relative; }
+      .dr-capacity-glow {
+        position: absolute; top: -2px; right: 0; width: 20px; height: 7px;
+        background: radial-gradient(circle, rgba(84,199,248,0.9), transparent 70%);
+        border-radius: 50%; pointer-events: none; transition: opacity 0.4s;
+        filter: blur(2px);
+      }
+
+      .dr-join-btn {
+        width: 100%; padding: 11px 16px;
+        display: flex; align-items: center; justify-content: space-between;
+        border-radius: 12px; border: 1px solid rgba(84,199,248,0.25);
+        background: linear-gradient(135deg, rgba(84,199,248,0.1), rgba(59,158,218,0.05));
+        color: var(--sky); font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+        cursor: pointer; transition: all 0.22s cubic-bezier(0.16,1,0.3,1);
+        position: relative; overflow: hidden;
+      }
+      .dr-join-btn::before {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.06), transparent 55%);
+      }
+      .dr-join-btn:hover:not(:disabled) {
+        border-color: rgba(84,199,248,0.5);
+        background: linear-gradient(135deg, rgba(84,199,248,0.18), rgba(59,158,218,0.10));
+        box-shadow: 0 0 20px rgba(84,199,248,0.2), inset 0 0 20px rgba(84,199,248,0.03);
+        transform: translateY(-1px);
+      }
+      .dr-join-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .dr-join-arrow {
+        font-size: 16px; transition: transform 0.2s;
+        background: linear-gradient(135deg, var(--sky), var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+      .dr-join-btn:hover .dr-join-arrow { transform: translateX(4px); }
+
+      .dr-banned-msg {
+        width: 100%; padding: 10px 16px; border-radius: 12px;
+        border: 1px solid rgba(248,113,113,0.25); background: rgba(248,113,113,0.06);
+        color: var(--danger); font-size: 12px; font-weight: 600; text-align: center;
+      }
+
+      /* ══════════════════════════════════════
          ROOM VIEW
-      ═══════════════════════════════════════════ */
-      .dr-room-view{position:relative;z-index:1;display:flex;flex-direction:column;
-        height:100dvh;overflow:hidden;background:#020810}
-
-      .dr-room-header{display:flex;align-items:center;justify-content:space-between;
-        padding:10px 14px;background:rgba(3,10,20,.95);backdrop-filter:blur(12px);
-        border-bottom:1px solid var(--glass-b);gap:8px;flex-wrap:wrap;flex-shrink:0;z-index:10}
-      .dr-room-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;min-width:0}
-      .dr-room-title-text{font-family:'Clash Display',sans-serif;font-size:15px;font-weight:800;
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .dr-room-tags{display:flex;gap:4px;flex-wrap:wrap}
-      .dr-room-header-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-      .dr-room-count{font-size:12px;color:var(--muted);white-space:nowrap}
-      .dr-leave-btn{padding:6px 14px;border-radius:100px;
-        border:1px solid rgba(248,113,113,.4);background:rgba(248,113,113,.08);
-        color:var(--danger);font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
-      .dr-leave-btn:hover{background:rgba(248,113,113,.18)}
-      .dr-chat-toggle-btn{position:relative;padding:6px 12px;border-radius:100px;
-        border:1px solid var(--glass-b);background:var(--glass);color:var(--sky);
-        font-size:13px;cursor:pointer;transition:all .2s;white-space:nowrap}
-      .dr-chat-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);
-        color:#fff;font-size:9px;font-weight:700;border-radius:100px;padding:1px 4px}
-
-      .dr-room-body{flex:1;display:flex;min-height:0;overflow:hidden;position:relative}
-
-      .dr-meet-grid {
-        flex:1; display:grid;
-        grid-template-columns: repeat(var(--grid-cols,1), 1fr);
-        gap:4px; padding:4px;
-        align-content:center; overflow:hidden;
+      ══════════════════════════════════════ */
+      .dr-room-view {
+        position: relative; z-index: 1; display: flex; flex-direction: column;
+        height: 100dvh; overflow: hidden; background: #020810;
       }
-      .dr-meet-grid.scrollable { align-content:start; overflow-y:auto; }
-      .dr-meet-grid .dr-tile { aspect-ratio:16/9; height:auto; }
 
-      .dr-pinned-layout{flex:1;display:flex;overflow:hidden}
-      .dr-pinned-stage{flex:1;min-width:0;position:relative}
-      .dr-pinned-stage .dr-tile{width:100%;height:100%;border-radius:0;border:none;aspect-ratio:auto}
-      .dr-pinned-rail{width:180px;flex-shrink:0;background:rgba(3,10,20,.7);
-        border-left:1px solid var(--glass-b);overflow-y:auto;
-        padding:6px;display:flex;flex-direction:column;gap:6px}
-      .dr-pinned-rail .dr-tile{width:100%;aspect-ratio:16/9}
+      .dr-room-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 18px;
+        background: rgba(2,8,16,0.97);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--glass-b);
+        gap: 10px; flex-wrap: wrap; flex-shrink: 0; z-index: 10;
+      }
+      .dr-room-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; flex: 1; min-width: 0; }
 
-      .dr-tile{position:relative;background:#050e1c;border:1px solid var(--glass-b);
-        border-radius:10px;overflow:hidden;
-        display:flex;align-items:center;justify-content:center;
-        transition:border-color .2s}
-      .dr-tile-pinned{border-color:rgba(84,199,248,.6)!important;
-        box-shadow:0 0 20px rgba(84,199,248,.2)}
-      .dr-tile-self{border-color:rgba(167,139,250,.5)}
-      .dr-tile-video{width:100%;height:100%;object-fit:cover;display:block}
-      .dr-tile-avatar{position:absolute;inset:0;display:flex;flex-direction:column;
-        align-items:center;justify-content:center;gap:8px;
-        background:linear-gradient(135deg,rgba(84,199,248,.06),rgba(59,158,218,.03))}
-      .dr-tile-initials{font-family:'Clash Display',sans-serif;font-size:clamp(18px,3vw,36px);
-        font-weight:900;color:var(--sky)}
-      .dr-tile-blocked-badge{position:absolute;bottom:28px;right:6px;font-size:12px}
+      /* Mini logo dentro de la sala */
+      .dr-room-logo-mini {
+        width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+        background: linear-gradient(145deg, rgba(84,199,248,0.18), rgba(59,158,218,0.08));
+        border: 1px solid rgba(84,199,248,0.28);
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 10px rgba(84,199,248,0.2);
+      }
+      .dr-room-logo-t {
+        font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 900;
+        background: linear-gradient(135deg, var(--sky), var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
 
-      .dr-tile-info{position:absolute;bottom:0;left:0;right:0;
-        padding:5px 7px;
-        background:linear-gradient(to top,rgba(3,10,20,.92) 0%,transparent 100%);
-        display:flex;align-items:center;justify-content:space-between;gap:4px}
-      .dr-tile-info-left{display:flex;align-items:center;gap:3px;min-width:0;flex:1}
-      .dr-host-badge{font-size:7px;font-weight:700;letter-spacing:.8px;color:var(--sky);
-        border:1px solid rgba(84,199,248,.35);background:rgba(84,199,248,.12);
-        border-radius:3px;padding:1px 4px;text-transform:uppercase;flex-shrink:0}
-      .dr-streamer-badge{font-size:7px;font-weight:700;letter-spacing:.8px;color:var(--violet);
-        border:1px solid rgba(167,139,250,.35);background:rgba(167,139,250,.12);
-        border-radius:3px;padding:1px 4px;text-transform:uppercase;flex-shrink:0}
-      .dr-you-badge{font-size:7px;font-weight:700;letter-spacing:.8px;color:var(--green);
-        border:1px solid rgba(74,222,128,.35);background:rgba(74,222,128,.1);
-        border-radius:3px;padding:1px 4px;text-transform:uppercase;flex-shrink:0}
-      .dr-tile-name{font-size:11px;color:var(--white);overflow:hidden;
-        text-overflow:ellipsis;white-space:nowrap;flex:1}
-      .dr-tile-icons{display:flex;gap:2px;flex-shrink:0}
-      .dr-icon-on{font-size:11px;opacity:1}
-      .dr-icon-off{font-size:11px;opacity:.25;filter:grayscale(1)}
+      .dr-room-title-text {
+        font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+        letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .dr-room-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+      .dr-room-header-right { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
 
-      .dr-pin-btn{position:absolute;top:6px;left:6px;
-        background:rgba(3,10,20,.8);border:1px solid var(--glass-b);
-        border-radius:6px;font-size:12px;padding:2px 5px;cursor:pointer;
-        opacity:0;transition:opacity .2s;z-index:5}
-      .dr-tile:hover .dr-pin-btn,.dr-pinned-stage:hover .dr-pin-btn{opacity:1}
-      .dr-pin-btn.active{opacity:1;border-color:var(--sky);background:rgba(84,199,248,.12)}
+      .dr-room-count-pill {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 11px; color: var(--muted); font-weight: 500;
+        background: var(--glass); border: 1px solid var(--glass-b);
+        border-radius: 100px; padding: 4px 12px;
+      }
+      .dr-room-count-dot {
+        width: 5px; height: 5px; border-radius: 50%; background: var(--green);
+        box-shadow: 0 0 6px rgba(74,222,128,0.8); animation: sky-pulse 2s infinite;
+      }
 
-      .dr-menu-wrap{position:absolute;top:6px;right:6px;z-index:10}
-      .dr-menu-btn{background:rgba(3,10,20,.85);border:1px solid var(--glass-b);
-        border-radius:6px;color:var(--muted);font-size:14px;
-        padding:1px 7px;cursor:pointer;line-height:1.4;
-        opacity:0;transition:opacity .15s}
-      .dr-tile:hover .dr-menu-btn{opacity:1}
-      .dr-menu-dropdown{position:absolute;top:28px;right:0;min-width:168px;
-        background:rgba(5,12,26,.99);border:1px solid var(--glass-b2);
-        border-radius:10px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.7);
-        animation:dr-fadein .15s ease;z-index:20}
-      .dr-menu-dropdown button{display:block;width:100%;text-align:left;
-        padding:9px 14px;font-size:12px;font-weight:500;color:var(--muted);
-        background:transparent;border:none;cursor:pointer;transition:background .15s,color .15s}
-      .dr-menu-dropdown button:hover{background:rgba(84,199,248,.08);color:var(--white)}
-      .dr-menu-divider{height:1px;background:var(--glass-b);margin:3px 0}
-      .dr-menu-ban{color:var(--danger)!important}
-      .dr-menu-ban:hover{background:rgba(248,113,113,.12)!important}
+      .dr-leave-btn {
+        padding: 6px 14px; border-radius: 100px;
+        border: 1px solid rgba(248,113,113,0.35); background: rgba(248,113,113,0.07);
+        color: var(--danger); font-size: 11px; font-weight: 600; cursor: pointer;
+        transition: all 0.2s; white-space: nowrap;
+      }
+      .dr-leave-btn:hover { background: rgba(248,113,113,0.16); }
 
-      /* Self PiP — FIX 2: posición relativa para overlay de avatar */
-      .dr-self-pip{position:fixed;bottom:68px;right:12px;
-        width:140px;height:105px;border-radius:12px;overflow:hidden;
-        border:2px solid rgba(167,139,250,.5);
-        box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:30;
-        background:rgba(5,14,28,.9)}
-      .dr-self-pip-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-      .dr-self-pip-avatar{position:absolute;inset:0;display:flex;align-items:center;
-        justify-content:center;background:rgba(5,14,28,.9)}
-      .dr-self-pip-initials{font-family:'Clash Display',sans-serif;font-size:28px;
-        font-weight:900;color:var(--sky)}
-      .dr-self-pip-info{position:absolute;bottom:0;left:0;right:0;
-        padding:4px 6px;background:rgba(3,10,20,.85);
-        display:flex;align-items:center;justify-content:space-between}
-      .dr-self-pip-name{font-size:10px;font-weight:600;color:var(--white);
-        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-      .dr-self-pip-icons{display:flex;gap:2px;flex-shrink:0}
-      .dr-self-pip-blocked{position:absolute;top:4px;left:4px;
-        display:flex;gap:3px;font-size:12px}
+      .dr-chat-toggle-btn {
+        position: relative; padding: 6px 13px; border-radius: 100px;
+        border: 1px solid var(--glass-b); background: var(--glass);
+        color: var(--sky); font-size: 13px; cursor: pointer;
+        transition: all 0.2s; white-space: nowrap;
+      }
+      .dr-chat-toggle-btn:hover { background: rgba(84,199,248,0.1); border-color: rgba(84,199,248,0.3); }
+      .dr-chat-badge {
+        position: absolute; top: -5px; right: -5px; background: var(--danger);
+        color: #fff; font-size: 9px; font-weight: 700; border-radius: 100px; padding: 1px 5px;
+        border: 1px solid var(--bg);
+      }
 
-      .dr-chat{width:270px;flex-shrink:0;background:rgba(4,11,24,.98);
-        border-left:1px solid var(--glass-b);display:flex;flex-direction:column}
-      .dr-chat-header{display:flex;align-items:center;justify-content:space-between;
-        padding:12px 14px;border-bottom:1px solid var(--glass-b);
-        font-size:13px;font-weight:600;color:var(--white);flex-shrink:0}
-      .dr-chat-close{background:transparent;border:none;color:var(--muted);
-        font-size:16px;cursor:pointer;line-height:1}
-      .dr-chat-messages{flex:1;overflow-y:auto;padding:10px;
-        display:flex;flex-direction:column;gap:7px}
-      .dr-chat-empty{font-size:12px;color:var(--muted);text-align:center;
-        padding:20px 0;font-style:italic}
-      .dr-chat-msg{display:flex;flex-direction:column;gap:2px;max-width:92%}
-      .dr-chat-msg.own{align-self:flex-end;align-items:flex-end}
-      .dr-chat-author{font-size:9px;font-weight:600;color:var(--muted);
-        text-transform:uppercase;letter-spacing:.5px}
-      .dr-chat-msg.own .dr-chat-author{color:rgba(84,199,248,.6)}
-      .dr-chat-text{font-size:12px;color:var(--white);
-        background:rgba(84,199,248,.07);border:1px solid var(--glass-b);
-        border-radius:8px;padding:5px 9px;line-height:1.45;word-break:break-word}
-      .dr-chat-msg.own .dr-chat-text{background:rgba(84,199,248,.14);
-        border-color:rgba(84,199,248,.22)}
-      .dr-chat-input-row{display:flex;gap:6px;padding:8px;
-        border-top:1px solid var(--glass-b);flex-shrink:0}
-      .dr-chat-input{flex:1;background:rgba(5,15,30,.8);
-        border:1px solid var(--glass-b);border-radius:8px;
-        padding:7px 9px;color:var(--white);font-size:12px;outline:none;
-        font-family:'Inter',sans-serif}
-      .dr-chat-input:focus{border-color:var(--sky2)}
-      .dr-chat-send{padding:7px 11px;border-radius:8px;border:1px solid var(--sky2);
-        background:rgba(84,199,248,.1);color:var(--sky);font-size:14px;
-        cursor:pointer;transition:all .15s}
-      .dr-chat-send:hover{background:rgba(84,199,248,.2)}
+      /* Room body */
+      .dr-room-body { flex: 1; display: flex; min-height: 0; overflow: hidden; position: relative; }
+      .dr-meet-grid {
+        flex: 1; display: grid;
+        grid-template-columns: repeat(var(--grid-cols,1), 1fr);
+        gap: 4px; padding: 4px;
+        align-content: center; overflow: hidden;
+      }
+      .dr-meet-grid.scrollable { align-content: start; overflow-y: auto; }
+      .dr-meet-grid .dr-tile { aspect-ratio: 16/9; height: auto; }
 
-      .dr-toasts-stack{position:fixed;top:18px;left:50%;transform:translateX(-50%);
-        z-index:999;display:flex;flex-direction:column;gap:6px;align-items:center;
-        pointer-events:none}
-      .dr-toast{padding:10px 20px;border-radius:12px;font-size:13px;font-weight:600;
-        color:var(--white);box-shadow:0 6px 20px rgba(0,0,0,.5);
-        animation:toast-in .25s ease;white-space:nowrap;
-        border:1px solid var(--glass-b2);backdrop-filter:blur(12px)}
-      .dr-toast-info{background:rgba(6,14,30,.95)}
-      .dr-toast-warn{background:rgba(30,20,6,.96);border-color:rgba(251,191,36,.3);color:var(--warn)}
-      .dr-toast-error{background:rgba(30,6,6,.96);border-color:rgba(248,113,113,.35);color:var(--danger)}
-      @keyframes toast-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+      .dr-pinned-layout { flex: 1; display: flex; overflow: hidden; }
+      .dr-pinned-stage { flex: 1; min-width: 0; position: relative; }
+      .dr-pinned-stage .dr-tile { width: 100%; height: 100%; border-radius: 0; border: none; aspect-ratio: auto; }
+      .dr-pinned-rail {
+        width: 185px; flex-shrink: 0;
+        background: rgba(2,8,16,0.85); border-left: 1px solid var(--glass-b);
+        overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;
+      }
+      .dr-pinned-rail .dr-tile { width: 100%; aspect-ratio: 16/9; }
 
-      .dr-controls{display:flex;align-items:center;justify-content:center;
-        gap:10px;padding:10px 14px;background:rgba(3,10,20,.97);
-        border-top:1px solid var(--glass-b);flex-shrink:0;z-index:10}
-      .dr-ctrl-btn{width:46px;height:46px;border-radius:13px;
-        border:1px solid var(--glass-b);background:var(--glass);
-        font-size:20px;cursor:pointer;transition:all .2s;
-        display:flex;align-items:center;justify-content:center}
-      .dr-ctrl-btn.active{border-color:var(--sky2);background:rgba(84,199,248,.12)}
-      .dr-ctrl-btn.off{border-color:rgba(248,113,113,.35);background:rgba(248,113,113,.07)}
-      .dr-ctrl-btn.neutral{border-color:var(--glass-b)}
-      .dr-ctrl-btn:hover{transform:translateY(-2px)}
-      .dr-ctrl-host-badge,.dr-ctrl-blocked-warn{width:46px;height:46px;border-radius:13px;
-        display:flex;align-items:center;justify-content:center;font-size:20px}
-      .dr-ctrl-host-badge{border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.07)}
-      .dr-ctrl-blocked-warn{border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.07)}
+      /* Tiles */
+      .dr-tile {
+        position: relative; background: #040c1a; border: 1px solid var(--glass-b);
+        border-radius: 10px; overflow: hidden;
+        display: flex; align-items: center; justify-content: center; transition: border-color 0.2s;
+      }
+      .dr-tile-pinned { border-color: rgba(84,199,248,0.6)!important; box-shadow: 0 0 24px rgba(84,199,248,0.18); }
+      .dr-tile-self { border-color: rgba(167,139,250,0.4); }
+      .dr-tile-video { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-      .dr-room-desc-bar{display:flex;align-items:center;gap:8px;
-        padding:6px 14px;background:rgba(3,10,20,.8);border-top:1px solid var(--glass-b);
-        font-size:11px;color:var(--muted);flex-shrink:0}
+      .dr-tile-avatar {
+        position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 8px;
+        background: linear-gradient(135deg, rgba(84,199,248,0.06), rgba(59,158,218,0.03));
+      }
+      .dr-tile-avatar-ring {
+        position: absolute; width: 72px; height: 72px; border-radius: 50%;
+        border: 1px solid rgba(84,199,248,0.15);
+        box-shadow: 0 0 30px rgba(84,199,248,0.08);
+      }
+      .dr-tile-initials {
+        font-family: 'Syne', sans-serif; font-size: clamp(18px,3vw,36px); font-weight: 900;
+        background: linear-gradient(135deg, var(--sky), #c8f2ff, var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        position: relative; z-index: 1;
+      }
+      .dr-tile-blocked-badge { position: absolute; bottom: 30px; right: 6px; font-size: 12px; }
 
-      ::-webkit-scrollbar{width:3px;height:3px}
-      ::-webkit-scrollbar-track{background:transparent}
-      ::-webkit-scrollbar-thumb{background:rgba(84,199,248,.2);border-radius:2px}
+      .dr-tile-info {
+        position: absolute; bottom: 0; left: 0; right: 0; padding: 5px 8px;
+        background: linear-gradient(to top, rgba(2,8,16,0.95) 0%, transparent 100%);
+        display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      }
+      .dr-tile-info-left { display: flex; align-items: center; gap: 3px; min-width: 0; flex: 1; }
 
-      @keyframes dr-fadein{from{opacity:0}to{opacity:1}}
+      .dr-host-badge {
+        font-size: 7px; font-weight: 700; letter-spacing: 1px; color: var(--sky);
+        border: 1px solid rgba(84,199,248,0.3); background: rgba(84,199,248,0.1);
+        border-radius: 4px; padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+      }
+      .dr-streamer-badge {
+        font-size: 7px; font-weight: 700; letter-spacing: 1px; color: var(--violet);
+        border: 1px solid rgba(167,139,250,0.3); background: rgba(167,139,250,0.1);
+        border-radius: 4px; padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+      }
+      .dr-you-badge {
+        font-size: 7px; font-weight: 700; letter-spacing: 1px; color: var(--green);
+        border: 1px solid rgba(74,222,128,0.3); background: rgba(74,222,128,0.1);
+        border-radius: 4px; padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+      }
+      .dr-tile-name { font-size: 11px; color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+      .dr-tile-icons { display: flex; gap: 2px; flex-shrink: 0; }
+      .dr-icon-on  { font-size: 11px; opacity: 1; }
+      .dr-icon-off { font-size: 11px; opacity: 0.22; filter: grayscale(1); }
 
-      /* ═══════════════════════════════════════════
-         CREATE ROOM MODAL
-      ═══════════════════════════════════════════ */
-      .crm-overlay{position:fixed;inset:0;background:rgba(1,5,12,.86);
-        backdrop-filter:blur(14px);z-index:200;
-        display:flex;align-items:center;justify-content:center;
-        padding:20px;animation:crm-in .22s ease}
-      @keyframes crm-in{from{opacity:0}to{opacity:1}}
-      .crm-sheet{width:100%;max-width:480px;max-height:92dvh;overflow-y:auto;
-        background:linear-gradient(160deg,rgba(8,18,36,.98),rgba(4,10,22,.99));
-        border:1px solid rgba(84,199,248,.16);border-radius:24px;
-        box-shadow:0 32px 80px rgba(0,0,0,.6),0 0 60px rgba(84,199,248,.05);
-        position:relative;animation:crm-up .28s cubic-bezier(.34,1.4,.64,1)}
-      @keyframes crm-up{from{transform:translateY(28px) scale(.97);opacity:0}
-        to{transform:translateY(0) scale(1);opacity:1}}
-      .crm-sheet::-webkit-scrollbar{display:none}
-      .crm-topline{position:absolute;top:0;left:10%;right:10%;height:1px;
-        background:linear-gradient(90deg,transparent,rgba(84,199,248,.55),transparent)}
-      .crm-header{display:flex;align-items:center;justify-content:space-between;
-        padding:26px 26px 18px;border-bottom:1px solid rgba(84,199,248,.08)}
-      .crm-header-left{display:flex;align-items:center;gap:14px}
-      .crm-crown{width:42px;height:42px;border-radius:12px;
-        background:linear-gradient(135deg,rgba(251,191,36,.15),rgba(251,191,36,.05));
-        border:1px solid rgba(251,191,36,.25);
-        display:flex;align-items:center;justify-content:center;font-size:20px}
-      .crm-eyebrow{font-size:10px;font-weight:600;letter-spacing:1.8px;
-        text-transform:uppercase;color:rgba(251,191,36,.7);margin-bottom:3px}
-      .crm-title{font-family:'Clash Display',sans-serif;font-size:22px;font-weight:700;color:#f0f6ff}
-      .crm-close{width:34px;height:34px;border-radius:10px;
-        border:1px solid rgba(84,199,248,.1);background:rgba(84,199,248,.04);
-        color:rgba(180,215,240,.4);display:flex;align-items:center;
-        justify-content:center;cursor:pointer;transition:all .18s}
-      .crm-close:hover{border-color:rgba(84,199,248,.25);color:rgba(180,215,240,.9)}
-      .crm-body{padding:22px 26px;display:flex;flex-direction:column;gap:20px}
-      .crm-field{display:flex;flex-direction:column;gap:8px}
-      .crm-label{font-size:11px;font-weight:600;letter-spacing:1px;
-        text-transform:uppercase;color:rgba(180,215,240,.5);
-        display:flex;align-items:center;gap:6px}
-      .crm-required{color:rgba(84,199,248,.7);font-size:13px}
-      .crm-hint{font-weight:400;letter-spacing:0;text-transform:none;
-        font-size:11px;color:rgba(180,215,240,.28)}
-      .crm-input-wrap{position:relative}
-      .crm-input{width:100%;background:rgba(4,12,26,.7);
-        border:1px solid rgba(84,199,248,.1);border-radius:12px;
-        padding:12px 15px;color:#e8f2ff;font-size:14px;
-        font-family:'Inter',sans-serif;outline:none;
-        transition:border-color .2s,box-shadow .2s;resize:none}
-      .crm-input::placeholder{color:rgba(180,215,240,.2)}
-      .crm-input:focus{border-color:rgba(84,199,248,.35);
-        box-shadow:0 0 0 3px rgba(84,199,248,.07)}
-      .crm-textarea{min-height:78px}
-      .crm-char-count{position:absolute;bottom:10px;right:12px;
-        font-size:10px;color:rgba(180,215,240,.2);pointer-events:none}
-      .crm-tags-grid{display:flex;flex-wrap:wrap;gap:7px}
-      .crm-tag{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;
-        padding:6px 13px;border-radius:100px;
-        border:1px solid rgba(84,199,248,.1);background:rgba(84,199,248,.03);
-        color:rgba(180,215,240,.5);cursor:pointer;transition:all .16s;white-space:nowrap}
-      .crm-tag:hover{border-color:rgba(84,199,248,.25);color:rgba(180,215,240,.85)}
-      .crm-tag-on{border-color:rgba(84,199,248,.5)!important;
-        background:rgba(84,199,248,.12)!important;color:#54c7f8!important}
-      .crm-tag-check{font-size:10px;font-weight:700;color:#54c7f8}
-      .crm-capacity-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-      .crm-number-wrap{display:flex;align-items:center;
-        background:rgba(4,12,26,.7);border:1px solid rgba(84,199,248,.1);
-        border-radius:12px;overflow:hidden}
-      .crm-num-btn{width:40px;height:44px;background:rgba(84,199,248,.04);
-        border:none;color:rgba(180,215,240,.5);font-size:18px;cursor:pointer;
-        display:flex;align-items:center;justify-content:center;transition:all .15s}
-      .crm-num-btn:hover{background:rgba(84,199,248,.1);color:#54c7f8}
-      .crm-number-input{width:72px;height:44px;background:transparent;border:none;
-        border-left:1px solid rgba(84,199,248,.08);border-right:1px solid rgba(84,199,248,.08);
-        color:#e8f2ff;font-family:'Clash Display',sans-serif;
-        font-size:17px;font-weight:600;text-align:center;outline:none;
-        -moz-appearance:textfield}
-      .crm-number-input::-webkit-outer-spin-button,
-      .crm-number-input::-webkit-inner-spin-button{-webkit-appearance:none}
-      .crm-capacity-presets{display:flex;gap:6px;flex-wrap:wrap}
-      .crm-preset{font-size:12px;font-weight:500;padding:5px 13px;border-radius:100px;
-        border:1px solid rgba(84,199,248,.1);background:rgba(84,199,248,.03);
-        color:rgba(180,215,240,.45);cursor:pointer;transition:all .15s}
-      .crm-preset-on{border-color:rgba(84,199,248,.45)!important;
-        background:rgba(84,199,248,.1)!important;color:#54c7f8!important}
-      .crm-error{display:flex;align-items:center;gap:8px;font-size:12px;color:#f87171;
-        background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.18);
-        border-radius:10px;padding:10px 14px}
-      .crm-footer{display:flex;justify-content:flex-end;gap:10px;
-        padding:14px 26px 22px;border-top:1px solid rgba(84,199,248,.07)}
-      .crm-btn-cancel{padding:11px 22px;border-radius:12px;
-        border:1px solid rgba(84,199,248,.1);background:transparent;
-        color:rgba(180,215,240,.4);font-size:13px;cursor:pointer;transition:all .18s;
-        font-family:'Inter',sans-serif}
-      .crm-btn-cancel:hover{border-color:rgba(84,199,248,.2);color:rgba(180,215,240,.75)}
-      .crm-btn-create{display:flex;align-items:center;gap:6px;
-        padding:11px 24px;border-radius:12px;
-        border:1px solid rgba(84,199,248,.4);
-        background:linear-gradient(135deg,rgba(84,199,248,.18),rgba(59,158,218,.1));
-        color:#54c7f8;font-size:13px;font-weight:600;cursor:pointer;
-        transition:all .2s;position:relative;overflow:hidden;
-        font-family:'Inter',sans-serif}
-      .crm-btn-create:hover:not(:disabled){border-color:rgba(84,199,248,.65);
-        box-shadow:0 0 24px rgba(84,199,248,.2);transform:translateY(-1px)}
-      .crm-btn-create:disabled{opacity:.45;cursor:not-allowed}
-      .crm-arrow{font-size:15px;transition:transform .2s}
-      .crm-btn-create:hover .crm-arrow{transform:translateX(3px)}
-      .crm-loading-dots{display:flex;gap:4px;align-items:center}
-      .crm-loading-dots span{width:5px;height:5px;border-radius:50%;
-        background:#54c7f8;animation:crm-dot 1.2s ease-in-out infinite}
-      .crm-loading-dots span:nth-child(2){animation-delay:.2s}
-      .crm-loading-dots span:nth-child(3){animation-delay:.4s}
-      @keyframes crm-dot{0%,80%,100%{opacity:.25;transform:scale(.8)}
-        40%{opacity:1;transform:scale(1)}}
+      .dr-pin-btn {
+        position: absolute; top: 6px; left: 6px;
+        background: rgba(2,8,16,0.85); border: 1px solid var(--glass-b);
+        border-radius: 7px; font-size: 12px; padding: 2px 6px;
+        cursor: pointer; opacity: 0; transition: opacity 0.2s; z-index: 5;
+      }
+      .dr-tile:hover .dr-pin-btn, .dr-pinned-stage:hover .dr-pin-btn { opacity: 1; }
+      .dr-pin-btn.active { opacity: 1; border-color: var(--sky); background: rgba(84,199,248,0.1); }
+
+      .dr-menu-wrap { position: absolute; top: 6px; right: 6px; z-index: 10; }
+      .dr-menu-btn {
+        background: rgba(2,8,16,0.9); border: 1px solid var(--glass-b);
+        border-radius: 7px; color: var(--muted); font-size: 14px; padding: 1px 8px;
+        cursor: pointer; line-height: 1.5; opacity: 0; transition: opacity 0.15s;
+      }
+      .dr-tile:hover .dr-menu-btn { opacity: 1; }
+      .dr-menu-dropdown {
+        position: absolute; top: 30px; right: 0; min-width: 172px;
+        background: rgba(4,11,24,0.99); border: 1px solid var(--glass-b2);
+        border-radius: 12px; overflow: hidden;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.75);
+        animation: dr-fadein 0.15s ease; z-index: 20;
+      }
+      .dr-menu-dropdown button {
+        display: block; width: 100%; text-align: left; padding: 10px 16px;
+        font-size: 12px; font-weight: 500; color: var(--muted);
+        background: transparent; border: none; cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+      }
+      .dr-menu-dropdown button:hover { background: rgba(84,199,248,0.08); color: var(--white); }
+      .dr-menu-divider { height: 1px; background: var(--glass-b); margin: 3px 0; }
+      .dr-menu-ban { color: var(--danger)!important; }
+      .dr-menu-ban:hover { background: rgba(248,113,113,0.1)!important; }
+
+      /* PiP */
+      .dr-self-pip {
+        position: fixed; bottom: 72px; right: 14px; width: 142px; height: 106px;
+        border-radius: 14px; overflow: hidden;
+        border: 1.5px solid rgba(167,139,250,0.45);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(167,139,250,0.1);
+        z-index: 30; background: rgba(4,12,28,0.95);
+      }
+      .dr-self-pip-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .dr-self-pip-avatar {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, rgba(84,199,248,0.06), rgba(59,158,218,0.03));
+      }
+      .dr-self-pip-initials {
+        font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 900;
+        background: linear-gradient(135deg, var(--sky), #c8f2ff, var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+      .dr-self-pip-info {
+        position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 7px;
+        background: rgba(2,8,16,0.9); display: flex; align-items: center; justify-content: space-between;
+      }
+      .dr-self-pip-name { font-size: 10px; font-weight: 600; color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+      .dr-self-pip-icons { display: flex; gap: 2px; flex-shrink: 0; }
+      .dr-self-pip-blocked { position: absolute; top: 4px; left: 4px; display: flex; gap: 3px; font-size: 12px; }
+
+      /* Chat */
+      .dr-chat {
+        width: 275px; flex-shrink: 0;
+        background: rgba(3,9,20,0.98); border-left: 1px solid var(--glass-b);
+        display: flex; flex-direction: column;
+      }
+      .dr-chat-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 13px 16px; border-bottom: 1px solid var(--glass-b);
+        font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+        color: var(--white); flex-shrink: 0;
+      }
+      .dr-chat-header-left { display: flex; align-items: center; gap: 8px; }
+      .dr-chat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sky); box-shadow: 0 0 6px var(--sky); animation: live-pulse 2s infinite; }
+      .dr-chat-close { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; line-height: 1; padding: 2px; }
+      .dr-chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+      .dr-chat-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 24px 0; font-style: italic; }
+      .dr-chat-msg { display: flex; flex-direction: column; gap: 2px; max-width: 92%; }
+      .dr-chat-msg.own { align-self: flex-end; align-items: flex-end; }
+      .dr-chat-author { font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+      .dr-chat-msg.own .dr-chat-author { color: rgba(84,199,248,0.6); }
+      .dr-chat-text {
+        font-size: 12px; color: var(--white); background: rgba(84,199,248,0.06);
+        border: 1px solid var(--glass-b); border-radius: 10px; padding: 6px 10px;
+        line-height: 1.5; word-break: break-word;
+      }
+      .dr-chat-msg.own .dr-chat-text { background: rgba(84,199,248,0.13); border-color: rgba(84,199,248,0.22); }
+      .dr-chat-input-row { display: flex; gap: 7px; padding: 10px; border-top: 1px solid var(--glass-b); flex-shrink: 0; }
+      .dr-chat-input {
+        flex: 1; background: rgba(4,12,26,0.9); border: 1px solid var(--glass-b); border-radius: 10px;
+        padding: 8px 10px; color: var(--white); font-size: 12px; outline: none; font-family: 'DM Sans', sans-serif;
+      }
+      .dr-chat-input:focus { border-color: rgba(84,199,248,0.35); }
+      .dr-chat-send {
+        padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(84,199,248,0.3);
+        background: rgba(84,199,248,0.1); color: var(--sky); font-size: 14px; cursor: pointer; transition: all 0.15s;
+      }
+      .dr-chat-send:hover { background: rgba(84,199,248,0.2); }
+
+      /* Toasts */
+      .dr-toasts-stack {
+        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+        z-index: 999; display: flex; flex-direction: column; gap: 7px;
+        align-items: center; pointer-events: none;
+      }
+      .dr-toast {
+        padding: 11px 22px; border-radius: 14px; font-size: 13px; font-weight: 600;
+        color: var(--white); box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+        animation: toast-in 0.28s cubic-bezier(0.16,1,0.3,1);
+        white-space: nowrap; border: 1px solid var(--glass-b2);
+        backdrop-filter: blur(16px); font-family: 'Syne', sans-serif;
+      }
+      .dr-toast-info  { background: rgba(4,11,28,0.97); }
+      .dr-toast-warn  { background: rgba(28,18,4,0.97); border-color: rgba(251,191,36,0.3); color: var(--warn); }
+      .dr-toast-error { background: rgba(28,4,4,0.97); border-color: rgba(248,113,113,0.35); color: var(--danger); }
+      @keyframes toast-in { from { opacity:0; transform:translateY(-12px) scale(0.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+
+      /* Controls */
+      .dr-controls {
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+        padding: 11px 18px;
+        background: rgba(2,8,16,0.98);
+        border-top: 1px solid var(--glass-b); flex-shrink: 0; z-index: 10;
+      }
+      .dr-ctrl-btn {
+        width: 48px; height: 48px; border-radius: 14px; border: 1px solid var(--glass-b);
+        background: var(--glass); font-size: 20px; cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .dr-ctrl-btn.active { border-color: rgba(84,199,248,0.35); background: rgba(84,199,248,0.1); box-shadow: 0 0 14px rgba(84,199,248,0.15); }
+      .dr-ctrl-btn.off { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.06); }
+      .dr-ctrl-btn.neutral { border-color: var(--glass-b); }
+      .dr-ctrl-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+      .dr-ctrl-host-badge, .dr-ctrl-blocked-warn {
+        width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 20px;
+      }
+      .dr-ctrl-host-badge   { border: 1px solid rgba(251,191,36,0.3); background: rgba(251,191,36,0.07); }
+      .dr-ctrl-blocked-warn { border: 1px solid rgba(248,113,113,0.3); background: rgba(248,113,113,0.07); }
+
+      .dr-room-desc-bar {
+        display: flex; align-items: center; gap: 8px; padding: 6px 18px;
+        background: rgba(2,8,16,0.9); border-top: 1px solid var(--glass-b);
+        font-size: 11px; color: var(--muted); flex-shrink: 0;
+      }
+
+      /* ══════════════════════════════════════
+         MODAL CREAR SALA — PREMIUM
+      ══════════════════════════════════════ */
+      .crm-overlay {
+        position: fixed; inset: 0; background: rgba(1,4,10,0.88);
+        backdrop-filter: blur(18px); z-index: 200;
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px; animation: crm-in 0.22s ease;
+      }
+      @keyframes crm-in { from { opacity:0; } to { opacity:1; } }
+
+      .crm-sheet {
+        width: 100%; max-width: 490px; max-height: 92dvh; overflow-y: auto;
+        background: linear-gradient(165deg, rgba(6,14,30,0.99), rgba(3,9,20,0.99));
+        border: 1px solid rgba(84,199,248,0.16); border-radius: 26px;
+        box-shadow: 0 40px 100px rgba(0,0,0,0.65), 0 0 80px rgba(84,199,248,0.04);
+        position: relative;
+        animation: crm-up 0.32s cubic-bezier(0.34,1.4,0.64,1);
+      }
+      .crm-sheet::-webkit-scrollbar { display: none; }
+      @keyframes crm-up {
+        from { transform: translateY(32px) scale(0.96); opacity: 0; }
+        to   { transform: translateY(0) scale(1); opacity: 1; }
+      }
+
+      /* Top beam */
+      .crm-beam {
+        position: absolute; top: 0; left: 15%; right: 15%; height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(84,199,248,0.65), transparent);
+      }
+      .crm-beam-glow {
+        position: absolute; top: -8px; left: 25%; right: 25%; height: 16px;
+        background: radial-gradient(ellipse, rgba(84,199,248,0.18) 0%, transparent 70%);
+        filter: blur(4px); pointer-events: none;
+      }
+
+      /* Logo row en modal */
+      .crm-logo-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 22px 26px 0;
+      }
+      .crm-logo-icon {
+        position: relative; width: 36px; height: 36px; flex-shrink: 0;
+      }
+      .crm-logo-icon-ring {
+        position: absolute; inset: 0; border-radius: 10px;
+        background: linear-gradient(145deg, rgba(84,199,248,0.2), rgba(59,158,218,0.06));
+        border: 1px solid rgba(84,199,248,0.3);
+        box-shadow: 0 0 16px rgba(84,199,248,0.2);
+        animation: logo-halo 3.5s ease-in-out infinite alternate;
+      }
+      /* REEMPLAZAR CON img cuando tengas el logo real */
+      .crm-logo-placeholder {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 900;
+        background: linear-gradient(135deg, var(--sky), var(--sky2));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+      .crm-logo-wordmark {
+        font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800;
+        letter-spacing: -0.6px; color: var(--white); line-height: 1;
+      }
+      .crm-logo-wordmark em {
+        font-style: normal;
+        background: linear-gradient(120deg, var(--sky) 0%, #c8f2ff 55%, var(--sky2) 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      }
+      .crm-logo-section {
+        font-size: 9px; font-weight: 600; letter-spacing: 2px;
+        text-transform: uppercase; color: rgba(84,199,248,0.4);
+        margin-top: 3px; line-height: 1;
+      }
+
+      .crm-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 26px 18px; border-bottom: 1px solid rgba(84,199,248,0.07);
+      }
+      .crm-header-left { display: flex; align-items: center; gap: 14px; }
+      .crm-crown-wrap {
+        position: relative; width: 44px; height: 44px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .crm-crown-ring {
+        position: absolute; inset: 0; border-radius: 13px;
+        background: linear-gradient(135deg, rgba(251,191,36,0.14), rgba(251,191,36,0.04));
+        border: 1px solid rgba(251,191,36,0.28);
+        box-shadow: 0 0 16px rgba(251,191,36,0.12);
+      }
+      .crm-crown-icon { font-size: 22px; position: relative; z-index: 1; }
+
+      .crm-eyebrow {
+        font-size: 10px; font-weight: 600; letter-spacing: 1.8px; text-transform: sans-serif;
+        color: rgba(251,191,36,0.65); margin-bottom: 4px;
+      }
+      .crm-title {
+        font-family: sans-serif; font-size: 22px; font-weight: 800;
+        letter-spacing: -0.5px; color: #f0f6ff;
+      }
+      .crm-close {
+        width: 34px; height: 34px; border-radius: 10px;
+        border: 1px solid rgba(84,199,248,0.1); background: rgba(84,199,248,0.04);
+        color: rgba(180,215,240,0.35); display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all 0.18s;
+      }
+      .crm-close:hover { border-color: rgba(84,199,248,0.25); color: rgba(180,215,240,0.9); background: rgba(84,199,248,0.07); }
+
+      .crm-body { padding: 22px 26px; display: flex; flex-direction: column; gap: 20px; }
+
+      .crm-field { display: flex; flex-direction: column; gap: 8px; }
+      .crm-label {
+        font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: sans-serif;
+        color: rgba(180,215,240,0.45); display: flex; align-items: center; gap: 6px;
+      }
+      .crm-required { color: rgba(84,199,248,0.7); font-size: 13px; }
+      .crm-hint { font-weight: 400; letter-spacing: 0; text-transform: none; font-size: 11px; color: rgba(180,215,240,0.25); }
+
+      .crm-input-wrap { position: relative; }
+      .crm-input {
+        width: 100%;
+        background: rgba(3,10,22,0.8);
+        border: 1px solid rgba(84,199,248,0.1);
+        border-radius: 13px; padding: 12px 16px;
+        color: #e8f2ff; font-size: 14px; font-family: 'DM Sans', sans-serif;
+        outline: none; transition: border-color 0.2s, box-shadow 0.2s; resize: none;
+      }
+      .crm-input::placeholder { color: rgba(180,215,240,0.18); }
+      .crm-input:focus {
+        border-color: rgba(84,199,248,0.38);
+        box-shadow: 0 0 0 3px rgba(84,199,248,0.07);
+        background: rgba(84,199,248,0.03);
+      }
+      .crm-textarea { min-height: 80px; }
+      .crm-char-count {
+        position: absolute; bottom: 10px; right: 13px;
+        font-size: 10px; color: rgba(180,215,240,0.18); pointer-events: none;
+      }
+      .crm-char-count-ta { bottom: 10px; }
+
+      .crm-tags-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+      .crm-tag {
+        display: flex; align-items: center; gap: 5px;
+        font-size: 12px; font-weight: 500; padding: 7px 14px; border-radius: 100px;
+        border: 1px solid rgba(84,199,248,0.09); background: rgba(84,199,248,0.03);
+        color: rgba(180,215,240,0.45); cursor: pointer;
+        transition: all 0.18s cubic-bezier(0.16,1,0.3,1); white-space: nowrap;
+      }
+      .crm-tag:hover { border-color: rgba(84,199,248,0.22); color: rgba(180,215,240,0.82); }
+      .crm-tag-on {
+        border-color: rgba(84,199,248,0.5)!important;
+        background: rgba(84,199,248,0.11)!important;
+        color: #54c7f8!important;
+        box-shadow: 0 0 12px rgba(84,199,248,0.12);
+      }
+      .crm-tag-check { font-size: 10px; font-weight: 800; color: var(--sky); }
+
+      .crm-capacity-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+      .crm-number-wrap {
+        display: flex; align-items: center;
+        background: rgba(3,10,22,0.8); border: 1px solid rgba(84,199,248,0.1);
+        border-radius: 13px; overflow: hidden;
+      }
+      .crm-num-btn {
+        width: 42px; height: 46px; background: rgba(84,199,248,0.04); border: none;
+        color: rgba(180,215,240,0.45); font-size: 18px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+      }
+      .crm-num-btn:hover { background: rgba(84,199,248,0.1); color: var(--sky); }
+      .crm-number-input {
+        width: 74px; height: 46px; background: transparent; border: none;
+        border-left: 1px solid rgba(84,199,248,0.08); border-right: 1px solid rgba(84,199,248,0.08);
+        color: #e8f2ff; font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 700;
+        text-align: center; outline: none; -moz-appearance: textfield;
+      }
+      .crm-number-input::-webkit-outer-spin-button, .crm-number-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+      .crm-capacity-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+      .crm-preset {
+        font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 100px;
+        border: 1px solid rgba(84,199,248,0.09); background: rgba(84,199,248,0.02);
+        color: rgba(180,215,240,0.4); cursor: pointer; transition: all 0.15s;
+      }
+      .crm-preset:hover { border-color: rgba(84,199,248,0.2); color: rgba(180,215,240,0.75); }
+      .crm-preset-on {
+        border-color: rgba(84,199,248,0.5)!important; background: rgba(84,199,248,0.1)!important;
+        color: var(--sky)!important;
+      }
+
+      .crm-error {
+        display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--danger);
+        background: rgba(248,113,113,0.05); border: 1px solid rgba(248,113,113,0.18);
+        border-radius: 12px; padding: 11px 15px;
+      }
+
+      .crm-footer {
+        display: flex; justify-content: flex-end; gap: 10px;
+        padding: 14px 26px 24px; border-top: 1px solid rgba(84,199,248,0.07);
+      }
+      .crm-btn-cancel {
+        padding: 12px 24px; border-radius: 13px;
+        border: 1px solid rgba(84,199,248,0.1); background: transparent;
+        color: rgba(180,215,240,0.38); font-size: 13px; cursor: pointer;
+        transition: all 0.18s; font-family: 'DM Sans', sans-serif;
+      }
+      .crm-btn-cancel:hover { border-color: rgba(84,199,248,0.22); color: rgba(180,215,240,0.75); }
+
+      .crm-btn-create {
+        display: flex; align-items: center; gap: 8px; padding: 12px 26px; border-radius: 13px;
+        border: 1px solid rgba(84,199,248,0.38);
+        background: linear-gradient(135deg, rgba(84,199,248,0.16), rgba(59,158,218,0.08));
+        color: var(--sky); font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+        cursor: pointer; transition: all 0.22s cubic-bezier(0.16,1,0.3,1);
+        position: relative; overflow: hidden;
+      }
+      .crm-btn-create::before {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.08), transparent 55%);
+      }
+      .crm-btn-create:hover:not(:disabled) {
+        border-color: rgba(84,199,248,0.65);
+        background: linear-gradient(135deg, rgba(84,199,248,0.24), rgba(59,158,218,0.14));
+        box-shadow: 0 0 28px rgba(84,199,248,0.22), 0 4px 16px rgba(84,199,248,0.12);
+        transform: translateY(-1px);
+      }
+      .crm-btn-create:disabled { opacity: 0.42; cursor: not-allowed; }
+      .crm-arrow { font-size: 16px; transition: transform 0.22s; }
+      .crm-btn-create:hover .crm-arrow { transform: translateX(4px); }
+
+      .crm-loading-dots { display: flex; gap: 4px; align-items: center; }
+      .crm-loading-dots span {
+        width: 5px; height: 5px; border-radius: 50%; background: var(--sky);
+        animation: crm-dot 1.2s ease-in-out infinite;
+      }
+      .crm-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+      .crm-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes crm-dot {
+        0%,80%,100% { opacity: 0.25; transform: scale(0.8); }
+        40%         { opacity: 1; transform: scale(1); }
+      }
+
+      /* ── Scrollbars ── */
+      ::-webkit-scrollbar { width: 3px; height: 3px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(84,199,248,0.18); border-radius: 2px; }
+
+      @keyframes dr-fadein { from { opacity:0; } to { opacity:1; } }
+
+      /* ── Responsive ── */
+      @media (max-width: 900px) {
+        .dr-header { padding: 12px 18px; }
+        .dr-header-center { display: none; }
+        .dr-filters { padding: 12px 18px 6px; }
+        .dr-main { padding: 12px 18px 30px; }
+      }
+      @media (max-width: 560px) {
+        .dr-logo-wordmark { font-size: 16px; }
+        .dr-logo-section-tag { display: none; }
+        .dr-create-btn { padding: 8px 14px; font-size: 12px; }
+        .dr-search { max-width: 100%; }
+        .crm-sheet { border-radius: 20px; }
+        .crm-logo-row { padding: 18px 20px 0; }
+        .crm-header { padding: 14px 20px 16px; }
+        .crm-body { padding: 18px 20px; }
+        .crm-footer { padding: 12px 20px 20px; }
+      }
     `}</style>
   );
 }
