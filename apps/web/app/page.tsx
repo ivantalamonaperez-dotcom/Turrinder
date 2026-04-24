@@ -403,6 +403,8 @@ nav{
     grid-template-areas:"right";
   }
 
+  .hero{ display:none; }
+
   .auth-panel{
     padding:60px 28px 60px;
     min-height:100vh;
