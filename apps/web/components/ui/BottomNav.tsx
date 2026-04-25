@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 
 import imgLogo        from "../../Images/logo.png";
+import imgLogoVip     from "../../Images/logovip.png";
 import imgChat        from "../../Images/chat.png";
 import imgDiscover    from "../../Images/discover.png";
 import imgModalidades from "../../Images/modalidades.png";
@@ -288,7 +289,8 @@ function VIPModal({ onClose }: { onClose: () => void }) {
 
           {/* Header */}
           <div className="vip-modal-header">
-            <span className="vip-crown">👑</span>
+            <Image src={imgLogoVip} alt="Turrinder VIP" width={56} height={56}
+              style={{ objectFit: "contain", filter: "drop-shadow(0 0 18px rgba(255,195,0,0.6))", animation: "crownFloat 3s ease-in-out infinite", display: "block", margin: "0 auto 12px" }} />
             <h2 className="vip-modal-title">
               Turrinder <span className="gold">VIP</span>
             </h2>
@@ -611,11 +613,6 @@ export default function SideNav() {
         }
         .snav-vip-btn:active { transform: scale(0.98) translateX(0); }
 
-        .snav-vip-crown {
-          font-size: 22px; flex-shrink: 0; line-height: 1;
-          filter: drop-shadow(0 0 8px rgba(255,195,0,0.7));
-          animation: crownBounce 3s ease-in-out infinite;
-        }
         @keyframes crownBounce {
           0%,100%{ transform: translateY(0) rotate(-5deg); }
           50%{ transform: translateY(-4px) rotate(5deg); }
@@ -736,7 +733,8 @@ export default function SideNav() {
             className="snav-vip-btn"
             onClick={() => { setOpen(false); setTimeout(() => setVipOpen(true), 200); }}
           >
-            <span className="snav-vip-crown">👑</span>
+            <Image src={imgLogoVip} alt="VIP" width={28} height={28}
+              style={{ objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 0 8px rgba(255,195,0,0.7))", animation: "crownBounce 3s ease-in-out infinite" }} />
             <div className="snav-vip-text">
               <span className="snav-vip-label">Turrinder VIP</span>
               <span className="snav-vip-sub">Desbloqueá todo · $4.99/mes</span>
