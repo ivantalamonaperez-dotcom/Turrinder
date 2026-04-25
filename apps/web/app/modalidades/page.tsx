@@ -132,17 +132,28 @@ export default function ModalidadesPage() {
         /* ─── FONDO ─── */
         .bg-mesh {
           position: fixed; inset: 0; z-index: 0; pointer-events: none;
+          overflow: hidden;
         }
         .bg-mesh::before {
           content: '';
-          position: fixed; inset: 0;
-          pointer-events: none;
-          background:
-            radial-gradient(ellipse 70% 35% at 15% 0%,  rgba(84,199,248,0.10) 0%, transparent 60%),
-            radial-gradient(ellipse 50% 30% at 85% 100%, rgba(59,158,218,0.08) 0%, transparent 58%),
-            radial-gradient(ellipse 60% 40% at 80% 10%,  rgba(245,158,11,0.05) 0%, transparent 55%),
-            radial-gradient(ellipse 55% 35% at 10% 90%,  rgba(167,139,250,0.06) 0%, transparent 55%);
+          position: absolute;
+          width: 800px; height: 800px;
+          top: -200px; right: -200px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(84,199,248,0.09) 0%, transparent 65%);
+          animation: orb1 12s ease-in-out infinite alternate;
         }
+        .bg-mesh::after {
+          content: '';
+          position: absolute;
+          width: 600px; height: 600px;
+          bottom: -150px; left: -150px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(59,158,218,0.07) 0%, transparent 65%);
+          animation: orb2 16s ease-in-out infinite alternate;
+        }
+        @keyframes orb1 { from { transform: translate(0,0) scale(1); } to { transform: translate(-40px,60px) scale(1.15); } }
+        @keyframes orb2 { from { transform: translate(0,0) scale(1); } to { transform: translate(50px,-40px) scale(1.1); } }
 
         /* ─── LAYOUT ─── */
         .page-container {
