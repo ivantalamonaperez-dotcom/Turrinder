@@ -98,13 +98,19 @@ export default function ModalidadesPage() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
+          /* Variables de color de fondo estilo Perfil */
           --bg: #030a14;
-          --surface: rgba(255,255,255,0.032);
-          --surface-hover: rgba(255,255,255,0.06);
-          --border: rgba(255,255,255,0.07);
-          --border-hover: rgba(255,255,255,0.18);
-          --text-main: #f8f8fc;
-          --text-muted: #888899;
+          --bg2: #060f1e;
+          --sky-glow: rgba(84,199,248,0.12); /* Celeste superior */
+          --sky-dim: rgba(59,158,218,0.08);  /* Celeste inferior */
+          
+          /* Variables de las tarjetas */
+          --surface: rgba(84,199,248,0.04);
+          --surface-hover: rgba(84,199,248,0.07);
+          --border: rgba(84,199,248,0.12);
+          --border-hover: rgba(84,199,248,0.25);
+          --text-main: #f0f6ff;
+          --text-muted: rgba(180,215,240,0.45);
         }
 
         html, body {
@@ -129,31 +135,21 @@ export default function ModalidadesPage() {
           mix-blend-mode: difference;
         }
 
-        /* ─── FONDO ─── */
-        .bg-mesh {
-          position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          overflow: hidden;
+        /* ─── FONDO ESTÁTICO CELESTE (Estilo Perfil) ─── */
+        .bg-celeste {
+          position: fixed; 
+          inset: 0; 
+          z-index: 0; 
+          pointer-events: none;
+          background-color: var(--bg);
+          background-image: 
+            /* Brillo celeste desde arriba (centro) */
+            radial-gradient(ellipse 80% 50% at 50% -10%, var(--sky-glow) 0%, transparent 80%),
+            /* Brillo celeste secundario desde abajo a la derecha */
+            radial-gradient(ellipse 60% 60% at 100% 100%, var(--sky-dim) 0%, transparent 70%);
         }
-        .bg-mesh::before {
-          content: '';
-          position: absolute;
-          width: 800px; height: 800px;
-          top: -200px; right: -200px;
-          border-radius: 50%;
-          background: radial-gradient(circle, rgba(84,199,248,0.09) 0%, transparent 65%);
-          animation: orb1 12s ease-in-out infinite alternate;
-        }
-        .bg-mesh::after {
-          content: '';
-          position: absolute;
-          width: 600px; height: 600px;
-          bottom: -150px; left: -150px;
-          border-radius: 50%;
-          background: radial-gradient(circle, rgba(59,158,218,0.07) 0%, transparent 65%);
-          animation: orb2 16s ease-in-out infinite alternate;
-        }
-        @keyframes orb1 { from { transform: translate(0,0) scale(1); } to { transform: translate(-40px,60px) scale(1.15); } }
-        @keyframes orb2 { from { transform: translate(0,0) scale(1); } to { transform: translate(50px,-40px) scale(1.1); } }
+
+
 
         /* ─── LAYOUT ─── */
         .page-container {
@@ -517,8 +513,8 @@ export default function ModalidadesPage() {
       {/* Cursor custom */}
       <div ref={cursorRef} className="custom-cursor" />
 
-      {/* Fondo */}
-      <div className="bg-mesh" />
+      {/* Fondo estático celeste */}
+      <div className="bg-celeste" />
 
       <main className="page-container">
 
