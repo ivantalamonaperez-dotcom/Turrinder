@@ -285,15 +285,16 @@ nav{
 .divider-line{flex:1;height:1px;background:rgba(84,199,248,0.07)}
 .divider-text{font-size:11px;color:rgba(143,212,255,0.18);letter-spacing:1px}
 
-.btn-ghost{
-  width:100%;padding:14px;
-  background:rgba(84,199,248,0.04);border:1px solid var(--glass-b);
-  border-radius:13px;color:rgba(143,212,255,0.45);
-  font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;
-  transition:all 0.2s ease;
-  display:flex;align-items:center;justify-content:center;gap:8px;
+.forgot-link{
+  display:block;text-align:right;margin-top:-8px;margin-bottom:4px;
+  font-size:12px;color:rgba(84,199,248,0.5);
+  background:none;border:none;cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+  letter-spacing:0.2px;
+  transition:color 0.2s ease;
+  padding:0;
 }
-.btn-ghost:hover{background:rgba(84,199,248,0.09);color:rgba(143,212,255,0.8);border-color:rgba(84,199,248,0.25);}
+.forgot-link:hover{color:rgba(84,199,248,0.9);}
 
 /* ── GOOGLE BTN ── */
 .btn-google{
@@ -311,19 +312,9 @@ nav{
 .btn-google:disabled{opacity:0.5;cursor:not-allowed;}
 .google-icon{width:18px;height:18px;flex-shrink:0;}
 
-.social-proof{
-  margin-top:18px;padding:14px 18px;
-  background:var(--glass);border:1px solid var(--glass-b);
-  border-radius:14px;display:flex;align-items:center;gap:14px;
-}
-.sp-avatars{display:flex}
-.sp-av{width:30px;height:30px;border-radius:50%;border:2px solid var(--bg);overflow:hidden;margin-left:-8px;}
-.sp-av:first-child{margin-left:0}
-.sp-av img{width:100%;height:100%;object-fit:cover}
-.sp-text{flex:1;font-size:12px;color:rgba(143,212,255,0.45);line-height:1.5}
-.sp-text strong{color:rgba(200,235,255,0.75);font-weight:600}
 
-.terms-text{margin-top:14px;font-size:10px;color:rgba(143,212,255,0.18);text-align:center;letter-spacing:0.3px;line-height:1.8;}
+
+.terms-text{margin-top:28px;font-size:10px;color:rgba(143,212,255,0.18);text-align:center;letter-spacing:0.3px;line-height:1.8;}
 
 /* ── STRIP ── */
 .strip{ display:none; }
@@ -434,7 +425,6 @@ nav{
   .input{padding:13px 15px;font-size:15px;border-radius:12px;}
   .btn-primary{padding:15px;font-size:15px;border-radius:12px;}
   .btn-google{padding:13px;font-size:14px;border-radius:12px;}
-  .btn-ghost{padding:13px;font-size:13px;border-radius:12px;}
 
   /* Toast más bajo para no tapar el teclado */
   .toast-wrap{ bottom:100px !important; }
@@ -455,13 +445,11 @@ nav{
 @media(hover:none){
   .btn-primary:hover{ transform:none; box-shadow:0 8px 32px rgba(84,199,248,0.4); }
   .btn-google:hover{ background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12); }
-  .btn-ghost:hover{ background:rgba(84,199,248,0.04); }
   button{ -webkit-tap-highlight-color:transparent; }
 
   /* Active states más responsivos al toque */
   .btn-primary:active{ transform:scale(0.98); opacity:0.9; }
   .btn-google:active{ transform:scale(0.98); opacity:0.9; }
-  .btn-ghost:active{ transform:scale(0.98); }
 }
 `;
 
@@ -761,32 +749,26 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
           autoComplete="current-password"
         />
       </div>
+
+      <button
+        className="forgot-link"
+        onClick={() => router.push("/auth/forgot-password")}
+        type="button"
+      >
+        ¿Olvidaste tu contraseña?
+      </button>
+
       <button className="btn-primary" onClick={handleLogin} disabled={loading}
-        style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
+        style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer", marginTop: 14 }}>
         {loading ? "Ingresando..." : "Iniciar sesión →"}
       </button>
 
-      <div style={{ marginTop: 16, textAlign: "center" }}>
+      <div style={{ marginTop: 20, textAlign: "center" }}>
         <span style={{ color: "var(--muted)", fontSize: 13 }}>¿No tenés cuenta?{" "}</span>
         <button onClick={goToRegister} style={{ background:"none", border:"none", color:"#54c7f8", cursor:"pointer", fontWeight:700, fontSize:13 }}>
           Registrate
         </button>
       </div>
-
-      <div className="divider">
-        <div className="divider-line" /><span className="divider-text">o</span><div className="divider-line" />
-      </div>
-
-      <button
-        className="btn-ghost"
-        onClick={() => {
-          onToast("Entrando como invitado... ⚡");
-          setTimeout(() => router.push("/discover"), 1000);
-        }}
-      >
-        <div className="dot-sky" />
-        Entrar como invitado (sin cuenta)
-      </button>
     </div>
   );
 }
@@ -794,9 +776,6 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
 /* ─── MAIN COMPONENT ─────────────────────────────────────────── */
 export default function Turrinder() {
   const [toast, setToast] = useState<string | null>(null);
-  const [spIdx, setSpIdx] = useState(0);
-  const [spCount, setSpCount] = useState(2847);
-  const [spVisible, setSpVisible] = useState(true);
   const stripRef = useRef<HTMLDivElement>(null);
 
   const onlineCount = useFluctuate(8342, 120);
@@ -804,18 +783,6 @@ export default function Turrinder() {
   const s1 = useCountUp(284700, "+", stripRef);
   const s2 = useCountUp(1820000, "+", stripRef);
   const s3 = useCountUp(430000, "+", stripRef);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSpVisible(false);
-      setTimeout(() => {
-        setSpIdx(i => (i + 1) % recentNames.length);
-        setSpCount(c => c + Math.floor(Math.random() * 3 + 1));
-        setSpVisible(true);
-      }, 300);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
 
   return (
     <>
@@ -860,22 +827,6 @@ export default function Turrinder() {
           <p className="auth-sub">En 60 segundos ya estás adentro — sin importar para qué venís.</p>
 
           <LoginForm onToast={setToast} />
-
-          <div className="social-proof">
-            <div className="sp-avatars">
-              {spAvatars.map((src, i) => (
-                <div key={i} className="sp-av">
-                  <img src={src} alt="" loading="lazy" />
-                </div>
-              ))}
-            </div>
-            <div className="sp-text">
-              <strong>{spCount.toLocaleString("es-AR")}</strong> personas se unieron hoy.<br />
-              <span style={{ opacity: spVisible ? 1 : 0, transition: "opacity 0.4s" }}>
-                {recentNames[spIdx]}
-              </span> se unió hace 3 minutos.
-            </div>
-          </div>
 
           <div className="terms-text">
             Al continuar aceptás los términos de uso y la política de privacidad.<br />
