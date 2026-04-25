@@ -1,405 +1,261 @@
 "use client";
 
 /**
- * VideoPlayer.tsx
- *
- * Maneja SOLO la lógica de video y WebRTC.
- * Los controles están en VideoControls.tsx para poder ser reemplazados.
- *
- * Si necesitás una pantalla con la lógica de video pero botones distintos:
- *   1. No uses VideoPlayer directamente
- *   2. Importá useWebRTC y armá tu propio componente con los botones que quieras
- *   3. O usá VideoPlayer con `customControls` para inyectar tus propios botones
+ * /modalidades/ligues/page.tsx
  */
 
-import { useState, useEffect } from "react";
-import { useWebRTC } from "../../../components/video/useWebRTC";
-import UserChip from "@/components/user/UserChip";
-import VideoControls from "../../../components/video/Videocontrols";
+import { useEffect, useCallback, useState } from "react";
+import { supabase } from "@/services/supabase.client";
+import { useRouter } from "next/navigation";
 
-interface Props {
-  room: { id: string } | null;
-  matchUser: any;
-  onNext: () => void;
-  onLike: () => void;
-  liked: boolean;
-  searching?: boolean;
-  skipBlocked?: boolean;
-  /** Inyectá tus propios controles — si se pasa, VideoControls no se renderiza */
-  customControls?: React.ReactNode;
-  /** Estado externo del modo streamer — usarlo cuando se pasa customControls */
-  streamerModeExternal?: boolean;
-}
+import { useProfile } from "@/hooks/useProfile";
+import { usePresence } from "@/hooks/usePresence";
+import { useMatchmaking } from "@/features/matching/useMatchmaking";
+import { useMatchUser } from "@/hooks/useMatchUser";
+import { useLike } from "@/hooks/Uselike";
+import { useAd } from "@/features/ads/useAd";
+import { useSocket } from "@/hooks/useSocket";
 
-export default function VideoPlayer({
-  room,
-  matchUser,
-  onNext,
-  onLike,
-  liked,
-  searching,
-  skipBlocked,
-  customControls,
-  streamerModeExternal,
-}: Props) {
-  const targetPartnerId = room?.id || null;
-  const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
-    useWebRTC(targetPartnerId);
+import VideoPlayer from "@/components/video/VideoPlayer";
+import MatchModal from "@/components/match/MatchModal";
+import AdOverlay from "@/components/ads/AdOverlay";
 
-  const [audioLocked,  setAudioLocked]  = useState(true);
-  const [likeFlash,    setLikeFlash]    = useState(false);
-  const [streamerModeInternal, setStreamerModeInternal] = useState(false);
+export default function LiguesPage() {
+  const router = useRouter();
+  const { socket } = useSocket();
 
-  // Si se pasa customControls, el padre maneja streamerMode externamente.
-  // Si no, VideoPlayer lo maneja solo.
-  const streamerMode = streamerModeExternal !== undefined
-    ? streamerModeExternal
-    : streamerModeInternal;
+  // Perfil propio para mostrar en el modal
+  const [myProfile, setMyProfile] = useState<{ name?: string; avatar_url?: string } | null>(null);
 
-  const hasVideo    = !!remoteStream || (isConnected && !!targetPartnerId);
-  const remoteReady = hasVideo || matchConfirmed;
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) { router.push("/"); return; }
 
-  useEffect(() => { setAudioLocked(true); }, [targetPartnerId]);
+      // Cargar mi perfil para el modal
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name, avatar_url")
+        .eq("id", data.user.id)
+        .single();
 
-  const unlockAudio = () => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.muted = false;
-      remoteVideoRef.current.play().catch(() => {});
-      setAudioLocked(false);
+      if (profile) setMyProfile(profile);
+    };
+    checkUser();
+  }, [router]);
+
+  useProfile();
+  usePresence();
+
+  const { room, searching, findNewMatch } = useMatchmaking("ligues");
+  const { matchUser } = useMatchUser(room);
+  const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
+
+  const { adMode, skipInfo, isBlocked, adReady, reportSkip, reportAdCompleted } = useAd();
+
+  const nextUser = useCallback(async () => {
+    if (isBlocked) return;
+    try {
+      reportSkip();
+      if (socket?.connected) {
+        socket.emit("leave-matchmaking");
+      }
+      findNewMatch(1000);
+    } catch (error) {
+      console.error("❌ Error en nextUser:", error);
+      window.location.reload();
     }
-  };
-
-  const handleLike = () => {
-    setLikeFlash(true);
-    setTimeout(() => setLikeFlash(false), 600);
-    onLike();
-  };
+  }, [isBlocked, reportSkip, findNewMatch, socket]);
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
 
-        .vp-root {
-          --sky:      #54c7f8;
-          --sky2:     #3b9eda;
-          --sky3:     #1a6fa8;
-          --sky-glow: rgba(84,199,248,0.38);
-          --w:        #f5f8ff;
-          --bg:       #030a14;
-          --bg2:      #050f1e;
-          --glass:    rgba(84,199,248,0.04);
-          --glass-b:  rgba(84,199,248,0.12);
-          --muted:    rgba(180,215,240,0.45);
+        .lp-root {
+          --sky:       #54c7f8;
+          --sky2:      #3b9eda;
+          --sky3:      #1a6fa8;
+          --white-arg: #f5f8ff;
+          --bg:        #030a14;
+          --glass-b:   rgba(84,199,248,0.12);
+          --muted:     rgba(180,215,240,0.45);
         }
 
-        .vp-root {
-          width: 100%; height: 100%;
-          display: flex; flex-direction: column;
-          overflow: hidden; position: relative;
+        .lp-root {
+          height: 100dvh;
+          display: flex;
+          flex-direction: column;
           background: var(--bg);
+          overflow: hidden;
+          position: relative;
           font-family: 'DM Sans', sans-serif;
+          -webkit-font-smoothing: antialiased;
         }
 
-        .vp-video-zone {
+        .lp-aurora {
+          position: absolute; inset: 0;
+          pointer-events: none; z-index: 0;
+          background:
+            radial-gradient(ellipse 75% 40% at 10% 0%,   rgba(84,199,248,0.13) 0%, transparent 60%),
+            radial-gradient(ellipse 55% 35% at 90% 100%,  rgba(59,158,218,0.10) 0%, transparent 58%),
+            radial-gradient(ellipse 40% 30% at 70% 10%,   rgba(26,111,168,0.08) 0%, transparent 55%);
+          animation: lp-aurora 20s ease-in-out infinite alternate;
+        }
+        @keyframes lp-aurora {
+          0%   { opacity:.7;  transform:scale(1) rotate(0deg); }
+          50%  { opacity:1;   transform:scale(1.04) rotate(0.3deg); }
+          100% { opacity:.85; transform:scale(1.07) rotate(-0.2deg); }
+        }
+
+        .lp-flag {
+          position: absolute; top:0; left:0; right:0; height:3px;
+          background: linear-gradient(90deg,
+            var(--sky) 0%, var(--sky) 33%,
+            rgba(245,248,255,0.85) 33%, rgba(245,248,255,0.85) 66%,
+            var(--sky) 66%, var(--sky) 100%);
+          z-index: 60; opacity: 0.65;
+        }
+
+        .lp-video {
           flex: 1; min-height: 0;
-          display: flex; flex-direction: row;
-          position: relative; overflow: hidden;
+          overflow: hidden; position: relative; z-index: 1;
         }
 
-        .vp-panel {
-          flex: 1; position: relative;
-          overflow: hidden; min-width: 0;
-        }
-        .vp-panel-local  { background: #040c18; }
-        .vp-panel-remote { background: #050f1e; }
-
-        @media (max-width: 768px) {
-          .vp-video-zone { flex-direction: column; }
-          .vp-panel-remote { order: -1; flex: 1.6; min-height: 0; }
-          .vp-panel-local  { order:  1; flex: 1;   min-height: 0; }
-          .vp-divider {
-            left: 0; right: 0; top: 61.5%; bottom: auto;
-            width: auto; height: 2px; transform: none;
-            background: linear-gradient(to right, transparent 0%, rgba(84,199,248,0.0) 5%, rgba(84,199,248,0.7) 20%, rgba(84,199,248,1) 50%, rgba(84,199,248,0.7) 80%, rgba(84,199,248,0.0) 95%, transparent 100%);
-            box-shadow: 0 0 12px rgba(84,199,248,0.45), 0 0 30px rgba(84,199,248,0.18);
-          }
-          .vp-divider-gem { left: 50%; top: 50%; transform: translate(-50%, -50%); }
-          .vp-label { top: 10px; left: 10px; padding: 3px 10px 3px 7px; font-size: 9px; }
-          .vp-streamer-badge { bottom: 10px; left: 50%; transform: translateX(-50%); }
+        .lp-header {
+          position: absolute;
+          top: 3px; left: 0; right: 0;
+          z-index: 50;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 18px 28px;
+          pointer-events: none;
+          background: linear-gradient(
+            to bottom,
+            rgba(3,10,20,0.72) 0%,
+            rgba(3,10,20,0.25) 65%,
+            transparent 100%
+          );
         }
 
-        .vp-video { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .vp-video-local  { transform: scaleX(-1); }
-        .vp-video-remote { transition: opacity 1s ease; }
-
-        .vp-panel::after {
-          content: ''; position: absolute; inset: 0;
-          background: radial-gradient(ellipse at center, transparent 40%, rgba(3,10,20,0.6) 100%);
-          pointer-events: none; z-index: 2;
+        .lp-logo-wrap {
+          position: relative; pointer-events: all;
+          user-select: none; display: flex; align-items: baseline;
+        }
+        .lp-logo-t {
+          font-family:'Syne',sans-serif; font-size:19px; font-weight:900;
+          letter-spacing:-0.8px; color:var(--white-arg); line-height:1;
+        }
+        .lp-logo-inder {
+          font-family:'Syne',sans-serif; font-size:19px; font-weight:900;
+          letter-spacing:-0.8px; line-height:1;
+          background:linear-gradient(120deg, var(--sky) 0%, #a8e6ff 55%, var(--sky2) 100%);
+          -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+        }
+        .lp-logo-wrap::after {
+          content:''; position:absolute; bottom:-4px; left:0;
+          width:100%; height:1.5px;
+          background:linear-gradient(90deg, var(--sky), var(--sky2));
+          border-radius:2px; opacity:0.4;
         }
 
-        .vp-streamer-blur {
-          position: absolute; inset: 0; z-index: 5;
-          backdrop-filter: blur(28px) brightness(0.55);
-          -webkit-backdrop-filter: blur(28px) brightness(0.55);
-          transition: opacity 0.35s ease; pointer-events: none;
+        .lp-header-right {
+          display: flex; align-items: center; gap: 7px; pointer-events: all;
         }
 
-        .vp-streamer-badge {
-          position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-          z-index: 20; display: flex; align-items: center; gap: 6px;
-          background: rgba(84,199,248,0.10); border: 1px solid rgba(84,199,248,0.28);
-          backdrop-filter: blur(10px); border-radius: 100px; padding: 4px 12px;
-          font-size: 9px; font-weight: 600; color: rgba(143,212,255,0.9);
-          letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap;
-          animation: streamerBadgePulse 3s ease-in-out infinite;
-        }
-        .vp-streamer-badge-dot {
-          width: 5px; height: 5px; border-radius: 50%;
-          background: var(--sky); box-shadow: 0 0 5px var(--sky);
-          animation: recBlink 2s infinite; flex-shrink: 0;
-        }
-        @keyframes streamerBadgePulse { 0%,100%{opacity:1} 50%{opacity:0.72} }
-
-        .vp-label {
-          position: absolute; top: 16px; left: 16px; z-index: 10;
+        .lp-skips {
           display: flex; align-items: center; gap: 7px;
-          background: rgba(3,10,20,0.5); border: 1px solid var(--glass-b);
-          backdrop-filter: blur(8px); border-radius: 100px;
-          padding: 4px 12px 4px 8px;
-          font-size: 10px; font-weight: 500; color: var(--muted);
-          letter-spacing: 1.5px; text-transform: uppercase;
+          background: rgba(3,10,20,0.58); border: 1px solid var(--glass-b);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          border-radius: 100px; padding: 5px 12px;
+          transition: border-color 0.3s ease, background 0.3s ease;
         }
-        .vp-rec-dot {
-          width: 5px; height: 5px; border-radius: 50%;
-          background: #22c55e; box-shadow: 0 0 6px #22c55e;
-          animation: recBlink 2s infinite; flex-shrink: 0;
+        .lp-skips.warn {
+          border-color: rgba(84,199,248,0.42);
+          background: rgba(84,199,248,0.08);
+          animation: lp-warn 0.45s ease;
         }
-        @keyframes recBlink { 0%,100%{opacity:1} 50%{opacity:0.25} }
-
-        .vp-divider {
-          position: absolute; left: 50%; top: 0; bottom: 0;
-          transform: translateX(-50%); width: 2px; z-index: 30;
-          background: linear-gradient(to bottom, transparent 0%, rgba(84,199,248,0.0) 5%, rgba(84,199,248,0.7) 20%, rgba(84,199,248,1) 50%, rgba(84,199,248,0.7) 80%, rgba(84,199,248,0.0) 95%, transparent 100%);
-          box-shadow: 0 0 12px rgba(84,199,248,0.4), 0 0 30px rgba(84,199,248,0.15);
+        @keyframes lp-warn { 0%,100%{transform:none} 35%{transform:scale(1.07)} }
+        .lp-pips { display:flex; gap:3px; align-items:center; }
+        .lp-pip {
+          width:5px; height:5px; border-radius:50%;
+          background:rgba(84,199,248,0.14);
+          transition:background 0.25s ease, box-shadow 0.25s ease;
         }
-        .vp-divider-gem {
-          position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-          width: 10px; height: 10px; border-radius: 50%;
-          background: radial-gradient(circle, #a8e6ff 0%, var(--sky) 55%, var(--sky2) 100%);
-          box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.35); z-index: 31;
-          animation: gemPulse 3s ease-in-out infinite;
-        }
-        @keyframes gemPulse {
-          0%,100% { box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.3); transform: translate(-50%,-50%) scale(1); }
-          50%      { box-shadow: 0 0 24px rgba(84,199,248,1), 0 0 60px rgba(84,199,248,0.5); transform: translate(-50%,-50%) scale(1.25); }
+        .lp-pip.on { background:var(--sky); box-shadow:0 0 5px rgba(84,199,248,0.8); }
+        .lp-skip-label {
+          font-size:10px; font-weight:500; color:rgba(143,212,255,0.8);
+          letter-spacing:0.5px; white-space:nowrap;
         }
 
-        .vp-like-flash {
-          position: absolute; inset: 0; z-index: 50; pointer-events: none;
-          background: radial-gradient(ellipse at center, rgba(84,199,248,0.16) 0%, transparent 70%);
-          animation: likeFlash 0.6s ease-out forwards;
+        .lp-back {
+          display:flex; align-items:center; gap:6px;
+          background:rgba(3,10,20,0.58); border:1px solid var(--glass-b);
+          backdrop-filter:blur(16px); border-radius:100px; padding:5px 12px;
+          color:var(--muted); font-size:10px; font-weight:500; letter-spacing:0.5px;
+          cursor:pointer; transition:color 0.2s, background 0.2s;
+          -webkit-tap-highlight-color:transparent;
+          pointer-events:all;
         }
-        @keyframes likeFlash { 0%{opacity:1} 100%{opacity:0} }
-
-        .vp-no-cam {
-          position: absolute; inset: 0;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-          background: #040c18; z-index: 3;
-        }
-        .vp-no-cam-icon { font-size: 28px; opacity: 0.22; }
-        .vp-no-cam-text { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
-
-        .vp-placeholder {
-          position: absolute; inset: 0;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
-          z-index: 5; background: #050f1e;
-        }
-        .vp-radar { position: relative; width: 80px; height: 80px; }
-        .vp-radar-ring {
-          position: absolute; border-radius: 50%;
-          border: 1px solid rgba(84,199,248,0.3);
-          top: 50%; left: 50%; transform: translate(-50%,-50%);
-          animation: radarExpand 2.6s ease-out infinite;
-        }
-        @keyframes radarExpand { 0%{width:20px;height:20px;opacity:0.9} 100%{width:110px;height:110px;opacity:0} }
-        .vp-radar-center {
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-          width: 42px; height: 42px; border-radius: 50%;
-          background: linear-gradient(135deg, var(--sky), var(--sky2));
-          display: flex; align-items: center; justify-content: center; font-size: 20px;
-          box-shadow: 0 0 24px rgba(84,199,248,0.7);
-          animation: radarCenterPulse 2.6s ease-in-out infinite;
-        }
-        @keyframes radarCenterPulse {
-          0%,100%{box-shadow:0 0 24px rgba(84,199,248,0.7)}
-          50%{box-shadow:0 0 40px rgba(84,199,248,1),0 0 70px rgba(84,199,248,0.3)}
-        }
-        .vp-radar-text {
-          font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
-          color: var(--sky); letter-spacing: 3px; text-transform: uppercase; opacity: 0.9;
-        }
-        .vp-radar-sub { font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-top: -12px; }
-
-        .vp-profile-card {
-          position: absolute; inset: 0;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
-          z-index: 4;
-          background: radial-gradient(ellipse at 50% 40%, rgba(84,199,248,0.06) 0%, #050f1e 60%);
-        }
-        .vp-avatar {
-          width: 84px; height: 84px; border-radius: 50%; object-fit: cover;
-          border: 2px solid rgba(84,199,248,0.45);
-          box-shadow: 0 0 0 4px rgba(84,199,248,0.08), 0 0 30px rgba(84,199,248,0.2);
-        }
-        .vp-avatar-ph {
-          width: 84px; height: 84px; border-radius: 50%;
-          background: linear-gradient(135deg, #060f1e, #0a1a2e);
-          border: 2px solid rgba(84,199,248,0.3);
-          display: flex; align-items: center; justify-content: center; font-size: 34px;
-          box-shadow: 0 0 0 4px rgba(84,199,248,0.06);
-        }
-        .vp-profile-name {
-          font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800;
-          color: var(--w); text-align: center;
-        }
-        .vp-profile-online { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-        .vp-online-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: #22c55e; box-shadow: 0 0 6px #22c55e; animation: recBlink 2s infinite;
-        }
-        .vp-badge {
-          background: rgba(84,199,248,0.08); border: 1px solid rgba(84,199,248,0.22);
-          border-radius: 100px; padding: 3px 12px;
-          font-size: 9px; color: rgba(143,212,255,0.8); letter-spacing: 1.5px; text-transform: uppercase;
-        }
-
-        .vp-audio-hint {
-          position: absolute; top: 14px; right: 14px;
-          background: rgba(84,199,248,0.82); backdrop-filter: blur(8px);
-          color: #020d18; padding: 5px 13px; border-radius: 100px;
-          font-size: 10px; font-weight: 600; z-index: 20; letter-spacing: 0.5px;
-          animation: audioPulse 2s ease-in-out infinite;
-        }
-        @keyframes audioPulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
-
-        .vp-corner { position: absolute; width: 20px; height: 20px; z-index: 10; opacity: 0.3; }
-        .vp-corner-tl { top:10px; left:10px;   border-top:1.5px solid var(--sky); border-left:1.5px solid var(--sky); }
-        .vp-corner-tr { top:10px; right:10px;  border-top:1.5px solid var(--sky); border-right:1.5px solid var(--sky); }
-        .vp-corner-bl { bottom:10px; left:10px;   border-bottom:1.5px solid var(--sky); border-left:1.5px solid var(--sky); }
-        .vp-corner-br { bottom:10px; right:10px;  border-bottom:1.5px solid var(--sky); border-right:1.5px solid var(--sky); }
+        .lp-back:hover { color:var(--sky); background:rgba(84,199,248,0.08); }
       `}</style>
 
-      {likeFlash && <div className="vp-like-flash" />}
+      {/* Modal de match — pasa myProfile para mostrar mi foto */}
+      <MatchModal
+        visible={isMatch}
+        onClose={() => setIsMatch(false)}
+        user={matchUser}
+        myProfile={myProfile ?? undefined}
+      />
 
-      <div className="vp-root" onClick={unlockAudio}>
+      <AdOverlay
+        visible={adMode === "AD_THANKS"}
+        onContinue={reportAdCompleted}
+        skipCount={skipInfo.count}
+        threshold={skipInfo.threshold}
+        adReady={adReady}
+      />
 
-        {/* ════ ZONA DE VIDEO ════ */}
-        <div className="vp-video-zone">
+      <div className="lp-root">
+        <div className="lp-aurora" />
+        <div className="lp-flag" />
 
-          {/* Panel izquierdo — tú */}
-          <div className="vp-panel vp-panel-local">
-            <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
-
-            {cameraError && (
-              <div className="vp-no-cam">
-                <div className="vp-no-cam-icon">📷</div>
-                <div className="vp-no-cam-text">Sin cámara</div>
-              </div>
-            )}
-
-            
-
-            <div className="vp-corner vp-corner-tl" />
-            <div className="vp-corner vp-corner-bl" />
+        <header className="lp-header">
+          <div className="lp-logo-wrap">
+            <span className="lp-logo-t">Turr</span>
+            <span className="lp-logo-inder">inder</span>
           </div>
 
-          {/* Divisor central */}
-          <div className="vp-divider">
-            <div className="vp-divider-gem" />
+          <div className="lp-header-right">
+            <div className={`lp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
+              <div className="lp-pips">
+                {Array.from({ length: skipInfo.threshold }).map((_, i) => (
+                  <div key={i} className={`lp-pip ${i < skipInfo.count ? "on" : ""}`} />
+                ))}
+              </div>
+              {skipInfo.remaining <= 3 && (
+                <span className="lp-skip-label">{skipInfo.remaining} restantes</span>
+              )}
+            </div>
+
+            <button className="lp-back" onClick={() => window.history.back()}>
+              ← Modalidades
+            </button>
           </div>
+        </header>
 
-          {/* Panel derecho — pareja */}
-          <div className="vp-panel vp-panel-remote">
-
-            <video
-              ref={remoteVideoRef} autoPlay playsInline
-              className="vp-video vp-video-remote"
-              style={{ opacity: hasVideo ? 1 : 0 }}
-            />
-
-            {streamerMode && hasVideo && <div className="vp-streamer-blur" />}
-            {streamerMode && hasVideo && (
-              <div className="vp-streamer-badge">
-                <div className="vp-streamer-badge-dot" /> Modo streamer
-              </div>
-            )}
-
-            {!remoteReady && (
-              <div className="vp-placeholder">
-                <div className="vp-radar">
-                  <div className="vp-radar-ring" style={{ animationDelay: "0s" }} />
-                  <div className="vp-radar-ring" style={{ animationDelay: "0.9s" }} />
-                  <div className="vp-radar-ring" style={{ animationDelay: "1.8s" }} />
-                  <div className="vp-radar-center">{searching ? "🔥" : "👤"}</div>
-                </div>
-                <div className="vp-radar-text">{searching ? "Buscando..." : "Enlazando..."}</div>
-                <div className="vp-radar-sub">{searching ? "Encontrando tu pareja" : "Estableciendo conexión"}</div>
-              </div>
-            )}
-
-            {remoteReady && !hasVideo && matchUser && (
-              <div className="vp-profile-card">
-                {matchUser.avatar_url
-                  ? <img src={matchUser.avatar_url} alt={matchUser.name} className="vp-avatar" />
-                  : <div className="vp-avatar-ph">{matchUser.name?.[0]?.toUpperCase() ?? "?"}</div>}
-                <div className="vp-profile-name">{matchUser.name}{matchUser.age ? `, ${matchUser.age}` : ""}</div>
-                <div className="vp-profile-online"><div className="vp-online-dot" /> Conectado</div>
-                <div className="vp-badge">{isConnected ? "Video en camino" : "Enlazando video"}</div>
-              </div>
-            )}
-
-            {remoteReady && !hasVideo && !matchUser && (
-              <div className="vp-profile-card">
-                <div className="vp-avatar-ph">👤</div>
-                <div className="vp-profile-name" style={{ opacity: 0.5, fontSize: 15 }}>Cargando perfil...</div>
-                <div className="vp-badge">Enlazando video</div>
-              </div>
-            )}
-
-            {remoteReady && hasVideo && audioLocked && (
-              <div className="vp-audio-hint">🔊 Toca para escuchar</div>
-            )}
-
-            {hasVideo && matchUser && (
-              <UserChip
-                user={matchUser}
-                isConnected={isConnected}
-                style={{ position: "absolute", bottom: 16, left: 16, zIndex: 20 }}
-              />
-            )}
-
-            <div className="vp-corner vp-corner-tr" />
-            <div className="vp-corner vp-corner-br" />
-          </div>
-
-        </div>
-
-        {/* ════ CONTROLES ════
-            Si se pasa customControls, se renderiza eso.
-            Si no, se usa VideoControls con los botones por defecto. */}
-        {customControls ?? (
-          <VideoControls
-            onSkip={onNext}
-            onLike={handleLike}
+        <div className="lp-video">
+          <VideoPlayer
+            room={room}
+            matchUser={matchUser}
+            onNext={nextUser}
+            onLike={likeUser}
             liked={liked}
-            skipBlocked={skipBlocked}
-            streamerMode={streamerMode}
-            onStreamerToggle={() => setStreamerModeInternal(prev => !prev)}
+            searching={searching || !room}
+            skipBlocked={isBlocked}
           />
-        )}
-
+        </div>
       </div>
     </>
   );

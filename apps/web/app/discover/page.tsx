@@ -267,6 +267,7 @@ export default function DiscoverPage() {
             liked={false}
             searching={searching || !room}
             skipBlocked={isBlocked}
+            streamerModeExternal={streamerMode}
             // ─── Inyectamos controles propios: solo skip + streamer, sin like ───
             customControls={
               <VideoControls
