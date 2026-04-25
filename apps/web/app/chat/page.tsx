@@ -179,14 +179,17 @@ export default function ChatPage() {
         .page-root {
           position: relative; z-index: 1;
           min-height: 100vh;
+          max-width: 1440px;
+          margin: 0 auto;
+          width: 100%;
           padding-bottom: 80px;
         }
 
         /* ── HEADER ── */
         .page-header {
-          padding: 64px 28px 28px;
+          padding: 72px 48px 52px;
           position: relative; z-index: 1;
-          opacity: 0; transform: translateY(24px);
+          opacity: 0; transform: translateY(28px);
           transition: opacity 0.9s cubic-bezier(0.16,1,0.3,1),
                       transform 0.9s cubic-bezier(0.16,1,0.3,1);
         }
@@ -199,37 +202,57 @@ export default function ChatPage() {
 
         .header-eyebrow {
           display: inline-flex; align-items: center; gap: 8px;
-          font-size: 11px; font-weight: 600;
-          letter-spacing: 2.5px; text-transform: uppercase;
-          color: var(--sky); opacity: 0.8;
-          margin-bottom: 8px;
+          font-size: 12px; font-weight: 600;
+          letter-spacing: 2px; text-transform: uppercase;
+          color: var(--muted);
+          margin-bottom: 16px;
         }
         .header-eyebrow::before {
           content: '';
-          display: block; width: 20px; height: 1px;
-          background: var(--sky); opacity: 0.6;
+          display: block; width: 28px; height: 1px;
+          background: var(--muted);
         }
 
         .header-title {
           font-family: 'Syne', sans-serif;
-          font-size: clamp(36px, 8vw, 52px);
+          font-size: clamp(52px, 7vw, 96px);
           font-weight: 900;
           letter-spacing: -0.04em;
-          line-height: 1;
+          line-height: 0.95;
+          margin-bottom: 20px;
         }
-        .header-title span {
-          background: linear-gradient(110deg, var(--sky) 0%, #a5d8f8 60%, var(--text) 100%);
+        .title-word {
+          display: inline-block;
+          opacity: 0; transform: translateY(40px);
+          transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1),
+                      transform 0.7s cubic-bezier(0.16,1,0.3,1);
+        }
+        .title-word.in { opacity: 1; transform: translateY(0); }
+        .title-word:nth-child(2) { transition-delay: 0.1s; }
+        .title-accent {
+          background: linear-gradient(110deg, var(--sky) 0%, #a78bfa 60%, #fcfcfc 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
+
+        .header-subtitle {
+          font-size: 17px;
+          color: var(--muted);
+          max-width: 480px;
+          line-height: 1.6;
+          opacity: 0; transform: translateY(16px);
+          transition: opacity 0.8s 0.25s cubic-bezier(0.16,1,0.3,1),
+                      transform 0.8s 0.25s cubic-bezier(0.16,1,0.3,1);
+        }
+        .header-subtitle.in { opacity: 1; transform: translateY(0); }
 
         .header-count {
           background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
           color: #020d18;
           font-family: 'Syne', sans-serif;
           font-size: 13px; font-weight: 900;
-          width: 34px; height: 34px;
+          width: 32px; height: 32px;
           border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
           margin-top: 4px; flex-shrink: 0;
@@ -239,65 +262,66 @@ export default function ChatPage() {
         /* ── SEPARADOR ── */
         .section-divider {
           display: flex; align-items: center; gap: 12px;
-          padding: 4px 28px 20px;
+          padding: 4px 48px 20px;
           position: relative; z-index: 1;
           opacity: 0; transform: translateY(10px);
           transition: opacity 0.7s 0.15s cubic-bezier(0.16,1,0.3,1),
                       transform 0.7s 0.15s cubic-bezier(0.16,1,0.3,1);
         }
         .section-divider.in { opacity: 1; transform: translateY(0); }
-        .divider-line { flex: 1; height: 1px; background: rgba(84,199,248,0.08); }
+        .divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
         .divider-label {
           font-size: 10px; font-weight: 600;
           letter-spacing: 2px; text-transform: uppercase;
-          color: rgba(84,199,248,0.3); white-space: nowrap;
+          color: var(--muted); opacity: 0.6;
+          white-space: nowrap;
         }
 
         /* ── LISTA ── */
         .matches-list {
-          padding: 0 20px;
+          padding: 0 48px;
           display: flex; flex-direction: column;
-          gap: 10px;
+          gap: 12px;
           position: relative; z-index: 1;
         }
 
         /* ── TARJETA ── */
         .match-card {
           display: flex; align-items: center; gap: 16px;
-          padding: 16px 20px;
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: 24px;
+          padding: 20px 28px;
+          background: rgba(255,255,255,0.032);
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 28px;
           cursor: none; text-align: left; width: 100%;
           position: relative; overflow: hidden;
 
-          opacity: 0; transform: translateY(20px);
+          opacity: 0; transform: translateY(30px) scale(0.97);
           transition:
             opacity 0.6s cubic-bezier(0.16,1,0.3,1),
             transform 0.6s cubic-bezier(0.16,1,0.3,1),
-            background 0.25s ease,
-            border-color 0.25s ease,
-            box-shadow 0.25s ease;
+            background 0.3s ease,
+            border-color 0.3s ease,
+            box-shadow 0.3s ease;
         }
-        .match-card.in { opacity: 1; transform: translateY(0); }
+        .match-card.in { opacity: 1; transform: translateY(0) scale(1); }
 
         .match-card:hover {
-          background: var(--surface-h);
-          border-color: var(--border-h);
-          transform: translateY(-3px);
+          background: rgba(255,255,255,0.06);
+          border-color: rgba(255,255,255,0.15);
+          transform: translateY(-4px) scale(1.002);
           box-shadow:
-            0 12px 32px -8px rgba(0,0,0,0.5),
-            0 0 0 1px rgba(84,199,248,0.05) inset,
-            0 0 40px -16px rgba(84,199,248,0.14);
+            0 20px 40px -20px rgba(0,0,0,0.5),
+            0 0 0 1px rgba(255,255,255,0.06) inset,
+            0 0 60px -20px rgba(84,199,248,0.1);
         }
-        .match-card:active { transform: translateY(0); }
+        .match-card:active { transform: translateY(0) scale(1); }
 
         /* Shimmer */
         .match-card::after {
           content: '';
           position: absolute; inset: 0; border-radius: inherit;
           background: linear-gradient(
-            115deg, transparent 40%, rgba(84,199,248,0.04) 50%, transparent 60%
+            115deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%
           );
           background-size: 200% 100%;
           opacity: 0; pointer-events: none;
@@ -305,7 +329,7 @@ export default function ChatPage() {
         }
         .match-card:hover::after {
           opacity: 1;
-          animation: shimmerSlide 1.6s ease infinite;
+          animation: shimmerSlide 1.4s ease infinite;
         }
         @keyframes shimmerSlide {
           0%   { background-position: 200% 0; }
@@ -315,14 +339,14 @@ export default function ChatPage() {
         /* ── AVATAR ── */
         .avatar-wrap { position: relative; flex-shrink: 0; }
         .avatar {
-          width: 58px; height: 58px; border-radius: 20px;
+          width: 56px; height: 56px; border-radius: 18px;
           background: linear-gradient(135deg, #050f1e, #0a1a2e);
-          border: 1.5px solid var(--border);
+          border: 1.5px solid rgba(255,255,255,0.07);
           display: flex; align-items: center; justify-content: center;
-          font-size: 26px; overflow: hidden;
-          transition: border-color 0.25s ease;
+          font-size: 24px; overflow: hidden;
+          transition: border-color 0.3s ease;
         }
-        .match-card:hover .avatar { border-color: var(--border-h); }
+        .match-card:hover .avatar { border-color: rgba(255,255,255,0.15); }
         .avatar img { width: 100%; height: 100%; object-fit: cover; }
 
         .online-dot {
@@ -337,13 +361,16 @@ export default function ChatPage() {
         .match-info { flex: 1; min-width: 0; }
         .match-name {
           font-family: 'Syne', sans-serif;
-          font-size: 15px; font-weight: 800;
-          letter-spacing: -0.01em;
-          margin-bottom: 4px;
+          font-size: 16px; font-weight: 800;
+          letter-spacing: -0.02em;
+          line-height: 1;
+          margin-bottom: 6px;
+          color: #f8f8fc;
         }
         .match-preview {
-          font-size: 13px; color: var(--muted);
+          font-size: 14px; color: var(--muted);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          line-height: 1.5;
           transition: color 0.2s;
         }
         .match-preview.no-msg { color: rgba(84,199,248,0.5); font-style: italic; }
@@ -351,37 +378,37 @@ export default function ChatPage() {
 
         /* ── FLECHA ── */
         .match-arrow {
-          color: rgba(84,199,248,0.2); flex-shrink: 0;
+          color: rgba(255,255,255,0.15); flex-shrink: 0;
           display: flex; align-items: center;
-          transition: color 0.2s ease, transform 0.2s ease;
+          transition: color 0.25s ease, transform 0.25s ease;
         }
         .match-card:hover .match-arrow {
-          color: rgba(84,199,248,0.6);
-          transform: translateX(3px);
+          color: rgba(255,255,255,0.5);
+          transform: translateX(4px);
         }
 
         /* ── SKELETON ── */
         .skeleton-list {
-          padding: 0 20px;
+          padding: 0 48px;
           display: flex; flex-direction: column;
-          gap: 10px; position: relative; z-index: 1;
+          gap: 12px; position: relative; z-index: 1;
         }
         .skel-card {
           display: flex; align-items: center; gap: 16px;
-          padding: 16px 20px;
-          background: var(--surface);
-          border: 1px solid rgba(84,199,248,0.05);
-          border-radius: 24px;
+          padding: 20px 28px;
+          background: rgba(255,255,255,0.032);
+          border: 1px solid rgba(255,255,255,0.05);
+          border-radius: 28px;
         }
         .skel-avatar {
-          width: 58px; height: 58px; border-radius: 20px;
-          background: rgba(84,199,248,0.06); flex-shrink: 0;
+          width: 56px; height: 56px; border-radius: 18px;
+          background: rgba(255,255,255,0.05); flex-shrink: 0;
           animation: pulse 1.5s ease-in-out infinite;
         }
         .skel-lines { flex: 1; display: flex; flex-direction: column; gap: 10px; }
         .skel-line {
           height: 10px; border-radius: 6px;
-          background: rgba(84,199,248,0.06);
+          background: rgba(255,255,255,0.05);
           animation: pulse 1.5s ease-in-out infinite;
         }
         .skel-line.w65 { width: 65%; }
@@ -392,28 +419,28 @@ export default function ChatPage() {
         .empty-state {
           display: flex; flex-direction: column;
           align-items: center; justify-content: center;
-          padding: 80px 40px;
+          padding: 80px 48px;
           gap: 14px; text-align: center;
           position: relative; z-index: 1;
         }
         .empty-icon { font-size: 64px; margin-bottom: 8px; }
         .empty-title {
           font-family: 'Syne', sans-serif;
-          font-size: 24px; font-weight: 900;
-          color: rgba(245,248,255,0.4);
-          letter-spacing: -0.03em;
+          font-size: clamp(28px, 4vw, 38px); font-weight: 900;
+          color: rgba(248,248,252,0.35);
+          letter-spacing: -0.03em; line-height: 1;
         }
         .empty-sub {
-          font-size: 14px; color: var(--muted);
-          line-height: 1.7; max-width: 260px;
+          font-size: 17px; color: var(--muted);
+          line-height: 1.6; max-width: 480px;
         }
         .empty-btn {
-          margin-top: 16px; padding: 14px 36px;
+          margin-top: 20px; padding: 16px 40px;
           background: linear-gradient(135deg, var(--sky) 0%, var(--sky2) 50%, var(--sky3) 100%);
           border: none; border-radius: 100px;
           color: #020d18;
           font-family: 'Syne', sans-serif;
-          font-size: 14px; font-weight: 800;
+          font-size: 15px; font-weight: 800;
           cursor: none; letter-spacing: 0.3px;
           box-shadow: 0 8px 24px rgba(84,199,248,0.35);
           position: relative; overflow: hidden;
@@ -430,10 +457,10 @@ export default function ChatPage() {
         /* ── AD SLOT ── */
         .ad-wrap {
           position: relative; z-index: 1;
-          margin: 0 20px 20px;
-          border-radius: 24px; overflow: hidden;
-          border: 1px solid rgba(84,199,248,0.1);
-          background: linear-gradient(135deg, rgba(84,199,248,0.025) 0%, rgba(26,111,168,0.04) 100%);
+          margin: 0 48px 24px;
+          border-radius: 28px; overflow: hidden;
+          border: 1px solid rgba(255,255,255,0.07);
+          background: rgba(255,255,255,0.032);
           opacity: 0; transform: translateY(10px);
           animation: adIn 0.6s 0.3s cubic-bezier(0.16,1,0.3,1) forwards;
         }
@@ -448,11 +475,11 @@ export default function ChatPage() {
         .ad-label {
           display: flex; align-items: center; gap: 5px;
           padding: 8px 14px 0 14px;
-          font-size: 9px; font-weight: 600;
+          font-size: 10px; font-weight: 600;
           letter-spacing: 2px; text-transform: uppercase;
-          color: rgba(84,199,248,0.35);
+          color: var(--muted); opacity: 0.5;
         }
-        .ad-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(84,199,248,0.35); }
+        .ad-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
         .ad-inner {
           padding: 6px 12px 12px; min-height: 76px;
           display: flex; align-items: center; justify-content: center;
@@ -463,19 +490,27 @@ export default function ChatPage() {
           position: absolute; inset: 0; justify-content: center;
           pointer-events: none;
         }
-        .ad-icon { font-size: 15px; color: rgba(84,199,248,0.12); animation: adPulse 2s ease-in-out infinite; }
+        .ad-icon { font-size: 15px; color: rgba(255,255,255,0.08); animation: adPulse 2s ease-in-out infinite; }
         @keyframes adPulse { 0%,100%{opacity:0.3} 50%{opacity:0.7} }
-        .ad-text { font-size: 10px; color: rgba(84,199,248,0.18); letter-spacing: 1px; text-transform: uppercase; }
+        .ad-text { font-size: 10px; color: rgba(255,255,255,0.12); letter-spacing: 1px; text-transform: uppercase; }
         #monetag-chat-slot > * { position: relative; z-index: 1; }
 
-        /* ── MOBILE ── */
-        @media (max-width: 480px) {
-          .page-header { padding: 52px 20px 20px; }
+        /* ── RESPONSIVE ── */
+        @media (max-width: 1100px) {
+          .page-header    { padding: 60px 32px 40px; }
+          .matches-list, .skeleton-list { padding: 0 32px; }
+          .section-divider { padding: 4px 32px 20px; }
+          .ad-wrap        { margin: 0 32px 24px; }
+        }
+        @media (max-width: 600px) {
+          .page-header    { padding: 40px 20px 32px; }
           .matches-list, .skeleton-list { padding: 0 16px; }
-          .ad-wrap { margin: 0 16px 16px; }
           .section-divider { padding: 4px 20px 16px; }
+          .ad-wrap        { margin: 0 16px 20px; }
+          .match-card     { padding: 16px 18px; border-radius: 24px; }
+          .skel-card      { padding: 16px 18px; border-radius: 24px; }
           html, body { cursor: auto; }
-          .custom-cursor { display: none; }
+          .custom-cursor  { display: none; }
         }
       `}</style>
 
@@ -493,8 +528,12 @@ export default function ChatPage() {
             <div>
               <div className="header-eyebrow">Conexiones</div>
               <h1 className="header-title">
-                Mat<span>ches</span>
+                <span className={`title-word ${mounted ? "in" : ""}`}>Mat</span>
+                <span className={`title-word title-accent ${mounted ? "in" : ""}`}>ches</span>
               </h1>
+              <p className={`header-subtitle ${mounted ? "in" : ""}`}>
+                Tus conexiones en un solo lugar. Escribiles y empezá a charlar.
+              </p>
             </div>
             {!loading && matches.length > 0 && (
               <div className="header-count">{matches.length}</div>
