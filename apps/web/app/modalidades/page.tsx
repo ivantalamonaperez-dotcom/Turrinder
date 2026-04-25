@@ -98,7 +98,7 @@ export default function ModalidadesPage() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-          --bg: #050507;
+          --bg: #030a14;
           --surface: rgba(255,255,255,0.032);
           --surface-hover: rgba(255,255,255,0.06);
           --border: rgba(255,255,255,0.07);
@@ -129,42 +129,19 @@ export default function ModalidadesPage() {
           mix-blend-mode: difference;
         }
 
-        /* ─── FONDO ANIMATED MESH ─── */
+        /* ─── FONDO ─── */
         .bg-mesh {
           position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          overflow: hidden;
         }
         .bg-mesh::before {
           content: '';
-          position: absolute; inset: -50%;
-          background-image:
-            radial-gradient(ellipse at 10% 10%, rgba(84,199,248,0.09) 0, transparent 45%),
-            radial-gradient(ellipse at 90% 5%, rgba(245,158,11,0.06) 0, transparent 45%),
-            radial-gradient(ellipse at 85% 90%, rgba(167,139,250,0.07) 0, transparent 45%),
-            radial-gradient(ellipse at 15% 85%, rgba(52,211,153,0.05) 0, transparent 40%);
-          animation: meshDrift 20s ease-in-out infinite alternate;
-          filter: blur(60px);
-        }
-        .bg-mesh::after {
-          content: '';
-          position: absolute; inset: 0;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
-          opacity: 0.03;
+          position: fixed; inset: 0;
           pointer-events: none;
-        }
-        @keyframes meshDrift {
-          0%   { transform: translate(0, 0) rotate(0deg); }
-          100% { transform: translate(2%, 2%) rotate(3deg); }
-        }
-
-        /* Líneas de grid decorativas */
-        .grid-lines {
-          position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          background-image:
-            linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
-          background-size: 80px 80px;
-          mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
+          background:
+            radial-gradient(ellipse 70% 35% at 15% 0%,  rgba(84,199,248,0.10) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 30% at 85% 100%, rgba(59,158,218,0.08) 0%, transparent 58%),
+            radial-gradient(ellipse 60% 40% at 80% 10%,  rgba(245,158,11,0.05) 0%, transparent 55%),
+            radial-gradient(ellipse 55% 35% at 10% 90%,  rgba(167,139,250,0.06) 0%, transparent 55%);
         }
 
         /* ─── LAYOUT ─── */
@@ -531,7 +508,6 @@ export default function ModalidadesPage() {
 
       {/* Fondo */}
       <div className="bg-mesh" />
-      <div className="grid-lines" />
 
       <main className="page-container">
 
