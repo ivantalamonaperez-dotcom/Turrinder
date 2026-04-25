@@ -27,8 +27,6 @@ interface Props {
   skipBlocked?: boolean;
   /** Inyectá tus propios controles — si se pasa, VideoControls no se renderiza */
   customControls?: React.ReactNode;
-  /** Estado externo del modo streamer — usarlo cuando se pasa customControls */
-  streamerModeExternal?: boolean;
 }
 
 export default function VideoPlayer({
@@ -40,7 +38,6 @@ export default function VideoPlayer({
   searching,
   skipBlocked,
   customControls,
-  streamerModeExternal,
 }: Props) {
   const targetPartnerId = room?.id || null;
   const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
@@ -48,13 +45,7 @@ export default function VideoPlayer({
 
   const [audioLocked,  setAudioLocked]  = useState(true);
   const [likeFlash,    setLikeFlash]    = useState(false);
-  const [streamerModeInternal, setStreamerModeInternal] = useState(false);
-
-  // Si se pasa customControls, el padre maneja streamerMode externamente.
-  // Si no, VideoPlayer lo maneja solo.
-  const streamerMode = streamerModeExternal !== undefined
-    ? streamerModeExternal
-    : streamerModeInternal;
+  const [streamerMode, setStreamerMode] = useState(false);
 
   const hasVideo    = !!remoteStream || (isConnected && !!targetPartnerId);
   const remoteReady = hasVideo || matchConfirmed;
@@ -396,7 +387,7 @@ export default function VideoPlayer({
             liked={liked}
             skipBlocked={skipBlocked}
             streamerMode={streamerMode}
-            onStreamerToggle={() => setStreamerModeInternal(prev => !prev)}
+            onStreamerToggle={() => setStreamerMode(prev => !prev)}
           />
         )}
 
