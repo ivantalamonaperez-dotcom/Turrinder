@@ -1,14 +1,23 @@
 "use client";
 
 /**
- * DebateRoomsPage.tsx — v6 · PREMIUM REDESIGN
- * Lógica 100% intacta. Solo cambios de diseño y efectos.
+ * DebateRoomsPage.tsx — v7 · SALAS DINÁMICAS
+ *
+ * CAMBIOS vs v6:
+ *  1. Botón "Crear sala" visible para TODOS pero solo habilitado para vip/streamer.
+ *     El resto ve un tooltip/toast explicativo al hacer click.
+ *  2. max_people limitado a 20 en la UI (el backend lo respeta vía matchmaking).
+ *  3. Al crear sala se notifica al servidor socket con evento "create-debate-room"
+ *     para que registre la waiting room dinámica (roomId único).
+ *  4. Al cerrar sala se emite "close-debate-room" para que el servidor la limpie.
+ *  5. Roles con permiso de crear: "streamer" | "vip".
  */
 
 import { useEffect, useCallback, useState, useRef, useMemo } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/hooks/useProfile";
+import { useSocket } from "@/hooks/useSocket";
 
 type Tag =
   | "Política" | "Tecnología" | "Ciencia" | "Deportes" | "Cultura"
@@ -23,6 +32,11 @@ const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
+
+/** Roles que pueden crear sala */
+const CAN_CREATE_ROLES = ["streamer", "vip"];
+
+const MAX_ROOM_CAPACITY = 20;
 
 interface Room {
   id: string; title: string; description: string; tags: Tag[];
@@ -499,7 +513,6 @@ function RoomCard({ room, userId, onJoin }: { room: Room; userId: string; onJoin
 
   return (
     <div className="dr-card" onClick={handleJoin}>
-      {/* Glow layers */}
       <div className="dr-card-orb" />
       <div className="dr-card-shimmer" />
 
@@ -511,7 +524,10 @@ function RoomCard({ room, userId, onJoin }: { room: Room; userId: string; onJoin
           </div>
           <div className="dr-card-host-info">
             <span className="dr-card-role-badge">
-              <span className="dr-role-crown">👑</span> STREAMER
+              <span className="dr-role-crown">
+                {room.host_role === "vip" ? "💎" : "👑"}
+              </span>
+              {room.host_role === "vip" ? "VIP" : "STREAMER"}
             </span>
             <span className="dr-card-host-name">{room.host_name}</span>
           </div>
@@ -675,7 +691,7 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
 }) {
   const { createRoom } = useRooms();
   const [title,setTitle]=useState(""); const [description,setDescription]=useState("");
-  const [tags,setTags]=useState<Tag[]>([]); const [maxPeople,setMaxPeople]=useState<number|"">(50);
+  const [tags,setTags]=useState<Tag[]>([]); const [maxPeople,setMaxPeople]=useState<number|"">(10);
   const [loading,setLoading]=useState(false); const [error,setError]=useState("");
 
   const toggleTag=(tag:Tag)=>setTags(prev=>prev.includes(tag)?prev.filter(t=>t!==tag):[...prev,tag].slice(0,4));
@@ -683,12 +699,14 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
   const handleCreate=async()=>{
     if(!title.trim()){setError("El título es obligatorio");return;}
     if(tags.length===0){setError("Elegí al menos un tema");return;}
-    if(!maxPeople||maxPeople<2){setError("La capacidad mínima es 2");return;}
+    const capacity = (maxPeople as number) || 2;
+    if(capacity < 2){setError("La capacidad mínima es 2");return;}
     setError("");setLoading(true);
     try {
       const room=await createRoom({
         title:title.trim(), description:description.trim(), tags,
-        max_people:maxPeople as number, host_id:hostId, host_name:hostName, host_role:hostRole,
+        max_people: Math.min(capacity, MAX_ROOM_CAPACITY),
+        host_id:hostId, host_name:hostName, host_role:hostRole,
       });
       onCreated(room);
     } catch(e:any){setError(e.message??"Error al crear la sala");}
@@ -698,20 +716,21 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
   return (
     <div className="crm-overlay" onClick={onClose}>
       <div className="crm-sheet" onClick={e=>e.stopPropagation()}>
-        {/* Decorative top beam */}
         <div className="crm-beam" />
         <div className="crm-beam-glow" />
-
-       
 
         <div className="crm-header">
           <div className="crm-header-left">
             <div className="crm-crown-wrap">
               <div className="crm-crown-ring" />
-              <span className="crm-crown-icon">👑</span>
+              <span className="crm-crown-icon">
+                {hostRole === "vip" ? "💎" : "👑"}
+              </span>
             </div>
             <div>
-              <p className="crm-eyebrow">Exclusivo para Streamer</p>
+              <p className="crm-eyebrow">
+                {hostRole === "vip" ? "Exclusivo para VIP" : "Exclusivo para Streamer"}
+              </p>
               <h2 className="crm-title">Crear debate</h2>
             </div>
           </div>
@@ -754,29 +773,38 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
             </div>
           </div>
 
+          {/* Capacidad — máx 20 para debates */}
           <div className="crm-field">
-            <label className="crm-label">Capacidad <span className="crm-hint">2–500 personas</span></label>
+            <label className="crm-label">
+              Capacidad <span className="crm-hint">2–{MAX_ROOM_CAPACITY} personas</span>
+            </label>
             <div className="crm-capacity-row">
               <div className="crm-number-wrap">
-                <button className="crm-num-btn" type="button" onClick={()=>setMaxPeople(p=>Math.max(2,(p||2)-1))}>−</button>
-                <input className="crm-number-input" type="number" min={2} max={500} value={maxPeople}
-                  onChange={e=>{const n=parseInt(e.target.value,10);if(!isNaN(n))setMaxPeople(Math.min(500,Math.max(2,n)));}}/>
-                <button className="crm-num-btn" type="button" onClick={()=>setMaxPeople(p=>Math.min(500,(p||2)+1))}>+</button>
+                <button className="crm-num-btn" type="button"
+                  onClick={()=>setMaxPeople(p=>Math.max(2,(p||2)-1))}>−</button>
+                <input className="crm-number-input" type="number" min={2} max={MAX_ROOM_CAPACITY}
+                  value={maxPeople}
+                  onChange={e=>{const n=parseInt(e.target.value,10);if(!isNaN(n))setMaxPeople(Math.min(MAX_ROOM_CAPACITY,Math.max(2,n)));}}/>
+                <button className="crm-num-btn" type="button"
+                  onClick={()=>setMaxPeople(p=>Math.min(MAX_ROOM_CAPACITY,(p||2)+1))}>+</button>
               </div>
               <div className="crm-capacity-presets">
-                {[10,25,50,100].map(n=>(
+                {[2,5,10,20].map(n=>(
                   <button key={n} type="button" className={`crm-preset ${maxPeople===n?"crm-preset-on":""}`}
                     onClick={()=>setMaxPeople(n)}>{n}</button>
                 ))}
               </div>
             </div>
+            <p className="crm-capacity-note">
+              Las salas de debate tienen un máximo de {MAX_ROOM_CAPACITY} participantes con video.
+            </p>
           </div>
 
           {error && (
             <div className="crm-error">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="7" cy="7" r="6" stroke="#f87171" strokeWidth="1.5"/>
-                <path d="M7 4v3.5M7 9.5v.5" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="7" cy="7" r="6" stroke="#f87171" strokeWidth="1.4"/>
+                <path d="M7 4v3.5M7 9.5v.5" stroke="#f87171" strokeWidth="1.4" strokeLinecap="round"/>
               </svg>
               {error}
             </div>
@@ -797,13 +825,59 @@ function CreateRoomModal({ hostId, hostName, hostRole, onClose, onCreated }: {
   );
 }
 
+// ─── LockedModal — para roles sin permiso ─────────────────────────
+
+function LockedModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="crm-overlay" onClick={onClose}>
+      <div className="crm-sheet crm-sheet-locked" onClick={e=>e.stopPropagation()}
+        style={{ maxWidth: 400 }}>
+        <div className="crm-beam" style={{ background: "linear-gradient(90deg, rgba(251,191,36,0.6), transparent)" }} />
+        <div className="crm-header">
+          <div className="crm-header-left">
+            <div className="crm-crown-wrap" style={{ background: "rgba(251,191,36,0.08)" }}>
+              <div className="crm-crown-ring" />
+              <span className="crm-crown-icon">🔒</span>
+            </div>
+            <div>
+              <p className="crm-eyebrow">Función premium</p>
+              <h2 className="crm-title">Solo VIP / Streamer</h2>
+            </div>
+          </div>
+          <button className="crm-close" onClick={onClose}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div className="crm-body" style={{ gap: 14 }}>
+          <p style={{ color: "rgba(180,215,240,0.65)", fontSize: 14, lineHeight: 1.6 }}>
+            Crear salas de debate es exclusivo para usuarios con rango <strong style={{ color:"#fbbf24" }}>VIP</strong> o <strong style={{ color:"#54c7f8" }}>Streamer</strong>.
+          </p>
+          <p style={{ color: "rgba(180,215,240,0.4)", fontSize: 13 }}>
+            Los viewers pueden unirse a cualquier sala activa de forma gratuita.
+          </p>
+          <div className="crm-locked-badges">
+            <div className="crm-locked-badge crm-locked-vip">💎 VIP</div>
+            <div className="crm-locked-badge crm-locked-streamer">👑 Streamer</div>
+          </div>
+        </div>
+        <div className="crm-footer" style={{ justifyContent: "center" }}>
+          <button className="crm-btn-cancel" style={{ minWidth: 120 }} onClick={onClose}>Entendido</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── RoomView ─────────────────────────────────────────────────────
 
-function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLeave, closeRoom, setCount }: {
+function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLeave, closeRoom, setCount, socket }: {
   room: Room; currentUserId: string; currentUserName: string;
   currentUserRole: "streamer"|"viewer";
   onLeave: ()=>void; closeRoom: (id:string)=>Promise<void>;
   setCount: (id:string, n:number)=>Promise<void>;
+  socket: any;
 }) {
   const isHost = room.host_id === currentUserId;
   const [toasts, setToasts] = useState<{id:string; msg:string; type:"info"|"warn"|"error"}[]>([]);
@@ -826,7 +900,19 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
 
   const selfViewRef = useRef<HTMLVideoElement>(null);
 
+  // Notificar al socket cada vez que cambia el conteo de presencia
   useEffect(() => { setCount(room.id, presenceCount); }, [presenceCount]);
+
+  // Notificar al servidor socket cuando el host abre la sala
+  useEffect(() => {
+    if (!isHost || !socket?.connected) return;
+    socket.emit("create-debate-room", {
+      roomId: room.id,
+      maxPeople: room.max_people,
+      hostId: currentUserId,
+    });
+    console.log(`[Debates] 🏠 Sala dinámica registrada en socket: ${room.id}`);
+  }, [isHost, room.id, room.max_people, currentUserId, socket]);
 
   useEffect(() => {
     if (!isHost) return;
@@ -841,23 +927,31 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
         },
         body: JSON.stringify({ is_live: false }),
       });
+      // Intentar notificar al socket también (best-effort)
+      socket?.emit("close-debate-room", { roomId: room.id });
     };
     window.addEventListener("beforeunload", handleUnload);
     return () => {
       window.removeEventListener("beforeunload", handleUnload);
       notifyRoomClosed();
       closeRoom(room.id);
+      // Limpiar la sala dinámica del servidor socket
+      socket?.emit("close-debate-room", { roomId: room.id });
     };
-  }, [isHost, room.id, closeRoom, notifyRoomClosed]);
+  }, [isHost, room.id, closeRoom, notifyRoomClosed, socket]);
 
   useEffect(() => {
     if (selfViewRef.current && localStream) selfViewRef.current.srcObject = localStream;
   }, [localStream]);
 
   const handleLeaveOrClose = useCallback(async () => {
-    if (isHost) { notifyRoomClosed(); await closeRoom(room.id); }
+    if (isHost) {
+      notifyRoomClosed();
+      await closeRoom(room.id);
+      socket?.emit("close-debate-room", { roomId: room.id });
+    }
     stopMedia(); onLeave();
-  }, [isHost, room.id, closeRoom, stopMedia, onLeave, notifyRoomClosed]);
+  }, [isHost, room.id, closeRoom, stopMedia, onLeave, notifyRoomClosed, socket]);
 
   const togglePin = useCallback((id:string) => setPinnedId(prev => prev===id ? null : id), []);
 
@@ -999,15 +1093,21 @@ function RoomView({ room, currentUserId, currentUserName, currentUserRole, onLea
 export default function DebateRoomsPage() {
   const router = useRouter();
   const profile = useProfile();
+  const { socket } = useSocket();
 
   const userId:   string = (profile as any)?.id   ?? "";
   const userName: string = (profile as any)?.name ?? (profile as any)?.full_name ?? "Usuario";
-  const userRole: "streamer"|"viewer" = (profile as any)?.role ?? "viewer";
-  const isStreamer = userRole === "streamer";
+  const userRole: string = (profile as any)?.role ?? "viewer";
+
+  // Verificar si el usuario puede crear salas
+  const canCreate = CAN_CREATE_ROLES.includes(userRole);
+  // Para el media hook necesitamos el rol tipado
+  const mediaRole: "streamer"|"viewer" = userRole === "streamer" ? "streamer" : "viewer";
 
   const { rooms, loading, closeRoom, setCount } = useRooms();
   const [activeRoom, setActiveRoom] = useState<Room|null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showLocked, setShowLocked] = useState(false);
   const [filterTag, setFilterTag] = useState<Tag|null>(null);
   const [search, setSearch] = useState("");
 
@@ -1021,14 +1121,29 @@ export default function DebateRoomsPage() {
     return matchTag && matchSearch;
   }), [rooms, filterTag, search]);
 
+  /** Manejador del botón crear — visible para todos, acción solo para vip/streamer */
+  const handleCreateClick = useCallback(() => {
+    if (canCreate) {
+      setShowCreate(true);
+    } else {
+      setShowLocked(true);
+    }
+  }, [canCreate]);
+
   if (activeRoom) {
     return (
       <><GlobalStyles/>
         <div className="dr-root">
           <div className="dr-aurora"/><div className="dr-flag"/>
           <RoomView
-            room={activeRoom} currentUserId={userId} currentUserName={userName} currentUserRole={userRole}
-            onLeave={() => setActiveRoom(null)} closeRoom={closeRoom} setCount={setCount}
+            room={activeRoom}
+            currentUserId={userId}
+            currentUserName={userName}
+            currentUserRole={mediaRole}
+            onLeave={() => setActiveRoom(null)}
+            closeRoom={closeRoom}
+            setCount={setCount}
+            socket={socket}
           />
         </div>
       </>
@@ -1037,30 +1152,33 @@ export default function DebateRoomsPage() {
 
   return (
     <><GlobalStyles/>
-      {showCreate && isStreamer && (
+      {/* Modal crear sala — solo si tiene permiso */}
+      {showCreate && canCreate && (
         <CreateRoomModal
           hostId={userId} hostName={userName} hostRole={userRole}
           onClose={() => setShowCreate(false)}
           onCreated={room => { setShowCreate(false); setActiveRoom(room); }}
         />
       )}
+
+      {/* Modal bloqueado — para viewers que intentan crear */}
+      {showLocked && (
+        <LockedModal onClose={() => setShowLocked(false)} />
+      )}
+
       <div className="dr-root">
         <div className="dr-aurora"/>
         <div className="dr-flag"/>
 
-        {/* ── HEADER PREMIUM ── */}
+        {/* ── HEADER ── */}
         <header className="dr-header">
-          {/* Logo integrado */}
           <div className="dr-logo-full">
             <div className="dr-logo-icon-wrap">
               <div className="dr-logo-icon-halo" />
-              {/* Reemplazar con: <img src={img.src} className="dr-logo-img" alt="Turrinder" /> */}
               <div className="dr-logo-img-placeholder">T</div>
             </div>
             <div className="dr-logo-text-group">
-              <div className="dr-logo-wordmark">
-                Turr<em>inder</em>
-              </div>
+              <div className="dr-logo-wordmark">Turr<em>inder</em></div>
               <div className="dr-logo-section-tag">
                 <span className="dr-section-dot" />
                 Debates
@@ -1068,22 +1186,30 @@ export default function DebateRoomsPage() {
             </div>
           </div>
 
-          
-
           <div className="dr-header-right">
             <div className="dr-role-badge" data-role={userRole}>
-              {userRole==="streamer" ? "👑 Streamer" : "👁 Viewer"}
+              {userRole === "streamer" ? "👑 Streamer"
+               : userRole === "vip"    ? "💎 VIP"
+               : "👁 Viewer"}
             </div>
-            {isStreamer && (
-              <button className="dr-create-btn" onClick={() => setShowCreate(true)}>
-                <span className="dr-create-btn-plus">+</span>
-                <span>Crear sala</span>
-              </button>
-            )}
+
+            {/*
+              Botón SIEMPRE visible.
+              Si no tiene permiso → abre LockedModal con explicación.
+              Si tiene permiso    → abre CreateRoomModal.
+            */}
+            <button
+              className={`dr-create-btn ${!canCreate ? "dr-create-btn-locked" : ""}`}
+              onClick={handleCreateClick}
+              title={canCreate ? "Crear una sala de debate" : "Función exclusiva para VIP y Streamer"}
+            >
+              <span className="dr-create-btn-plus">{canCreate ? "+" : "🔒"}</span>
+              <span>Crear sala</span>
+            </button>
           </div>
         </header>
 
-        {/* ── FILTROS PREMIUM ── */}
+        {/* ── FILTROS ── */}
         <div className="dr-filters">
           <div className="dr-search-wrap">
             <svg className="dr-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -1119,9 +1245,13 @@ export default function DebateRoomsPage() {
               <div className="dr-empty-orb" />
               <div className="dr-empty-icon">🎙️</div>
               <h3>No hay debates activos</h3>
-              <p>{isStreamer ? "¡Creá la primera sala y empezá el debate!" : "Esperá a que un Streamer cree una sala."}</p>
-              {isStreamer && (
-                <button className="dr-empty-create-btn" onClick={() => setShowCreate(true)}>
+              <p>
+                {canCreate
+                  ? "¡Creá la primera sala y empezá el debate!"
+                  : "Esperá a que un VIP o Streamer cree una sala."}
+              </p>
+              {canCreate && (
+                <button className="dr-empty-create-btn" onClick={handleCreateClick}>
                   + Crear primera sala
                 </button>
               )}
@@ -1139,12 +1269,13 @@ export default function DebateRoomsPage() {
   );
 }
 
-// ─── Estilos ──────────────────────────────────────────────────────
+// ─── Estilos globales ─────────────────────────────────────────────
+// (idénticos a v6, solo se agregan los estilos nuevos al final)
 
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Clash+Display:wght@500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
 
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1164,6 +1295,7 @@ function GlobalStyles() {
         --warn: #fbbf24;
         --violet: #a78bfa;
         --green: #4ade80;
+        --vip: #fbbf24;
         min-height: 100dvh;
         display: flex;
         flex-direction: column;
@@ -1174,7 +1306,6 @@ function GlobalStyles() {
         position: relative;
       }
 
-      /* Noise overlay */
       .dr-root::before {
         content: '';
         position: fixed; inset: 0; pointer-events: none; z-index: 0;
@@ -1182,7 +1313,6 @@ function GlobalStyles() {
         opacity: 0.25;
       }
 
-      /* ── AURORA ── */
       .dr-aurora {
         position: fixed; inset: 0; pointer-events: none; z-index: 0;
         background:
@@ -1199,761 +1329,578 @@ function GlobalStyles() {
         100% { opacity: 0.85; transform: scale(1.09) rotate(-0.2deg); }
       }
 
-      /* ── FLAG STRIPE ── */
       .dr-flag {
-        position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; opacity: 0.7;
-        background: linear-gradient(90deg, var(--sky) 33%, rgba(245,248,255,0.88) 33% 66%, var(--sky) 66%);
+        position: fixed; inset: 0; pointer-events: none; z-index: 0;
+        background: linear-gradient(180deg, rgba(3,10,20,0) 60%, rgba(3,10,20,0.85) 100%);
       }
 
-      /* ══════════════════════════════════════
-         HEADER PREMIUM
-      ══════════════════════════════════════ */
+      /* ── HEADER ── */
       .dr-header {
-        position: sticky; top: 3px; z-index: 50;
+        position: relative; z-index: 10;
         display: flex; align-items: center; justify-content: space-between;
-        padding: 14px 28px;
-        background: rgba(3,10,20,0.75);
-        backdrop-filter: blur(24px);
-        border-bottom: 1px solid var(--glass-b);
-        gap: 16px;
+        padding: 16px 28px;
+        border-bottom: 1px solid rgba(84,199,248,0.07);
+        background: rgba(3,10,20,0.72);
+        backdrop-filter: blur(20px);
       }
 
-      /* Logo completo */
-      .dr-logo-full {
-        display: flex; align-items: center; gap: 13px;
-        cursor: default; user-select: none;
-        flex-shrink: 0;
-      }
-      .dr-logo-icon-wrap {
-        position: relative; width: 40px; height: 40px; flex-shrink: 0;
-      }
+      .dr-logo-full { display: flex; align-items: center; gap: 12px; }
+      .dr-logo-icon-wrap { position: relative; width: 36px; height: 36px; }
       .dr-logo-icon-halo {
-        position: absolute; inset: 0; border-radius: 12px;
-        background: linear-gradient(145deg, rgba(84,199,248,0.2), rgba(59,158,218,0.08));
-        border: 1px solid rgba(84,199,248,0.3);
-        box-shadow: 0 0 0 1px rgba(84,199,248,0.06), 0 4px 20px rgba(84,199,248,0.18), inset 0 1px 0 rgba(255,255,255,0.1);
-        animation: logo-halo 3.5s ease-in-out infinite alternate;
+        position: absolute; inset: -4px; border-radius: 14px;
+        background: radial-gradient(circle, rgba(84,199,248,0.18) 0%, transparent 70%);
+        animation: dr-halo 3s ease-in-out infinite;
       }
-      @keyframes logo-halo {
-        from { box-shadow: 0 0 0 1px rgba(84,199,248,0.06), 0 4px 20px rgba(84,199,248,0.18), inset 0 1px 0 rgba(255,255,255,0.1); }
-        to   { box-shadow: 0 0 0 1px rgba(84,199,248,0.15), 0 6px 32px rgba(84,199,248,0.38), inset 0 1px 0 rgba(255,255,255,0.15); }
-      }
-      /* REEMPLAZAR CON: img.dr-logo-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:6px; filter:drop-shadow(0 0 7px rgba(84,199,248,0.6)) brightness(1.08); } */
+      @keyframes dr-halo { 0%,100% { opacity:0.6; } 50% { opacity:1; } }
       .dr-logo-img-placeholder {
-        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-        font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 900;
-        background: linear-gradient(135deg, var(--sky), var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        width: 36px; height: 36px; border-radius: 10px;
+        background: linear-gradient(135deg, rgba(84,199,248,0.22), rgba(59,158,218,0.1));
+        border: 1px solid rgba(84,199,248,0.22);
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--sky);
+        position: relative;
       }
-      .dr-logo-text-group { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
+      .dr-logo-text-group { display: flex; flex-direction: column; gap: 2px; }
       .dr-logo-wordmark {
-        font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 800;
-        letter-spacing: -0.8px; color: var(--white); line-height: 1;
+        font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800;
+        color: #f0f6ff; letter-spacing: -0.5px;
       }
-      .dr-logo-wordmark em {
-        font-style: normal;
-        background: linear-gradient(120deg, var(--sky) 0%, #c8f2ff 55%, var(--sky2) 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      }
+      .dr-logo-wordmark em { font-style: normal; color: var(--sky); }
       .dr-logo-section-tag {
         display: flex; align-items: center; gap: 5px;
-        font-size: 9px; font-weight: 600; letter-spacing: 2.5px;
-        text-transform: uppercase; color: rgba(84,199,248,0.45); line-height: 1;
+        font-size: 10px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase;
+        color: rgba(180,215,240,0.4);
       }
       .dr-section-dot {
-        width: 4px; height: 4px; border-radius: 50%; background: var(--sky);
-        opacity: 0.65; flex-shrink: 0;
-        box-shadow: 0 0 5px rgba(84,199,248,0.8);
-        animation: sky-pulse 2s infinite;
+        width: 4px; height: 4px; border-radius: 50%;
+        background: var(--sky); opacity: 0.6;
+        animation: dr-pulse 2s ease-in-out infinite;
       }
-      @keyframes sky-pulse {
-        0%  { box-shadow: 0 0 0 0 rgba(84,199,248,0.6); }
-        70% { box-shadow: 0 0 0 5px rgba(84,199,248,0); }
-        100%{ box-shadow: 0 0 0 0 rgba(84,199,248,0); }
-      }
+      @keyframes dr-pulse { 0%,100% { opacity:0.4; } 50% { opacity:1; } }
 
-      /* Header center indicator */
-      .dr-header-center { flex: 1; display: flex; justify-content: center; }
-      .dr-header-live-indicator {
-        display: flex; align-items: center; gap: 7px;
-        font-size: 11px; color: var(--muted); font-weight: 500;
-        background: rgba(84,199,248,0.04); border: 1px solid var(--glass-b);
-        border-radius: 100px; padding: 5px 14px;
-      }
-
-      .dr-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+      .dr-header-right { display: flex; align-items: center; gap: 12px; }
 
       .dr-role-badge {
         font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 100px;
-        border: 1px solid var(--glass-b); background: var(--glass); color: var(--muted);
-        letter-spacing: 0.3px;
+        border: 1px solid rgba(84,199,248,0.2); color: rgba(180,215,240,0.6);
+        background: rgba(84,199,248,0.05);
       }
       .dr-role-badge[data-role="streamer"] {
-        border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.07); color: var(--warn);
+        border-color: rgba(251,191,36,0.35); color: #fbbf24;
+        background: rgba(251,191,36,0.07);
+      }
+      .dr-role-badge[data-role="vip"] {
+        border-color: rgba(251,191,36,0.35); color: #fbbf24;
+        background: rgba(251,191,36,0.07);
       }
 
+      /* Botón crear — versión habilitada */
       .dr-create-btn {
-        display: flex; align-items: center; gap: 7px;
-        font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
-        padding: 9px 20px; border-radius: 100px;
+        display: flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 12px;
         border: 1px solid rgba(84,199,248,0.35);
         background: linear-gradient(135deg, rgba(84,199,248,0.14), rgba(59,158,218,0.07));
-        color: var(--sky); cursor: pointer;
-        transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
-        position: relative; overflow: hidden;
-      }
-      .dr-create-btn::before {
-        content: ''; position: absolute; inset: 0;
-        background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent 55%);
-      }
-      .dr-create-btn:hover {
-        border-color: rgba(84,199,248,0.6);
-        background: linear-gradient(135deg, rgba(84,199,248,0.22), rgba(59,158,218,0.14));
-        box-shadow: 0 0 24px rgba(84,199,248,0.28), 0 4px 16px rgba(84,199,248,0.15);
-        transform: translateY(-1px);
-      }
-      .dr-create-btn-plus {
-        font-size: 16px; font-weight: 300; line-height: 1;
-        background: linear-gradient(135deg, var(--sky), var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      }
-
-      /* ══════════════════════════════════════
-         FILTROS PREMIUM
-      ══════════════════════════════════════ */
-      .dr-filters {
-        position: relative; z-index: 2;
-        padding: 16px 28px 8px;
-        display: flex; flex-direction: column; gap: 12px;
-      }
-
-      .dr-search-wrap {
-        position: relative; display: flex; align-items: center;
-      }
-      .dr-search-icon {
-        position: absolute; left: 14px; color: var(--muted); pointer-events: none; flex-shrink: 0;
-      }
-      .dr-search {
-        width: 100%; max-width: 360px;
-        background: rgba(5,14,28,0.8); border: 1px solid var(--glass-b);
-        border-radius: 14px; padding: 11px 16px 11px 38px;
-        color: var(--white); font-size: 14px; font-family: 'DM Sans', sans-serif;
-        outline: none; transition: all 0.2s ease;
-      }
-      .dr-search::placeholder { color: rgba(143,212,255,0.22); }
-      .dr-search:focus {
-        border-color: rgba(84,199,248,0.4);
-        background: rgba(84,199,248,0.04);
-        box-shadow: 0 0 0 3px rgba(84,199,248,0.08);
-      }
-
-      .dr-filter-tags {
-        display: flex; gap: 6px; flex-wrap: wrap;
-      }
-      .dr-filter-tag {
-        font-size: 11px; font-weight: 500; padding: 5px 14px; border-radius: 100px;
-        border: 1px solid var(--glass-b); background: rgba(4,12,26,0.7);
-        color: var(--muted); cursor: pointer;
-        transition: all 0.18s cubic-bezier(0.16,1,0.3,1); white-space: nowrap;
-        letter-spacing: 0.3px;
-      }
-      .dr-filter-tag:hover { border-color: rgba(84,199,248,0.3); color: rgba(143,212,255,0.85); }
-      .dr-filter-tag.active {
-        border-color: rgba(84,199,248,0.55); background: rgba(84,199,248,0.1);
-        color: var(--sky); box-shadow: 0 0 12px rgba(84,199,248,0.15);
-      }
-
-      /* ══════════════════════════════════════
-         MAIN / GRID
-      ══════════════════════════════════════ */
-      .dr-main {
-        flex: 1; position: relative; z-index: 1;
-        padding: 16px 28px 40px; overflow-y: auto;
-      }
-
-      /* Loading */
-      .dr-loading {
-        display: flex; flex-direction: column; align-items: center;
-        justify-content: center; gap: 16px; padding: 100px 20px; color: var(--muted);
-      }
-      .dr-spinner-wrap { position: relative; width: 40px; height: 40px; }
-      .dr-spinner {
-        position: absolute; inset: 0;
-        border: 2px solid rgba(84,199,248,0.1); border-top-color: var(--sky);
-        border-radius: 50%; animation: dr-spin 0.8s linear infinite;
-      }
-      .dr-spinner-inner {
-        position: absolute; inset: 6px;
-        border: 2px solid rgba(84,199,248,0.06); border-bottom-color: rgba(84,199,248,0.4);
-        border-radius: 50%; animation: dr-spin 1.4s linear infinite reverse;
-      }
-      @keyframes dr-spin { to { transform: rotate(360deg); } }
-
-      /* Empty state */
-      .dr-empty {
-        display: flex; flex-direction: column; align-items: center;
-        justify-content: center; gap: 14px; padding: 100px 20px;
-        text-align: center; position: relative;
-      }
-      .dr-empty-orb {
-        position: absolute; width: 300px; height: 300px; border-radius: 50%;
-        background: radial-gradient(circle, rgba(84,199,248,0.07) 0%, transparent 70%);
-        pointer-events: none;
-        animation: orb-breathe 4s ease-in-out infinite;
-      }
-      @keyframes orb-breathe {
-        0%,100% { transform: scale(1); opacity: 0.6; }
-        50%     { transform: scale(1.1); opacity: 1; }
-      }
-      .dr-empty-icon { font-size: 52px; position: relative; z-index: 1; }
-      .dr-empty h3 {
-        font-family:sans-serif; font-size: 20px; font-weight: 800;
-        color: var(--white); position: relative; z-index: 1; letter-spacing: -0.3px;
-      }
-      .dr-empty p { font-size: 14px; color: var(--muted); max-width: 300px; line-height: 1.6; position: relative; z-index: 1; }
-      .dr-empty-create-btn {
-        margin-top: 8px; padding: 12px 28px; border-radius: 100px;
-        background: linear-gradient(135deg, var(--sky), var(--sky2));
-        border: none; color: #020d18;
-        font-family: sans-serif; font-size: 14px; font-weight: 800;
-        cursor: pointer; position: relative; z-index: 1;
-        box-shadow: 0 8px 32px rgba(84,199,248,0.4);
-        transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
-      }
-      .dr-empty-create-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 44px rgba(84,199,248,0.55); }
-
-      /* ══════════════════════════════════════
-         CARDS PREMIUM
-      ══════════════════════════════════════ */
-      .dr-rooms-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
-        gap: 18px;
-      }
-
-      .dr-card {
-        position: relative;
-        background: linear-gradient(160deg, rgba(6,16,32,0.92), rgba(3,10,22,0.95));
-        border: 1px solid var(--glass-b);
-        border-radius: 20px; overflow: hidden; cursor: pointer;
-        transition: border-color 0.3s, transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s;
-        backdrop-filter: blur(16px);
-        display: flex; flex-direction: column;
-        animation: card-in 0.4s cubic-bezier(0.16,1,0.3,1) both;
-      }
-      @keyframes card-in {
-        from { opacity: 0; transform: translateY(16px); }
-        to   { opacity: 1; transform: translateY(0); }
-      }
-      .dr-card:hover {
-        border-color: rgba(84,199,248,0.32);
-        transform: translateY(-4px);
-        box-shadow: 0 12px 48px rgba(84,199,248,0.14), 0 2px 8px rgba(0,0,0,0.4);
-      }
-      .dr-card:hover .dr-card-orb { opacity: 1; }
-      .dr-card:hover .dr-card-shimmer { opacity: 1; }
-
-      /* Orb glow */
-      .dr-card-orb {
-        position: absolute; top: -60px; left: -60px;
-        width: 160px; height: 160px;
-        background: radial-gradient(circle, rgba(84,199,248,0.14) 0%, transparent 70%);
-        pointer-events: none; opacity: 0;
-        transition: opacity 0.4s; border-radius: 50%;
-      }
-      /* Shimmer line */
-      .dr-card-shimmer {
-        position: absolute; top: 0; left: 0; right: 0; height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(84,199,248,0.5) 50%, transparent);
-        opacity: 0; transition: opacity 0.4s;
-      }
-
-      .dr-card-body { padding: 18px 20px 14px; flex: 1; }
-      .dr-card-footer {
-        padding: 14px 20px 18px;
-        border-top: 1px solid rgba(84,199,248,0.07);
-        background: rgba(3,10,20,0.3);
-      }
-
-      .dr-card-top {
-        display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 12px;
-      }
-      .dr-live-pill {
-        display: flex; align-items: center; gap: 6px;
-        background: rgba(84,199,248,0.08); border: 1px solid rgba(84,199,248,0.18);
-        border-radius: 100px; padding: 3px 10px 3px 7px;
-      }
-      .dr-live-dot {
-        width: 6px; height: 6px; border-radius: 50%; background: var(--sky); flex-shrink: 0;
-        box-shadow: 0 0 6px var(--sky);
-        animation: live-pulse 1.8s ease-in-out infinite;
-      }
-      @keyframes live-pulse {
-        0%,100% { opacity: 1; box-shadow: 0 0 6px var(--sky); }
-        50%     { opacity: 0.6; box-shadow: 0 0 14px var(--sky); }
-      }
-      .dr-live-label {
-        font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
-        color: var(--sky); text-transform: uppercase;
-      }
-
-      .dr-card-host-info { display: flex; align-items: center; gap: 6px; }
-      .dr-card-role-badge {
-        display: flex; align-items: center; gap: 3px;
-        font-size: 8px; font-weight: 800; letter-spacing: 1px;
-        color: var(--violet);
-        border: 1px solid rgba(167,139,250,0.35); background: rgba(167,139,250,0.09);
-        border-radius: 5px; padding: 2px 7px; text-transform: uppercase;
-      }
-      .dr-role-crown { font-size: 9px; }
-      .dr-card-host-name { font-size: 11px; color: var(--muted); }
-
-      .dr-card-title {
-        font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800;
-        color: var(--white); line-height: 1.25; margin-bottom: 8px;
-        letter-spacing: -0.3px;
-      }
-      .dr-card-desc {
-        font-size: 12px; color: var(--muted); line-height: 1.55; margin-bottom: 12px;
-        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-      }
-      .dr-card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
-
-      .dr-tag {
-        font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 100px;
-        border: 1px solid var(--glass-b); background: rgba(4,12,26,0.7);
-        color: rgba(143,212,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;
-        transition: all 0.15s;
-      }
-      .dr-tag.selected, .dr-tag:hover {
-        border-color: rgba(84,199,248,0.4); background: rgba(84,199,248,0.08); color: var(--sky);
-      }
-
-      /* Capacity */
-      .dr-capacity { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
-      .dr-capacity-header { display: flex; align-items: center; gap: 6px; }
-      .dr-capacity-icon { font-size: 11px; }
-      .dr-capacity-label { font-size: 10px; color: var(--muted); font-weight: 500; }
-      .dr-capacity-bar {
-        height: 3px; background: rgba(84,199,248,0.08); border-radius: 2px;
-        overflow: visible; position: relative;
-      }
-      .dr-capacity-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; position: relative; }
-      .dr-capacity-glow {
-        position: absolute; top: -2px; right: 0; width: 20px; height: 7px;
-        background: radial-gradient(circle, rgba(84,199,248,0.9), transparent 70%);
-        border-radius: 50%; pointer-events: none; transition: opacity 0.4s;
-        filter: blur(2px);
-      }
-
-      .dr-join-btn {
-        width: 100%; padding: 11px 16px;
-        display: flex; align-items: center; justify-content: space-between;
-        border-radius: 12px; border: 1px solid rgba(84,199,248,0.25);
-        background: linear-gradient(135deg, rgba(84,199,248,0.1), rgba(59,158,218,0.05));
         color: var(--sky); font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
         cursor: pointer; transition: all 0.22s cubic-bezier(0.16,1,0.3,1);
         position: relative; overflow: hidden;
       }
-      .dr-join-btn::before {
+      .dr-create-btn::before {
         content: ''; position: absolute; inset: 0;
-        background: linear-gradient(135deg, rgba(255,255,255,0.06), transparent 55%);
+        background: linear-gradient(135deg, rgba(255,255,255,0.07), transparent 55%);
       }
-      .dr-join-btn:hover:not(:disabled) {
-        border-color: rgba(84,199,248,0.5);
-        background: linear-gradient(135deg, rgba(84,199,248,0.18), rgba(59,158,218,0.10));
-        box-shadow: 0 0 20px rgba(84,199,248,0.2), inset 0 0 20px rgba(84,199,248,0.03);
+      .dr-create-btn:hover {
+        border-color: rgba(84,199,248,0.6);
+        background: linear-gradient(135deg, rgba(84,199,248,0.22), rgba(59,158,218,0.12));
+        box-shadow: 0 0 24px rgba(84,199,248,0.2), 0 4px 14px rgba(84,199,248,0.1);
         transform: translateY(-1px);
       }
-      .dr-join-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      .dr-join-arrow {
-        font-size: 16px; transition: transform 0.2s;
-        background: linear-gradient(135deg, var(--sky), var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      /* Botón crear — versión bloqueada (viewer) */
+      .dr-create-btn-locked {
+        border-color: rgba(180,215,240,0.12) !important;
+        background: rgba(180,215,240,0.03) !important;
+        color: rgba(180,215,240,0.4) !important;
       }
+      .dr-create-btn-locked:hover {
+        border-color: rgba(251,191,36,0.3) !important;
+        background: rgba(251,191,36,0.05) !important;
+        color: rgba(251,191,36,0.7) !important;
+        box-shadow: 0 0 18px rgba(251,191,36,0.1) !important;
+        transform: translateY(-1px) !important;
+      }
+      .dr-create-btn-plus { font-size: 16px; font-weight: 400; }
+
+      /* ── FILTROS ── */
+      .dr-filters {
+        position: relative; z-index: 5;
+        padding: 14px 28px 8px;
+        display: flex; flex-direction: column; gap: 12px;
+        border-bottom: 1px solid rgba(84,199,248,0.05);
+      }
+      .dr-search-wrap {
+        display: flex; align-items: center; gap: 10px;
+        background: rgba(84,199,248,0.03); border: 1px solid rgba(84,199,248,0.09);
+        border-radius: 12px; padding: 9px 14px; max-width: 320px;
+      }
+      .dr-search-icon { color: rgba(180,215,240,0.3); flex-shrink: 0; }
+      .dr-search {
+        background: transparent; border: none; outline: none;
+        color: #e8f2ff; font-size: 13px; font-family: 'DM Sans', sans-serif;
+        width: 100%;
+      }
+      .dr-search::placeholder { color: rgba(180,215,240,0.22); }
+      .dr-filter-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+      .dr-filter-tag {
+        font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 100px;
+        border: 1px solid rgba(84,199,248,0.09); background: transparent;
+        color: rgba(180,215,240,0.4); cursor: pointer; transition: all 0.16s;
+      }
+      .dr-filter-tag:hover { border-color: rgba(84,199,248,0.22); color: rgba(180,215,240,0.75); }
+      .dr-filter-tag.active {
+        border-color: rgba(84,199,248,0.5); background: rgba(84,199,248,0.09);
+        color: var(--sky);
+      }
+
+      /* ── MAIN ── */
+      .dr-main { flex: 1; position: relative; z-index: 2; padding: 24px 28px 40px; }
+      .dr-rooms-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 18px;
+      }
+
+      /* ── ESTADOS ── */
+      .dr-loading { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 80px 0; }
+      .dr-spinner-wrap { position: relative; width: 44px; height: 44px; }
+      .dr-spinner {
+        width: 44px; height: 44px; border-radius: 50%;
+        border: 2px solid rgba(84,199,248,0.12);
+        border-top-color: var(--sky);
+        animation: dr-spin 1s linear infinite;
+      }
+      .dr-spinner-inner {
+        position: absolute; inset: 6px; border-radius: 50%;
+        border: 1.5px solid rgba(84,199,248,0.08);
+        border-bottom-color: rgba(84,199,248,0.5);
+        animation: dr-spin 1.5s linear infinite reverse;
+      }
+      @keyframes dr-spin { to { transform: rotate(360deg); } }
+
+      .dr-empty {
+        display: flex; flex-direction: column; align-items: center;
+        gap: 14px; padding: 80px 0; text-align: center;
+        position: relative;
+      }
+      .dr-empty-orb {
+        position: absolute; width: 300px; height: 300px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(84,199,248,0.06) 0%, transparent 70%);
+        top: 50%; left: 50%; transform: translate(-50%,-50%);
+        pointer-events: none;
+      }
+      .dr-empty-icon { font-size: 48px; filter: grayscale(0.4); }
+      .dr-empty h3 { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; color: #f0f6ff; }
+      .dr-empty p { font-size: 14px; color: rgba(180,215,240,0.45); max-width: 280px; }
+      .dr-empty-create-btn {
+        margin-top: 6px; padding: 11px 24px; border-radius: 13px;
+        border: 1px solid rgba(84,199,248,0.35);
+        background: linear-gradient(135deg, rgba(84,199,248,0.14), rgba(59,158,218,0.07));
+        color: var(--sky); font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+        cursor: pointer; transition: all 0.2s;
+      }
+      .dr-empty-create-btn:hover {
+        border-color: rgba(84,199,248,0.6); transform: translateY(-1px);
+        box-shadow: 0 0 20px rgba(84,199,248,0.18);
+      }
+
+      /* ── CARDS ── */
+      .dr-card {
+        background: rgba(5,15,30,0.7); border: 1px solid rgba(84,199,248,0.09);
+        border-radius: 18px; cursor: pointer; position: relative; overflow: hidden;
+        transition: all 0.28s cubic-bezier(0.16,1,0.3,1);
+        display: flex; flex-direction: column;
+        animation: dr-fadein 0.4s ease both;
+      }
+      .dr-card:hover {
+        border-color: rgba(84,199,248,0.26);
+        transform: translateY(-3px);
+        box-shadow: 0 12px 40px rgba(84,199,248,0.1), 0 4px 16px rgba(0,0,0,0.4);
+      }
+      .dr-card-orb {
+        position: absolute; width: 180px; height: 180px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(84,199,248,0.08) 0%, transparent 70%);
+        top: -40px; right: -40px; pointer-events: none;
+        transition: opacity 0.3s;
+      }
+      .dr-card:hover .dr-card-orb { opacity: 1.5; }
+      .dr-card-shimmer {
+        position: absolute; inset: 0; border-radius: 18px; pointer-events: none;
+        background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%);
+      }
+
+      .dr-card-body { padding: 20px 20px 14px; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+      .dr-card-top { display: flex; align-items: center; justify-content: space-between; }
+      .dr-live-pill {
+        display: flex; align-items: center; gap: 6px;
+        background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.22);
+        border-radius: 100px; padding: 4px 10px;
+      }
+      .dr-live-dot {
+        width: 6px; height: 6px; border-radius: 50%; background: #f87171;
+        animation: dr-pulse 1.5s ease-in-out infinite;
+      }
+      .dr-live-label { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: #fca5a5; }
+
+      .dr-card-host-info { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+      .dr-card-role-badge {
+        display: flex; align-items: center; gap: 4px;
+        font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
+        color: rgba(251,191,36,0.75);
+      }
+      .dr-role-crown { font-size: 11px; }
+      .dr-card-host-name { font-size: 11px; color: rgba(180,215,240,0.5); }
+
+      .dr-card-title {
+        font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
+        color: #f0f6ff; line-height: 1.35; letter-spacing: -0.3px;
+      }
+      .dr-card-desc { font-size: 12px; color: rgba(180,215,240,0.45); line-height: 1.5; }
+      .dr-card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+      .dr-tag {
+        font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 100px;
+        border: 1px solid rgba(84,199,248,0.12); background: rgba(84,199,248,0.04);
+        color: rgba(180,215,240,0.5); transition: all 0.15s;
+      }
+      .dr-tag.selected {
+        border-color: rgba(84,199,248,0.45); background: rgba(84,199,248,0.1);
+        color: var(--sky);
+      }
+
+      .dr-card-footer { padding: 14px 20px 18px; border-top: 1px solid rgba(84,199,248,0.06); }
+      .dr-capacity { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+      .dr-capacity-header { display: flex; align-items: center; gap: 6px; }
+      .dr-capacity-icon { font-size: 13px; }
+      .dr-capacity-label { font-size: 12px; color: rgba(180,215,240,0.5); }
+      .dr-capacity-bar {
+        height: 4px; background: rgba(84,199,248,0.08); border-radius: 2px; position: relative; overflow: hidden;
+      }
+      .dr-capacity-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+      .dr-capacity-glow {
+        position: absolute; top: 0; left: 0; height: 100%; border-radius: 2px;
+        background: linear-gradient(90deg, transparent, rgba(84,199,248,0.6), transparent);
+        animation: dr-shimmer 2s linear infinite;
+      }
+      @keyframes dr-shimmer { 0% { transform:translateX(-100%); } 100% { transform:translateX(500%); } }
+
+      .dr-join-btn {
+        width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 11px; border-radius: 12px;
+        border: 1px solid rgba(84,199,248,0.28);
+        background: linear-gradient(135deg, rgba(84,199,248,0.12), rgba(59,158,218,0.06));
+        color: var(--sky); font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600;
+        cursor: pointer; transition: all 0.2s;
+      }
+      .dr-join-btn:hover { border-color: rgba(84,199,248,0.55); background: rgba(84,199,248,0.18); }
+      .dr-join-arrow { font-size: 16px; transition: transform 0.2s; }
       .dr-join-btn:hover .dr-join-arrow { transform: translateX(4px); }
+      .dr-banned-msg { font-size: 12px; color: var(--danger); text-align: center; padding: 8px 0; }
 
-      .dr-banned-msg {
-        width: 100%; padding: 10px 16px; border-radius: 12px;
-        border: 1px solid rgba(248,113,113,0.25); background: rgba(248,113,113,0.06);
-        color: var(--danger); font-size: 12px; font-weight: 600; text-align: center;
-      }
-
-      /* ══════════════════════════════════════
-         ROOM VIEW
-      ══════════════════════════════════════ */
+      /* ── ROOM VIEW ── */
       .dr-room-view {
-        position: relative; z-index: 1; display: flex; flex-direction: column;
-        height: 100dvh; overflow: hidden; background: #020810;
+        flex: 1; display: flex; flex-direction: column;
+        position: relative; z-index: 2; overflow: hidden;
       }
+      .dr-toasts-stack { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+      .dr-toast {
+        padding: 12px 18px; border-radius: 12px; font-size: 13px;
+        backdrop-filter: blur(20px); animation: dr-fadein 0.3s ease;
+        border: 1px solid rgba(84,199,248,0.15);
+        background: rgba(3,10,20,0.9); color: #e8f2ff;
+      }
+      .dr-toast-warn { border-color: rgba(251,191,36,0.35); color: #fde68a; }
+      .dr-toast-error { border-color: rgba(248,113,113,0.35); color: #fca5a5; }
 
       .dr-room-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 10px 18px;
-        background: rgba(2,8,16,0.97);
-        backdrop-filter: blur(20px);
-        border-bottom: 1px solid var(--glass-b);
-        gap: 10px; flex-wrap: wrap; flex-shrink: 0; z-index: 10;
+        padding: 12px 20px; border-bottom: 1px solid rgba(84,199,248,0.08);
+        background: rgba(3,10,20,0.8); backdrop-filter: blur(20px); z-index: 5;
       }
-      .dr-room-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; flex: 1; min-width: 0; }
-
-      /* Mini logo dentro de la sala */
+      .dr-room-meta { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
       .dr-room-logo-mini {
         width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
-        background: linear-gradient(145deg, rgba(84,199,248,0.18), rgba(59,158,218,0.08));
-        border: 1px solid rgba(84,199,248,0.28);
+        background: rgba(84,199,248,0.1); border: 1px solid rgba(84,199,248,0.2);
         display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 0 10px rgba(84,199,248,0.2);
+        font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; color: var(--sky);
       }
-      .dr-room-logo-t {
-        font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 900;
-        background: linear-gradient(135deg, var(--sky), var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      }
-
+      .dr-room-logo-t {}
       .dr-room-title-text {
-        font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
-        letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+        color: #f0f6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;
       }
-      .dr-room-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-      .dr-room-header-right { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
-
+      .dr-room-tags { display: flex; gap: 5px; flex-shrink: 0; }
+      .dr-room-header-right { display: flex; align-items: center; gap: 10px; }
       .dr-room-count-pill {
-        display: flex; align-items: center; gap: 6px;
-        font-size: 11px; color: var(--muted); font-weight: 500;
-        background: var(--glass); border: 1px solid var(--glass-b);
-        border-radius: 100px; padding: 4px 12px;
+        display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 100px;
+        background: rgba(84,199,248,0.06); border: 1px solid rgba(84,199,248,0.14);
+        font-size: 12px; color: rgba(180,215,240,0.6);
       }
       .dr-room-count-dot {
-        width: 5px; height: 5px; border-radius: 50%; background: var(--green);
-        box-shadow: 0 0 6px rgba(74,222,128,0.8); animation: sky-pulse 2s infinite;
+        width: 6px; height: 6px; border-radius: 50%; background: #4ade80;
+        animation: dr-pulse 1.5s infinite;
       }
-
-      .dr-leave-btn {
-        padding: 6px 14px; border-radius: 100px;
-        border: 1px solid rgba(248,113,113,0.35); background: rgba(248,113,113,0.07);
-        color: var(--danger); font-size: 11px; font-weight: 600; cursor: pointer;
-        transition: all 0.2s; white-space: nowrap;
-      }
-      .dr-leave-btn:hover { background: rgba(248,113,113,0.16); }
-
       .dr-chat-toggle-btn {
-        position: relative; padding: 6px 13px; border-radius: 100px;
-        border: 1px solid var(--glass-b); background: var(--glass);
-        color: var(--sky); font-size: 13px; cursor: pointer;
-        transition: all 0.2s; white-space: nowrap;
+        position: relative; background: rgba(84,199,248,0.06); border: 1px solid rgba(84,199,248,0.12);
+        border-radius: 10px; width: 36px; height: 36px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; font-size: 16px;
+        transition: all 0.18s;
       }
-      .dr-chat-toggle-btn:hover { background: rgba(84,199,248,0.1); border-color: rgba(84,199,248,0.3); }
+      .dr-chat-toggle-btn:hover { background: rgba(84,199,248,0.12); border-color: rgba(84,199,248,0.28); }
       .dr-chat-badge {
-        position: absolute; top: -5px; right: -5px; background: var(--danger);
-        color: #fff; font-size: 9px; font-weight: 700; border-radius: 100px; padding: 1px 5px;
-        border: 1px solid var(--bg);
+        position: absolute; top: -4px; right: -4px;
+        background: #f87171; color: white; font-size: 9px; font-weight: 700;
+        padding: 1px 5px; border-radius: 100px; min-width: 16px; text-align: center;
       }
+      .dr-leave-btn {
+        padding: 8px 16px; border-radius: 10px; cursor: pointer;
+        border: 1px solid rgba(248,113,113,0.25); background: rgba(248,113,113,0.07);
+        color: #fca5a5; font-size: 13px; font-weight: 500; transition: all 0.18s;
+      }
+      .dr-leave-btn:hover { border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.14); }
 
-      /* Room body */
-      .dr-room-body { flex: 1; display: flex; min-height: 0; overflow: hidden; position: relative; }
+      .dr-room-body { flex: 1; display: flex; overflow: hidden; position: relative; }
+
       .dr-meet-grid {
         flex: 1; display: grid;
-        grid-template-columns: repeat(var(--grid-cols,1), 1fr);
-        gap: 4px; padding: 4px;
-        align-content: center; overflow: hidden;
+        grid-template-columns: repeat(var(--grid-cols, 2), 1fr);
+        gap: 8px; padding: 12px; overflow-y: auto; align-content: start;
       }
-      .dr-meet-grid.scrollable { align-content: start; overflow-y: auto; }
-      .dr-meet-grid .dr-tile { aspect-ratio: 16/9; height: auto; }
+      .dr-meet-grid.scrollable { overflow-y: auto; }
 
-      .dr-pinned-layout { flex: 1; display: flex; overflow: hidden; }
-      .dr-pinned-stage { flex: 1; min-width: 0; position: relative; }
-      .dr-pinned-stage .dr-tile { width: 100%; height: 100%; border-radius: 0; border: none; aspect-ratio: auto; }
-      .dr-pinned-rail {
-        width: 185px; flex-shrink: 0;
-        background: rgba(2,8,16,0.85); border-left: 1px solid var(--glass-b);
-        overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;
-      }
-      .dr-pinned-rail .dr-tile { width: 100%; aspect-ratio: 16/9; }
+      .dr-pinned-layout { display: flex; flex: 1; gap: 8px; padding: 12px; overflow: hidden; }
+      .dr-pinned-stage { flex: 1; min-width: 0; }
+      .dr-pinned-rail { width: 180px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 
-      /* Tiles */
+      /* ── TILES ── */
       .dr-tile {
-        position: relative; background: #040c1a; border: 1px solid var(--glass-b);
-        border-radius: 10px; overflow: hidden;
-        display: flex; align-items: center; justify-content: center; transition: border-color 0.2s;
+        position: relative; border-radius: 14px; overflow: hidden;
+        background: rgba(5,15,30,0.8); border: 1px solid rgba(84,199,248,0.08);
+        aspect-ratio: 16/9;
       }
-      .dr-tile-pinned { border-color: rgba(84,199,248,0.6)!important; box-shadow: 0 0 24px rgba(84,199,248,0.18); }
-      .dr-tile-self { border-color: rgba(167,139,250,0.4); }
-      .dr-tile-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .dr-tile-pinned { border-color: rgba(84,199,248,0.3); box-shadow: 0 0 20px rgba(84,199,248,0.12); }
+      .dr-tile-self { border-color: rgba(74,222,128,0.25); }
+      .dr-tile-video { width: 100%; height: 100%; object-fit: cover; }
 
       .dr-tile-avatar {
-        position: absolute; inset: 0; display: flex; flex-direction: column;
-        align-items: center; justify-content: center; gap: 8px;
-        background: linear-gradient(135deg, rgba(84,199,248,0.06), rgba(59,158,218,0.03));
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: rgba(5,15,30,0.9);
       }
       .dr-tile-avatar-ring {
-        position: absolute; width: 72px; height: 72px; border-radius: 50%;
-        border: 1px solid rgba(84,199,248,0.15);
-        box-shadow: 0 0 30px rgba(84,199,248,0.08);
+        position: absolute; width: 70px; height: 70px; border-radius: 50%;
+        border: 2px solid rgba(84,199,248,0.18); animation: dr-pulse 3s infinite;
       }
       .dr-tile-initials {
-        font-family: 'Syne', sans-serif; font-size: clamp(18px,3vw,36px); font-weight: 900;
-        background: linear-gradient(135deg, var(--sky), #c8f2ff, var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        position: relative; z-index: 1;
+        font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 700;
+        color: rgba(180,215,240,0.6); position: relative; z-index: 1;
       }
-      .dr-tile-blocked-badge { position: absolute; bottom: 30px; right: 6px; font-size: 12px; }
+      .dr-tile-blocked-badge {
+        position: absolute; bottom: 8px; right: 8px; font-size: 14px;
+        background: rgba(248,113,113,0.2); border-radius: 6px; padding: 2px 4px;
+      }
 
       .dr-tile-info {
-        position: absolute; bottom: 0; left: 0; right: 0; padding: 5px 8px;
-        background: linear-gradient(to top, rgba(2,8,16,0.95) 0%, transparent 100%);
-        display: flex; align-items: center; justify-content: space-between; gap: 4px;
+        position: absolute; bottom: 0; left: 0; right: 0; padding: 8px 10px;
+        background: linear-gradient(0deg, rgba(0,0,0,0.75) 0%, transparent 100%);
+        display: flex; align-items: center; justify-content: space-between;
       }
-      .dr-tile-info-left { display: flex; align-items: center; gap: 3px; min-width: 0; flex: 1; }
-
+      .dr-tile-info-left { display: flex; align-items: center; gap: 5px; }
       .dr-host-badge {
-        font-size: 7px; font-weight: 700; letter-spacing: 1px; color: var(--sky);
-        border: 1px solid rgba(84,199,248,0.3); background: rgba(84,199,248,0.1);
-        border-radius: 4px; padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+        font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+        background: rgba(251,191,36,0.2); color: #fbbf24; letter-spacing: 0.6px;
       }
       .dr-streamer-badge {
-        font-size: 7px; font-weight: 700; letter-spacing: 1px; color: var(--violet);
-        border: 1px solid rgba(167,139,250,0.3); background: rgba(167,139,250,0.1);
-        border-radius: 4px; padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+        font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+        background: rgba(84,199,248,0.2); color: var(--sky); letter-spacing: 0.6px;
       }
       .dr-you-badge {
-        font-size: 7px; font-weight: 700; letter-spacing: 1px; color: var(--green);
-        border: 1px solid rgba(74,222,128,0.3); background: rgba(74,222,128,0.1);
-        border-radius: 4px; padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+        font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+        background: rgba(74,222,128,0.18); color: #4ade80; letter-spacing: 0.6px;
       }
-      .dr-tile-name { font-size: 11px; color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-      .dr-tile-icons { display: flex; gap: 2px; flex-shrink: 0; }
-      .dr-icon-on  { font-size: 11px; opacity: 1; }
-      .dr-icon-off { font-size: 11px; opacity: 0.22; filter: grayscale(1); }
+      .dr-tile-name { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.85); }
+      .dr-tile-icons { display: flex; gap: 5px; }
+      .dr-icon-on { font-size: 13px; opacity: 0.9; }
+      .dr-icon-off { font-size: 13px; opacity: 0.35; filter: grayscale(1); }
 
       .dr-pin-btn {
-        position: absolute; top: 6px; left: 6px;
-        background: rgba(2,8,16,0.85); border: 1px solid var(--glass-b);
-        border-radius: 7px; font-size: 12px; padding: 2px 6px;
-        cursor: pointer; opacity: 0; transition: opacity 0.2s; z-index: 5;
+        position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5);
+        border: none; border-radius: 8px; padding: 4px 6px; cursor: pointer;
+        font-size: 14px; opacity: 0; transition: opacity 0.2s;
       }
-      .dr-tile:hover .dr-pin-btn, .dr-pinned-stage:hover .dr-pin-btn { opacity: 1; }
-      .dr-pin-btn.active { opacity: 1; border-color: var(--sky); background: rgba(84,199,248,0.1); }
+      .dr-tile:hover .dr-pin-btn { opacity: 1; }
+      .dr-pin-btn.active { opacity: 1; }
 
-      .dr-menu-wrap { position: absolute; top: 6px; right: 6px; z-index: 10; }
+      .dr-menu-wrap { position: absolute; top: 8px; left: 8px; }
       .dr-menu-btn {
-        background: rgba(2,8,16,0.9); border: 1px solid var(--glass-b);
-        border-radius: 7px; color: var(--muted); font-size: 14px; padding: 1px 8px;
-        cursor: pointer; line-height: 1.5; opacity: 0; transition: opacity 0.15s;
+        background: rgba(0,0,0,0.5); border: none; border-radius: 8px; padding: 4px 8px;
+        cursor: pointer; font-size: 18px; color: rgba(255,255,255,0.7);
+        opacity: 0; transition: opacity 0.2s;
       }
       .dr-tile:hover .dr-menu-btn { opacity: 1; }
       .dr-menu-dropdown {
-        position: absolute; top: 30px; right: 0; min-width: 172px;
-        background: rgba(4,11,24,0.99); border: 1px solid var(--glass-b2);
-        border-radius: 12px; overflow: hidden;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.75);
-        animation: dr-fadein 0.15s ease; z-index: 20;
+        position: absolute; top: 32px; left: 0; z-index: 100;
+        background: rgba(5,12,26,0.97); border: 1px solid rgba(84,199,248,0.15);
+        border-radius: 12px; padding: 6px; min-width: 180px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(20px);
       }
       .dr-menu-dropdown button {
-        display: block; width: 100%; text-align: left; padding: 10px 16px;
-        font-size: 12px; font-weight: 500; color: var(--muted);
-        background: transparent; border: none; cursor: pointer;
-        transition: background 0.15s, color 0.15s;
+        display: flex; width: 100%; align-items: center; gap: 8px;
+        padding: 9px 12px; border-radius: 8px; border: none; background: transparent;
+        color: rgba(180,215,240,0.75); font-size: 13px; cursor: pointer;
+        transition: background 0.15s; text-align: left;
       }
-      .dr-menu-dropdown button:hover { background: rgba(84,199,248,0.08); color: var(--white); }
-      .dr-menu-divider { height: 1px; background: var(--glass-b); margin: 3px 0; }
-      .dr-menu-ban { color: var(--danger)!important; }
-      .dr-menu-ban:hover { background: rgba(248,113,113,0.1)!important; }
+      .dr-menu-dropdown button:hover { background: rgba(84,199,248,0.08); color: #e8f2ff; }
+      .dr-menu-divider { height: 1px; background: rgba(84,199,248,0.08); margin: 4px 0; }
+      .dr-menu-ban { color: #fca5a5 !important; }
+      .dr-menu-ban:hover { background: rgba(248,113,113,0.1) !important; }
 
-      /* PiP */
+      /* ── SELF PIP ── */
       .dr-self-pip {
-        position: fixed; bottom: 72px; right: 14px; width: 142px; height: 106px;
-        border-radius: 14px; overflow: hidden;
-        border: 1.5px solid rgba(167,139,250,0.45);
-        box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(167,139,250,0.1);
-        z-index: 30; background: rgba(4,12,28,0.95);
+        position: fixed; bottom: 80px; right: 16px; z-index: 50;
+        width: 120px; background: rgba(5,15,30,0.9); border: 1px solid rgba(84,199,248,0.2);
+        border-radius: 12px; overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
       }
-      .dr-self-pip-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .dr-self-pip-video { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
       .dr-self-pip-avatar {
-        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-        background: linear-gradient(135deg, rgba(84,199,248,0.06), rgba(59,158,218,0.03));
+        width: 100%; aspect-ratio: 4/3;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(5,15,30,0.95);
       }
       .dr-self-pip-initials {
-        font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 900;
-        background: linear-gradient(135deg, var(--sky), #c8f2ff, var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700;
+        color: rgba(180,215,240,0.5);
       }
       .dr-self-pip-info {
-        position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 7px;
-        background: rgba(2,8,16,0.9); display: flex; align-items: center; justify-content: space-between;
+        padding: 5px 8px; display: flex; align-items: center; justify-content: space-between;
       }
-      .dr-self-pip-name { font-size: 10px; font-weight: 600; color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-      .dr-self-pip-icons { display: flex; gap: 2px; flex-shrink: 0; }
-      .dr-self-pip-blocked { position: absolute; top: 4px; left: 4px; display: flex; gap: 3px; font-size: 12px; }
+      .dr-self-pip-name { font-size: 10px; color: rgba(180,215,240,0.55); }
+      .dr-self-pip-icons { display: flex; gap: 3px; font-size: 11px; }
+      .dr-self-pip-blocked {
+        padding: 2px 8px 5px; display: flex; gap: 6px;
+        font-size: 11px; color: #fca5a5;
+      }
 
-      /* Chat */
+      /* ── CONTROLS ── */
+      .dr-controls {
+        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50;
+        display: flex; align-items: center; gap: 10px;
+        background: rgba(3,10,20,0.88); backdrop-filter: blur(24px);
+        border: 1px solid rgba(84,199,248,0.1); border-radius: 18px; padding: 10px 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      }
+      .dr-ctrl-btn {
+        width: 44px; height: 44px; border-radius: 12px; border: 1px solid rgba(84,199,248,0.15);
+        background: rgba(84,199,248,0.06); font-size: 20px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; transition: all 0.18s;
+      }
+      .dr-ctrl-btn.active { border-color: rgba(74,222,128,0.35); background: rgba(74,222,128,0.08); }
+      .dr-ctrl-btn.off { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.07); }
+      .dr-ctrl-btn.neutral { border-color: rgba(84,199,248,0.15); }
+      .dr-ctrl-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+      .dr-ctrl-host-badge {
+        font-size: 18px; padding: 4px 8px; border-radius: 10px;
+        background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.2);
+      }
+      .dr-ctrl-blocked-warn {
+        font-size: 16px; padding: 4px 8px; border-radius: 10px;
+        background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2);
+        animation: dr-pulse 2s infinite;
+      }
+
+      /* ── CHAT ── */
       .dr-chat {
-        width: 275px; flex-shrink: 0;
-        background: rgba(3,9,20,0.98); border-left: 1px solid var(--glass-b);
-        display: flex; flex-direction: column;
+        width: 300px; flex-shrink: 0; display: flex; flex-direction: column;
+        border-left: 1px solid rgba(84,199,248,0.08);
+        background: rgba(3,10,20,0.85); backdrop-filter: blur(20px);
       }
       .dr-chat-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 13px 16px; border-bottom: 1px solid var(--glass-b);
-        font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
-        color: var(--white); flex-shrink: 0;
+        padding: 12px 16px; border-bottom: 1px solid rgba(84,199,248,0.07);
+        font-size: 13px; font-weight: 600; color: rgba(180,215,240,0.7);
       }
-      .dr-chat-header-left { display: flex; align-items: center; gap: 8px; }
-      .dr-chat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sky); box-shadow: 0 0 6px var(--sky); animation: live-pulse 2s infinite; }
-      .dr-chat-close { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; line-height: 1; padding: 2px; }
-      .dr-chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-      .dr-chat-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 24px 0; font-style: italic; }
-      .dr-chat-msg { display: flex; flex-direction: column; gap: 2px; max-width: 92%; }
-      .dr-chat-msg.own { align-self: flex-end; align-items: flex-end; }
-      .dr-chat-author { font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
-      .dr-chat-msg.own .dr-chat-author { color: rgba(84,199,248,0.6); }
+      .dr-chat-header-left { display: flex; align-items: center; gap: 7px; }
+      .dr-chat-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; animation: dr-pulse 2s infinite; }
+      .dr-chat-close { background: none; border: none; cursor: pointer; color: rgba(180,215,240,0.35); font-size: 14px; padding: 2px 6px; border-radius: 6px; transition: all 0.15s; }
+      .dr-chat-close:hover { color: rgba(180,215,240,0.8); background: rgba(84,199,248,0.08); }
+      .dr-chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+      .dr-chat-empty { font-size: 12px; color: rgba(180,215,240,0.25); text-align: center; padding: 20px 0; }
+      .dr-chat-msg { display: flex; flex-direction: column; gap: 3px; }
+      .dr-chat-msg.own { align-items: flex-end; }
+      .dr-chat-author { font-size: 10px; font-weight: 600; color: rgba(180,215,240,0.4); }
       .dr-chat-text {
-        font-size: 12px; color: var(--white); background: rgba(84,199,248,0.06);
-        border: 1px solid var(--glass-b); border-radius: 10px; padding: 6px 10px;
-        line-height: 1.5; word-break: break-word;
+        font-size: 13px; color: rgba(240,246,255,0.85); background: rgba(84,199,248,0.06);
+        border: 1px solid rgba(84,199,248,0.1); padding: 7px 11px; border-radius: 10px;
+        max-width: 220px; word-break: break-word; line-height: 1.45;
       }
-      .dr-chat-msg.own .dr-chat-text { background: rgba(84,199,248,0.13); border-color: rgba(84,199,248,0.22); }
-      .dr-chat-input-row { display: flex; gap: 7px; padding: 10px; border-top: 1px solid var(--glass-b); flex-shrink: 0; }
+      .dr-chat-msg.own .dr-chat-text {
+        background: rgba(84,199,248,0.1); border-color: rgba(84,199,248,0.2);
+      }
+      .dr-chat-input-row {
+        display: flex; gap: 8px; padding: 10px 12px;
+        border-top: 1px solid rgba(84,199,248,0.07);
+      }
       .dr-chat-input {
-        flex: 1; background: rgba(4,12,26,0.9); border: 1px solid var(--glass-b); border-radius: 10px;
-        padding: 8px 10px; color: var(--white); font-size: 12px; outline: none; font-family: 'DM Sans', sans-serif;
+        flex: 1; background: rgba(84,199,248,0.04); border: 1px solid rgba(84,199,248,0.1);
+        border-radius: 10px; padding: 8px 12px; color: #e8f2ff;
+        font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none;
       }
-      .dr-chat-input:focus { border-color: rgba(84,199,248,0.35); }
+      .dr-chat-input:focus { border-color: rgba(84,199,248,0.3); }
       .dr-chat-send {
-        padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(84,199,248,0.3);
-        background: rgba(84,199,248,0.1); color: var(--sky); font-size: 14px; cursor: pointer; transition: all 0.15s;
-      }
-      .dr-chat-send:hover { background: rgba(84,199,248,0.2); }
-
-      /* Toasts */
-      .dr-toasts-stack {
-        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-        z-index: 999; display: flex; flex-direction: column; gap: 7px;
-        align-items: center; pointer-events: none;
-      }
-      .dr-toast {
-        padding: 11px 22px; border-radius: 14px; font-size: 13px; font-weight: 600;
-        color: var(--white); box-shadow: 0 8px 28px rgba(0,0,0,0.55);
-        animation: toast-in 0.28s cubic-bezier(0.16,1,0.3,1);
-        white-space: nowrap; border: 1px solid var(--glass-b2);
-        backdrop-filter: blur(16px); font-family: 'Syne', sans-serif;
-      }
-      .dr-toast-info  { background: rgba(4,11,28,0.97); }
-      .dr-toast-warn  { background: rgba(28,18,4,0.97); border-color: rgba(251,191,36,0.3); color: var(--warn); }
-      .dr-toast-error { background: rgba(28,4,4,0.97); border-color: rgba(248,113,113,0.35); color: var(--danger); }
-      @keyframes toast-in { from { opacity:0; transform:translateY(-12px) scale(0.96); } to { opacity:1; transform:translateY(0) scale(1); } }
-
-      /* Controls */
-      .dr-controls {
-        display: flex; align-items: center; justify-content: center; gap: 10px;
-        padding: 11px 18px;
-        background: rgba(2,8,16,0.98);
-        border-top: 1px solid var(--glass-b); flex-shrink: 0; z-index: 10;
-      }
-      .dr-ctrl-btn {
-        width: 48px; height: 48px; border-radius: 14px; border: 1px solid var(--glass-b);
-        background: var(--glass); font-size: 20px; cursor: pointer;
-        transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
+        width: 34px; height: 34px; border-radius: 10px;
+        border: 1px solid rgba(84,199,248,0.25); background: rgba(84,199,248,0.1);
+        color: var(--sky); cursor: pointer; font-size: 16px; transition: all 0.15s;
         display: flex; align-items: center; justify-content: center;
       }
-      .dr-ctrl-btn.active { border-color: rgba(84,199,248,0.35); background: rgba(84,199,248,0.1); box-shadow: 0 0 14px rgba(84,199,248,0.15); }
-      .dr-ctrl-btn.off { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.06); }
-      .dr-ctrl-btn.neutral { border-color: var(--glass-b); }
-      .dr-ctrl-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
-      .dr-ctrl-host-badge, .dr-ctrl-blocked-warn {
-        width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 20px;
-      }
-      .dr-ctrl-host-badge   { border: 1px solid rgba(251,191,36,0.3); background: rgba(251,191,36,0.07); }
-      .dr-ctrl-blocked-warn { border: 1px solid rgba(248,113,113,0.3); background: rgba(248,113,113,0.07); }
+      .dr-chat-send:hover { background: rgba(84,199,248,0.2); border-color: rgba(84,199,248,0.45); }
 
+      /* ── DESC BAR ── */
       .dr-room-desc-bar {
-        display: flex; align-items: center; gap: 8px; padding: 6px 18px;
-        background: rgba(2,8,16,0.9); border-top: 1px solid var(--glass-b);
-        font-size: 11px; color: var(--muted); flex-shrink: 0;
+        display: flex; align-items: center; gap: 8px; padding: 8px 20px;
+        border-top: 1px solid rgba(84,199,248,0.06);
+        font-size: 12px; color: rgba(180,215,240,0.4);
+        background: rgba(3,10,20,0.6); position: relative; z-index: 5;
       }
 
-      /* ══════════════════════════════════════
-         MODAL CREAR SALA — PREMIUM
-      ══════════════════════════════════════ */
+      /* ── CREATE ROOM MODAL ── */
       .crm-overlay {
-        position: fixed; inset: 0; background: rgba(1,4,10,0.88);
-        backdrop-filter: blur(18px); z-index: 200;
-        display: flex; align-items: center; justify-content: center;
-        padding: 20px; animation: crm-in 0.22s ease;
+        position: fixed; inset: 0; z-index: 200;
+        background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
+        display: flex; align-items: center; justify-content: center; padding: 16px;
+        animation: dr-fadein 0.2s ease;
       }
-      @keyframes crm-in { from { opacity:0; } to { opacity:1; } }
-
       .crm-sheet {
-        width: 100%; max-width: 490px; max-height: 92dvh; overflow-y: auto;
-        background: linear-gradient(165deg, rgba(6,14,30,0.99), rgba(3,9,20,0.99));
-        border: 1px solid rgba(84,199,248,0.16); border-radius: 26px;
-        box-shadow: 0 40px 100px rgba(0,0,0,0.65), 0 0 80px rgba(84,199,248,0.04);
-        position: relative;
-        animation: crm-up 0.32s cubic-bezier(0.34,1.4,0.64,1);
+        width: 100%; max-width: 520px; border-radius: 24px;
+        background: rgba(4,12,24,0.98); border: 1px solid rgba(84,199,248,0.12);
+        box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 60px rgba(84,199,248,0.05);
+        overflow: hidden; position: relative;
+        animation: crm-up 0.3s cubic-bezier(0.16,1,0.3,1) both;
       }
-      .crm-sheet::-webkit-scrollbar { display: none; }
-      @keyframes crm-up {
-        from { transform: translateY(32px) scale(0.96); opacity: 0; }
-        to   { transform: translateY(0) scale(1); opacity: 1; }
-      }
+      @keyframes crm-up { from { opacity:0; transform:translateY(20px) scale(0.97); } to { opacity:1; transform:none; } }
 
-      /* Top beam */
       .crm-beam {
-        position: absolute; top: 0; left: 15%; right: 15%; height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(84,199,248,0.65), transparent);
+        height: 2px; background: linear-gradient(90deg, rgba(84,199,248,0.7), rgba(59,158,218,0.3), transparent);
       }
       .crm-beam-glow {
-        position: absolute; top: -8px; left: 25%; right: 25%; height: 16px;
-        background: radial-gradient(ellipse, rgba(84,199,248,0.18) 0%, transparent 70%);
-        filter: blur(4px); pointer-events: none;
-      }
-
-      /* Logo row en modal */
-      .crm-logo-row {
-        display: flex; align-items: center; gap: 12px;
-        padding: 22px 26px 0;
-      }
-      .crm-logo-icon {
-        position: relative; width: 36px; height: 36px; flex-shrink: 0;
-      }
-      .crm-logo-icon-ring {
-        position: absolute; inset: 0; border-radius: 10px;
-        background: linear-gradient(145deg, rgba(84,199,248,0.2), rgba(59,158,218,0.06));
-        border: 1px solid rgba(84,199,248,0.3);
-        box-shadow: 0 0 16px rgba(84,199,248,0.2);
-        animation: logo-halo 3.5s ease-in-out infinite alternate;
-      }
-      /* REEMPLAZAR CON img cuando tengas el logo real */
-      .crm-logo-placeholder {
-        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-        font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 900;
-        background: linear-gradient(135deg, var(--sky), var(--sky2));
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      }
-      .crm-logo-wordmark {
-        font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800;
-        letter-spacing: -0.6px; color: var(--white); line-height: 1;
-      }
-      .crm-logo-wordmark em {
-        font-style: normal;
-        background: linear-gradient(120deg, var(--sky) 0%, #c8f2ff 55%, var(--sky2) 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      }
-      .crm-logo-section {
-        font-size: 9px; font-weight: 600; letter-spacing: 2px;
-        text-transform: uppercase; color: rgba(84,199,248,0.4);
-        margin-top: 3px; line-height: 1;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(84,199,248,0.15), transparent);
       }
 
       .crm-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 16px 26px 18px; border-bottom: 1px solid rgba(84,199,248,0.07);
+        padding: 20px 26px 18px;
+        border-bottom: 1px solid rgba(84,199,248,0.07);
       }
       .crm-header-left { display: flex; align-items: center; gap: 14px; }
       .crm-crown-wrap {
-        position: relative; width: 44px; height: 44px; flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center;
+        width: 46px; height: 46px; border-radius: 13px;
+        background: rgba(251,191,36,0.08); display: flex; align-items: center; justify-content: center;
+        position: relative;
       }
       .crm-crown-ring {
         position: absolute; inset: 0; border-radius: 13px;
@@ -1964,11 +1911,11 @@ function GlobalStyles() {
       .crm-crown-icon { font-size: 22px; position: relative; z-index: 1; }
 
       .crm-eyebrow {
-        font-size: 10px; font-weight: 600; letter-spacing: 1.8px; text-transform: sans-serif;
+        font-size: 10px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase;
         color: rgba(251,191,36,0.65); margin-bottom: 4px;
       }
       .crm-title {
-        font-family: sans-serif; font-size: 22px; font-weight: 800;
+        font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
         letter-spacing: -0.5px; color: #f0f6ff;
       }
       .crm-close {
@@ -1980,10 +1927,9 @@ function GlobalStyles() {
       .crm-close:hover { border-color: rgba(84,199,248,0.25); color: rgba(180,215,240,0.9); background: rgba(84,199,248,0.07); }
 
       .crm-body { padding: 22px 26px; display: flex; flex-direction: column; gap: 20px; }
-
       .crm-field { display: flex; flex-direction: column; gap: 8px; }
       .crm-label {
-        font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: sans-serif;
+        font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
         color: rgba(180,215,240,0.45); display: flex; align-items: center; gap: 6px;
       }
       .crm-required { color: rgba(84,199,248,0.7); font-size: 13px; }
@@ -2059,6 +2005,9 @@ function GlobalStyles() {
         border-color: rgba(84,199,248,0.5)!important; background: rgba(84,199,248,0.1)!important;
         color: var(--sky)!important;
       }
+      .crm-capacity-note {
+        font-size: 11px; color: rgba(180,215,240,0.28); margin-top: 4px;
+      }
 
       .crm-error {
         display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--danger);
@@ -2077,7 +2026,6 @@ function GlobalStyles() {
         transition: all 0.18s; font-family: 'DM Sans', sans-serif;
       }
       .crm-btn-cancel:hover { border-color: rgba(84,199,248,0.22); color: rgba(180,215,240,0.75); }
-
       .crm-btn-create {
         display: flex; align-items: center; gap: 8px; padding: 12px 26px; border-radius: 13px;
         border: 1px solid rgba(84,199,248,0.38);
@@ -2099,7 +2047,6 @@ function GlobalStyles() {
       .crm-btn-create:disabled { opacity: 0.42; cursor: not-allowed; }
       .crm-arrow { font-size: 16px; transition: transform 0.22s; }
       .crm-btn-create:hover .crm-arrow { transform: translateX(4px); }
-
       .crm-loading-dots { display: flex; gap: 4px; align-items: center; }
       .crm-loading-dots span {
         width: 5px; height: 5px; border-radius: 50%; background: var(--sky);
@@ -2112,6 +2059,22 @@ function GlobalStyles() {
         40%         { opacity: 1; transform: scale(1); }
       }
 
+      /* ── LOCKED MODAL (viewers) ── */
+      .crm-locked-badges {
+        display: flex; gap: 10px; margin-top: 4px;
+      }
+      .crm-locked-badge {
+        padding: 7px 18px; border-radius: 100px; font-size: 13px; font-weight: 600;
+      }
+      .crm-locked-vip {
+        background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
+        color: #fbbf24;
+      }
+      .crm-locked-streamer {
+        background: rgba(84,199,248,0.08); border: 1px solid rgba(84,199,248,0.25);
+        color: var(--sky);
+      }
+
       /* ── Scrollbars ── */
       ::-webkit-scrollbar { width: 3px; height: 3px; }
       ::-webkit-scrollbar-track { background: transparent; }
@@ -2122,7 +2085,6 @@ function GlobalStyles() {
       /* ── Responsive ── */
       @media (max-width: 900px) {
         .dr-header { padding: 12px 18px; }
-        .dr-header-center { display: none; }
         .dr-filters { padding: 12px 18px 6px; }
         .dr-main { padding: 12px 18px 30px; }
       }
@@ -2132,7 +2094,6 @@ function GlobalStyles() {
         .dr-create-btn { padding: 8px 14px; font-size: 12px; }
         .dr-search { max-width: 100%; }
         .crm-sheet { border-radius: 20px; }
-        .crm-logo-row { padding: 18px 20px 0; }
         .crm-header { padding: 14px 20px 16px; }
         .crm-body { padding: 18px 20px; }
         .crm-footer { padding: 12px 20px 20px; }
