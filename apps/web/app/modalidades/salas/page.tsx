@@ -30,6 +30,8 @@ import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/hooks/useProfile";
 import { useSocket } from "@/hooks/useSocket";
+import logoImg from "../../Images/logo.png";
+import debatesImg from "../../Images/debates.png";
 
 type Tag =
   | "Política" | "Tecnología" | "Ciencia" | "Deportes" | "Cultura"
@@ -1395,7 +1397,7 @@ export default function DebateRoomsPage() {
           <div className="dr-logo-full">
             <div className="dr-logo-icon-wrap">
               <div className="dr-logo-icon-halo" />
-              <div className="dr-logo-img-placeholder">T</div>
+              <img src={logoImg.src} alt="Turrinder logo" className="dr-logo-img-placeholder" style={{ objectFit: "cover", borderRadius: "10px" }} />
             </div>
             <div className="dr-logo-text-group">
               <div className="dr-logo-wordmark">Turr<em>inder</em></div>
@@ -1449,7 +1451,7 @@ export default function DebateRoomsPage() {
           ) : filteredRooms.length === 0 ? (
             <div className="dr-empty">
               <div className="dr-empty-orb" />
-              <div className="dr-empty-icon">🎙️</div>
+              <div className="dr-empty-icon"><img src={debatesImg.src} alt="Sin debates" style={{ width: "48px", height: "48px", objectFit: "contain" }} /></div>
               <h3>No hay debates activos</h3>
               <p>{canCreate ? "¡Creá la primera sala y empezá el debate!" : "Esperá a que un VIP o Streamer cree una sala."}</p>
               {canCreate && <button className="dr-empty-create-btn" onClick={handleCreateClick}>+ Crear primera sala</button>}
