@@ -236,9 +236,19 @@ function useDebateMedia(
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
+      console.log(`[Debates] 🔌 PC con ${peerId.slice(0,8)}: ${state}`);
       if (state === "disconnected" || state === "failed" || state === "closed") {
-        setParticipants(prev => prev.filter(p => p.id !== peerId));
-        peerConns.current.delete(peerId);
+        // Solo limpiar si presence ya lo confirmó también (evita falsos positivos de ICE restart)
+        // La presencia es la fuente de verdad; esto es respaldo
+        setTimeout(() => {
+          if (!peerConns.current.has(peerId)) return; // ya fue limpiado por presence
+          const currentState = peerConns.current.get(peerId)?.connectionState;
+          if (currentState === "disconnected" || currentState === "failed" || currentState === "closed") {
+            setParticipants(prev => prev.filter(p => p.id !== peerId));
+            peerConns.current.delete(peerId);
+            console.log(`[Debates] 🗑️ PC con ${peerId.slice(0,8)} eliminada (confirmado por WebRTC)`);
+          }
+        }, 3000); // esperar 3s para ver si presence lo detecta primero
       }
     };
 
@@ -282,23 +292,48 @@ function useDebateMedia(
       config: { broadcast: { self: false }, presence: { key: userId } },
     });
 
-    // Presencia: todos actualizan el conteo en tiempo real
-    // FIX: detectar nuevos miembros en presencia y re-mandar join si no tenemos PC con ellos
+    // Presencia: todos actualizan el conteo y limpian participantes que se fueron
     channel.on("presence", { event: "sync" }, () => {
       const state   = channel.presenceState();
       const current = new Set(Object.keys(state));
       setPresenceCount(current.size);
 
-      if (!isHost) {
-        // Si hay miembros nuevos con los que no tenemos PC → re-mandar join para forzar re-negociación
-        current.forEach(uid => {
-          if (uid !== userId && !knownPresence.current.has(uid) && !peerConns.current.has(uid)) {
-            console.log(`[Debates] 🔄 Miembro nuevo detectado vía presence: ${uid.slice(0,8)}. Re-mandando join.`);
-            sendJoin(channel);
-          }
+      // Limpiar participantes que ya no están en presencia (salida inmediata, sin esperar WebRTC)
+      const gone = [...knownPresence.current].filter(uid => !current.has(uid));
+      if (gone.length > 0) {
+        gone.forEach(uid => {
+          console.log(`[Debates] 👋 ${uid.slice(0,8)} salió (detectado vía presence)`);
+          peerConns.current.get(uid)?.close();
+          peerConns.current.delete(uid);
+          pendingSignals.current.delete(uid);
         });
+        setParticipants(prev => prev.filter(p => !gone.includes(p.id)));
       }
+
+      // Detectar miembros nuevos con los que no tenemos PC → re-mandar join
+      const newMembers = [...current].filter(
+        uid => uid !== userId && !knownPresence.current.has(uid) && !peerConns.current.has(uid)
+      );
+      if (newMembers.length > 0) {
+        console.log(`[Debates] 🔄 Nuevos en presence: ${newMembers.map(u => u.slice(0,8)).join(", ")}. Re-mandando join.`);
+        // Pequeño delay para que el recién llegado tenga sus listeners activos
+        setTimeout(() => sendJoin(channel), 300);
+      }
+
       knownPresence.current = current;
+    });
+
+    // Presence leave: limpieza inmediata adicional (doble cobertura)
+    channel.on("presence", { event: "leave" }, ({ leftPresences }) => {
+      const leftIds = (leftPresences as any[]).map((p: any) => p.userId ?? p.key).filter(Boolean);
+      if (leftIds.length === 0) return;
+      leftIds.forEach((uid: string) => {
+        console.log(`[Debates] 👋 ${uid.slice(0,8)} salió (evento leave)`);
+        peerConns.current.get(uid)?.close();
+        peerConns.current.delete(uid);
+        pendingSignals.current.delete(uid);
+      });
+      setParticipants(prev => prev.filter(p => !leftIds.includes(p.id)));
     });
 
     channel
@@ -489,25 +524,48 @@ function useDebateMedia(
         if (isHost) {
           // Host anuncia que está listo → viewers que ya estaban mandan join
           channel.send({ type: "broadcast", event: "host-ready", payload: { hostId: userId } });
-        } else {
-          // FIX: esperar 400ms para que los listeners del canal queden activos
-          // antes de mandar join, evitando que la offer llegue a un receptor no listo.
-          await new Promise(r => setTimeout(r, 400));
+          // HOST también manda join: así los viewers que ya están crean PC con él inmediatamente
+          await new Promise(r => setTimeout(r, 300));
           sendJoin(channel);
-
-          // FIX retry inteligente: detecta PCs sin remoteDescription (negociación incompleta)
-          // además de la ausencia total de PCs.
+          // El host también tiene retry en caso de que haya viewers que no le respondieron
           retryTimer.current = setInterval(() => {
-            const hasBrokenPC = [...peerConns.current.values()].some(
-              pc => !pc.remoteDescription || pc.connectionState === "failed"
+            const membersWithoutPC = [...knownPresence.current].filter(
+              uid => uid !== userId && !peerConns.current.has(uid)
             );
-            if (peerConns.current.size === 0 || hasBrokenPC) {
-              console.log("[Debates] 🔄 Retry join (sin PCs activas o PC rota)");
+            if (membersWithoutPC.length > 0) {
+              console.log(`[Debates] 🔄 Host retry join (${membersWithoutPC.length} sin PC)`);
               sendJoin(channel);
             } else {
               if (retryTimer.current) { clearInterval(retryTimer.current); retryTimer.current = null; }
             }
-          }, 4000);
+          }, 3000);
+          setTimeout(() => {
+            if (retryTimer.current) { clearInterval(retryTimer.current); retryTimer.current = null; }
+          }, 60000);
+        } else {
+          // Viewer: delay adaptativo — esperar hasta que el canal tenga presentes O máx 600ms
+          let waited = 0;
+          while (Object.keys(channel.presenceState()).length <= 1 && waited < 600) {
+            await new Promise(r => setTimeout(r, 100));
+            waited += 100;
+          }
+          sendJoin(channel);
+
+          // Retry inteligente: detecta PCs sin remoteDescription o PCs rotas
+          retryTimer.current = setInterval(() => {
+            const hasBrokenPC = [...peerConns.current.values()].some(
+              pc => !pc.remoteDescription || pc.connectionState === "failed"
+            );
+            const membersWithoutPC = [...knownPresence.current].filter(
+              uid => uid !== userId && !peerConns.current.has(uid)
+            );
+            if (peerConns.current.size === 0 || hasBrokenPC || membersWithoutPC.length > 0) {
+              console.log("[Debates] 🔄 Viewer retry join");
+              sendJoin(channel);
+            } else {
+              if (retryTimer.current) { clearInterval(retryTimer.current); retryTimer.current = null; }
+            }
+          }, 3000);
           setTimeout(() => {
             if (retryTimer.current) { clearInterval(retryTimer.current); retryTimer.current = null; }
           }, 60000);
