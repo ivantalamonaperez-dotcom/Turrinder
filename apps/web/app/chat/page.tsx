@@ -5,6 +5,7 @@ import Image from "next/image";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import imgLogo from "../../Images/logo.png";
+import imgChat from "../../Images/chat.png";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -676,7 +677,8 @@ export default function ChatPage() {
 
         /* ── EMPTY ── */
         .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; gap: 10px; text-align: center; }
-        .empty-icon-wrap { width: 70px; height: 70px; border-radius: 22px; background: rgba(84,199,248,0.06); border: 1px solid rgba(84,199,248,0.1); display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 6px; }
+        .empty-icon-wrap { display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+        @keyframes floatIcon { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
         .empty-title { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 900; color: rgba(248,248,252,0.22); letter-spacing: -0.03em; }
         .empty-sub   { font-size: 13.5px; color: var(--muted); line-height: 1.6; max-width: 300px; }
         .empty-btn {
@@ -806,13 +808,15 @@ export default function ChatPage() {
 
           ) : matches.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-icon-wrap">💫</div>
+              <div className="empty-icon-wrap">
+                <Image src={imgChat} alt="Sin matches" width={110} height={110} style={{ objectFit: "contain", animation: "floatIcon 3s ease-in-out infinite", filter: "drop-shadow(0 0 22px rgba(84,199,248,0.4))" }} />
+              </div>
               <div className="empty-title">Sin matches aún</div>
               <p className="empty-sub">
                 Cuando los dos se den like, aparece acá para empezar a charlar.
               </p>
-              <button className="empty-btn" onClick={() => router.push("/discover")}>
-                Ir a Discover ✨
+              <button className="empty-btn" onClick={() => router.push("/modalidades/ligues")}>
+                Ir a Ligues ✨
               </button>
             </div>
 
