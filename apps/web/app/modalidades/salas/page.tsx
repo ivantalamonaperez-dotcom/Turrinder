@@ -1,18 +1,28 @@
 "use client";
 
 /**
- * DebateRoomsPage.tsx — v8
+ * DebateRoomsPage.tsx — v9
  *
- * FIXES vs v7:
- *  1. MESH P2P REAL — cada participante nuevo hace offer a TODOS los presentes,
- *     no solo al host. Así las 3+ cámaras se ven en tiempo real para todos.
- *  2. PERFILES REALES — al entrar a la sala se busca name+avatar_url desde
- *     la tabla profiles. El payload "join" lleva {name, avatarUrl, role}.
- *     VideoTile muestra foto de perfil cuando la cámara está apagada.
- *  3. CONTEO EN TIEMPO REAL — presenceCount se sincroniza en todos los clientes
- *     vía Supabase Presence (event: sync), no solo en el host.
- *  4. LOG DE ENTRADA — el servidor (matchmaking_handler) ya logea entradas;
- *     en cliente se agrega console.log al unirse a la sala.
+ * FIXES vs v8 — Race conditions en señalización:
+ *
+ *  PROBLEMA RAÍZ:
+ *    Supabase Broadcast no garantiza entrega si el receptor aún no terminó
+ *    de suscribirse. Cuando B entra y manda "join", A responde con "offer"
+ *    inmediatamente. Pero si B acaba de llamar .subscribe() y el canal no
+ *    está 100% listo del lado de B, la offer llega y se pierde.
+ *    Lo mismo pasa con ICE candidates que llegan antes de que exista la PC.
+ *
+ *  SOLUCIONES:
+ *  1. COLA DE PENDIENTES — offers e ICE que llegan antes de que exista la PC
+ *     se encolan en `pendingSignals`. Cuando createPC() crea la conexión,
+ *     drena la cola automáticamente.
+ *  2. RE-ANNOUNCE EN PRESENCE — cuando el presence "sync" detecta un miembro
+ *     nuevo con el que NO tenemos PC activa, mandamos "join" de nuevo.
+ *     Esto cubre el caso donde B se suscribió pero perdió la offer de A.
+ *  3. RETRY INTELIGENTE — el retry periódico ahora detecta PCs "vacías"
+ *     (sin remoteDescription) además de la ausencia total de PCs.
+ *  4. DELAY POST-SUSCRIPCIÓN — esperamos 400ms después de SUBSCRIBED antes
+ *     de mandar "join", dando tiempo a que los listeners queden activos.
  */
 
 import { useEffect, useCallback, useState, useRef, useMemo } from "react";
@@ -163,13 +173,17 @@ function useDebateMedia(
   const [presenceCount, setPresenceCount] = useState(1);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
-  const localRef    = useRef<MediaStream | null>(null);
-  const peerConns   = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const localRef       = useRef<MediaStream | null>(null);
+  const peerConns      = useRef<Map<string, RTCPeerConnection>>(new Map());
   // Cache de perfiles ya fetcheados para no repetir queries
-  const profileCache = useRef<Map<string, { name: string; avatarUrl: string | null }>>(new Map());
-  const sigCh       = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const retryTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const heartbeat   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const profileCache   = useRef<Map<string, { name: string; avatarUrl: string | null }>>(new Map());
+  const sigCh          = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const retryTimer     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeat      = useRef<ReturnType<typeof setInterval> | null>(null);
+  // FIX RACE CONDITION 1: cola de señales que llegan ANTES de que exista la PC
+  const pendingSignals = useRef<Map<string, Array<{ type: "offer"|"ice"; payload: any }>>>(new Map());
+  // FIX RACE CONDITION 2: set de peers ya conocidos vía presence (re-announce cuando hay nuevo)
+  const knownPresence  = useRef<Set<string>>(new Set());
 
   // ── Obtener perfil con caché ──────────────────────────────────────
   const getProfile = useCallback(async (uid: string) => {
@@ -181,7 +195,7 @@ function useDebateMedia(
 
   // ── Crear RTCPeerConnection con un peer ───────────────────────────
   // MESH: cualquier participante puede crear una PC con cualquier otro.
-  const createPC = useCallback((peerId: string): RTCPeerConnection => {
+  const createPC = useCallback(async (peerId: string): Promise<RTCPeerConnection> => {
     // Cerrar PC previa si existía
     const old = peerConns.current.get(peerId);
     if (old) { old.close(); peerConns.current.delete(peerId); }
@@ -229,6 +243,26 @@ function useDebateMedia(
     };
 
     peerConns.current.set(peerId, pc);
+
+    // FIX: drenar señales que llegaron antes de que existiera esta PC
+    const pending = pendingSignals.current.get(peerId) ?? [];
+    pendingSignals.current.delete(peerId);
+    for (const sig of pending) {
+      if (sig.type === "offer") {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(sig.payload.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sigCh.current?.send({
+            type: "broadcast", event: "answer",
+            payload: { from: userId, to: peerId, sdp: answer },
+          });
+        } catch (e) { console.warn("[Debates] Error drenando offer pendiente de", peerId, e); }
+      } else if (sig.type === "ice") {
+        try { await pc.addIceCandidate(new RTCIceCandidate(sig.payload.candidate)); } catch {}
+      }
+    }
+
     return pc;
   }, [userId, getProfile]);
 
@@ -249,9 +283,22 @@ function useDebateMedia(
     });
 
     // Presencia: todos actualizan el conteo en tiempo real
+    // FIX: detectar nuevos miembros en presencia y re-mandar join si no tenemos PC con ellos
     channel.on("presence", { event: "sync" }, () => {
-      const count = Object.keys(channel.presenceState()).length;
-      setPresenceCount(count);
+      const state   = channel.presenceState();
+      const current = new Set(Object.keys(state));
+      setPresenceCount(current.size);
+
+      if (!isHost) {
+        // Si hay miembros nuevos con los que no tenemos PC → re-mandar join para forzar re-negociación
+        current.forEach(uid => {
+          if (uid !== userId && !knownPresence.current.has(uid) && !peerConns.current.has(uid)) {
+            console.log(`[Debates] 🔄 Miembro nuevo detectado vía presence: ${uid.slice(0,8)}. Re-mandando join.`);
+            sendJoin(channel);
+          }
+        });
+      }
+      knownPresence.current = current;
     });
 
     channel
@@ -286,7 +333,7 @@ function useDebateMedia(
         });
 
         // MESH: YO (cualquier participante ya presente) creo una PC y mando offer
-        const pc = createPC(payload.from);
+        const pc = await createPC(payload.from);
         try {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -320,7 +367,18 @@ function useDebateMedia(
           }];
         });
 
-        const pc = createPC(payload.from);
+        // FIX: si la PC aún no existe, encolar la offer para procesarla cuando createPC la cree
+        if (!peerConns.current.has(payload.from)) {
+          const queue = pendingSignals.current.get(payload.from) ?? [];
+          queue.push({ type: "offer", payload });
+          pendingSignals.current.set(payload.from, queue);
+          console.log(`[Debates] 📥 Offer de ${payload.from.slice(0,8)} encolada (PC no existe aún)`);
+          // Crear la PC vacía ahora para que drene la cola
+          await createPC(payload.from);
+          return;
+        }
+
+        const pc = await createPC(payload.from);
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
           const answer = await pc.createAnswer();
@@ -350,6 +408,11 @@ function useDebateMedia(
         const pc = peerConns.current.get(payload.from);
         if (pc && payload.candidate) {
           try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch {}
+        } else if (!pc && payload.candidate) {
+          // FIX: encolar ICE candidate hasta que exista la PC
+          const queue = pendingSignals.current.get(payload.from) ?? [];
+          queue.push({ type: "ice", payload });
+          pendingSignals.current.set(payload.from, queue);
         }
       })
 
@@ -427,17 +490,24 @@ function useDebateMedia(
           // Host anuncia que está listo → viewers que ya estaban mandan join
           channel.send({ type: "broadcast", event: "host-ready", payload: { hostId: userId } });
         } else {
-          // Viewer nuevo manda join → todos los presentes responderán con offer
+          // FIX: esperar 400ms para que los listeners del canal queden activos
+          // antes de mandar join, evitando que la offer llegue a un receptor no listo.
+          await new Promise(r => setTimeout(r, 400));
           sendJoin(channel);
 
-          // Retry por si el canal tardó en tener presentes
+          // FIX retry inteligente: detecta PCs sin remoteDescription (negociación incompleta)
+          // además de la ausencia total de PCs.
           retryTimer.current = setInterval(() => {
-            if (peerConns.current.size === 0) {
+            const hasBrokenPC = [...peerConns.current.values()].some(
+              pc => !pc.remoteDescription || pc.connectionState === "failed"
+            );
+            if (peerConns.current.size === 0 || hasBrokenPC) {
+              console.log("[Debates] 🔄 Retry join (sin PCs activas o PC rota)");
               sendJoin(channel);
             } else {
               if (retryTimer.current) { clearInterval(retryTimer.current); retryTimer.current = null; }
             }
-          }, 3000);
+          }, 4000);
           setTimeout(() => {
             if (retryTimer.current) { clearInterval(retryTimer.current); retryTimer.current = null; }
           }, 60000);
@@ -580,6 +650,8 @@ function useDebateMedia(
       if (heartbeat.current) clearInterval(heartbeat.current);
       stopMedia();
       peerConns.current.forEach(pc => pc.close()); peerConns.current.clear();
+      pendingSignals.current.clear();
+      knownPresence.current.clear();
       if ((sigCh.current as any)?._polling) clearInterval((sigCh.current as any)._polling);
       if ((sigCh.current as any)?._watchdog) supabase.removeChannel((sigCh.current as any)._watchdog);
       if (sigCh.current) supabase.removeChannel(sigCh.current);
