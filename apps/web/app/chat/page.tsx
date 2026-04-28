@@ -123,6 +123,7 @@ async function fetchMatches(myId: string): Promise<Match[]> {
         .limit(1)
         .maybeSingle();
 
+      // Unread: mensajes del otro hacia mí con read = false
       let unread_count = 0;
       const { data: unreadRows, error: unreadErr } = await supabase
         .from("messages")
@@ -132,13 +133,6 @@ async function fetchMatches(myId: string): Promise<Match[]> {
         .eq("read", false);
       if (!unreadErr) {
         unread_count = unreadRows?.length ?? 0;
-      } else {
-        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: recentRows } = await supabase
-          .from("messages").select("id")
-          .eq("from_user", otherId).eq("to_user", myId)
-          .gte("created_at", since);
-        unread_count = recentRows?.length ?? 0;
       }
 
       return {
@@ -172,7 +166,6 @@ export default function ChatPage() {
   const [loading,  setLoading]  = useState(true);
   const [mounted,  setMounted]  = useState(false);
   const [search,   setSearch]   = useState("");
-  // ── NUEVO: IDs de tarjetas que deben hacer el flash de "mensaje nuevo" ──
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
 
   // ── CARGA INICIAL ──────────────────────────────────────────────────────────
@@ -193,20 +186,16 @@ export default function ChatPage() {
   }, []);
 
   // ── REALTIME ───────────────────────────────────────────────────────────────
-  // Al recibir cualquier cambio en messages, comparamos unread_count anterior
-  // vs nuevo para saber qué tarjetas deben animar el flash.
   const refresh = useCallback(async () => {
     if (!myIdRef.current) return;
     const data = await fetchMatches(myIdRef.current);
 
     setMatches(prev => {
-      // Mapa de unread_count anteriores por match.id
       const prevMap = new Map(prev.map(m => [m.id, m.unread_count]));
       const newFlash = new Set<string>();
 
       data.forEach(m => {
         const prevCount = prevMap.get(m.id) ?? 0;
-        // Si subió el contador → nuevo mensaje recibido → flash
         if (m.unread_count > prevCount) {
           newFlash.add(m.id);
         }
@@ -214,7 +203,6 @@ export default function ChatPage() {
 
       if (newFlash.size > 0) {
         setFlashIds(newFlash);
-        // Limpiar después de que termine la animación (700ms)
         setTimeout(() => setFlashIds(new Set()), 700);
       }
 
@@ -240,7 +228,6 @@ export default function ChatPage() {
           }
         }
       )
-      // También escuchamos cambios de perfil para is_online en tiempo real
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
@@ -253,7 +240,7 @@ export default function ChatPage() {
     };
   }, [refresh, loading]);
 
-  // ── TÍTULO DEL NAVEGADOR con badge de no leídos ────────────────────────────
+  // ── TÍTULO DEL NAVEGADOR ───────────────────────────────────────────────────
   const totalUnread = matches.reduce((acc, m) => acc + m.unread_count, 0);
 
   useEffect(() => {
@@ -424,7 +411,7 @@ export default function ChatPage() {
         }
         .stat-block:hover { background: rgba(255,255,255,0.062); border-color: rgba(84,199,248,0.18); }
 
-        /* ── NUEVO: stat block de no leídos pulsa cuando hay mensajes nuevos ── */
+        /* Stat block de no leídos pulsa */
         .stat-block.unread-active {
           border-color: rgba(239,68,68,0.35) !important;
           background: rgba(239,68,68,0.06) !important;
@@ -565,7 +552,7 @@ export default function ChatPage() {
         }
         .match-card:active { transform: translateX(0); }
 
-        /* ── ESTADO: mensajes no leídos ── */
+        /* ── No leídos ── */
         .match-card.has-unread {
           background: rgba(84,199,248,0.042);
           border-color: rgba(84,199,248,0.18);
@@ -582,7 +569,7 @@ export default function ChatPage() {
           box-shadow: 0 0 10px rgba(239,68,68,0.7);
         }
 
-        /* ── FLASH de mensaje nuevo llegado en realtime ── */
+        /* ── Flash de mensaje nuevo ── */
         .match-card.new-flash {
           animation: newFlash 0.65s cubic-bezier(0.16,1,0.3,1) both;
         }
@@ -760,7 +747,7 @@ export default function ChatPage() {
                   <span className="stat-label">Online</span>
                 </div>
               </div>
-              {/* ── Bloque "Sin leer" — pulsa mientras haya mensajes pendientes ── */}
+              {/* Bloque "Sin leer" — solo aparece si hay mensajes pendientes */}
               {totalUnread > 0 && (
                 <div
                   className="stat-block unread-active"
