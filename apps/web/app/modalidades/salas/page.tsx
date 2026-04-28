@@ -30,8 +30,8 @@ import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/hooks/useProfile";
 import { useSocket } from "@/hooks/useSocket";
-import logoImg from "../../Images/logo.png";
-import debatesImg from "../../Images/debates.png";
+import logoImg from "../../../Images/logo.png";
+import debatesImg from "../../../Images/debates.png";
 
 type Tag =
   | "Política" | "Tecnología" | "Ciencia" | "Deportes" | "Cultura"
@@ -1397,7 +1397,7 @@ export default function DebateRoomsPage() {
           <div className="dr-logo-full">
             <div className="dr-logo-icon-wrap">
               <div className="dr-logo-icon-halo" />
-              <img src={logoImg.src} alt="Turrinder logo" className="dr-logo-img-placeholder" style={{ objectFit: "cover", borderRadius: "10px" }} />
+              <img src={logoImg.src} alt="Turrinder logo" className="dr-logo-img-clean" />
             </div>
             <div className="dr-logo-text-group">
               <div className="dr-logo-wordmark">Turr<em>inder</em></div>
@@ -1451,7 +1451,7 @@ export default function DebateRoomsPage() {
           ) : filteredRooms.length === 0 ? (
             <div className="dr-empty">
               <div className="dr-empty-orb" />
-              <div className="dr-empty-icon"><img src={debatesImg.src} alt="Sin debates" style={{ width: "48px", height: "48px", objectFit: "contain" }} /></div>
+              <div className="dr-empty-icon"><img src={debatesImg.src} alt="Sin debates" className="dr-empty-debates-img" /></div>
               <h3>No hay debates activos</h3>
               <p>{canCreate ? "¡Creá la primera sala y empezá el debate!" : "Esperá a que un VIP o Streamer cree una sala."}</p>
               {canCreate && <button className="dr-empty-create-btn" onClick={handleCreateClick}>+ Crear primera sala</button>}
@@ -1530,6 +1530,10 @@ function GlobalStyles() {
         display:flex; align-items:center; justify-content:center;
         font-family:'Syne',sans-serif; font-size:17px; font-weight:800; color:var(--sky);
       }
+      .dr-logo-img-clean {
+        width:36px; height:36px; object-fit:contain;
+        display:block; position:relative; z-index:1;
+      }
       .dr-logo-text-group { display:flex; flex-direction:column; gap:2px; }
       .dr-logo-wordmark { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#f0f6ff; letter-spacing:-0.5px; }
       .dr-logo-wordmark em { font-style:normal; color:var(--sky); }
@@ -1596,7 +1600,9 @@ function GlobalStyles() {
       @keyframes dr-spin { to{transform:rotate(360deg);} }
       .dr-empty { display:flex; flex-direction:column; align-items:center; gap:14px; padding:80px 0; text-align:center; position:relative; }
       .dr-empty-orb { position:absolute; width:300px; height:300px; border-radius:50%; background:radial-gradient(circle,rgba(84,199,248,0.06) 0%,transparent 70%); top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; }
-      .dr-empty-icon { font-size:48px; filter:grayscale(0.4); }
+      .dr-empty-icon { font-size:48px; filter:grayscale(0.4); margin-bottom:6px; }
+      .dr-empty-debates-img { width:96px; height:96px; object-fit:contain; filter:drop-shadow(0 0 18px rgba(84,199,248,0.35)); animation:dr-levitate 3.2s ease-in-out infinite; }
+      @keyframes dr-levitate { 0%,100%{transform:translateY(0px);} 50%{transform:translateY(-10px);} }
       .dr-empty h3 { font-family:'Syne',sans-serif; font-size:20px; font-weight:700; color:#f0f6ff; }
       .dr-empty p { font-size:14px; color:rgba(180,215,240,0.45); max-width:280px; }
       .dr-empty-create-btn { margin-top:6px; padding:11px 24px; border-radius:13px; border:1px solid rgba(84,199,248,0.35); background:linear-gradient(135deg,rgba(84,199,248,0.14),rgba(59,158,218,0.07)); color:var(--sky); font-family:'Syne',sans-serif; font-size:13px; font-weight:700; cursor:pointer; transition:all 0.2s; }
