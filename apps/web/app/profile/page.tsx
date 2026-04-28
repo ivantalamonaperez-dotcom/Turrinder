@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import imgCamara   from "../../Images/camara.png";
 import imgDiamante from "../../Images/diamante.png";
 import imgPerfil   from "../../Images/perfil.png";
+import imgVip      from "../../Images/vip.png";
+import imgStreamer  from "../../Images/streamer.png";
 
 /* ─────────────────────────── CONSTANTS ─────────────────────────── */
 
@@ -65,6 +67,7 @@ export default function ProfilePage() {
   const [interests,  setInterests]  = useState<string[]>([]);
   const [lookingFor, setLookingFor] = useState<string[]>([]);
   const [photos,     setPhotos]     = useState<Photo[]>([]);
+  const [role,       setRole]       = useState<string>("viewer");
 
   /* ── Load profile ── */
   useEffect(() => {
@@ -76,7 +79,7 @@ export default function ProfilePage() {
 
       const { data: p } = await supabase
         .from("profiles")
-        .select("name, age, bio, gender, location, occupation, languages, avatar_url, photos, interests, looking_for")
+        .select("name, age, bio, gender, location, occupation, languages, avatar_url, photos, interests, looking_for, role")
         .eq("id", me.user.id)
         .single();
 
@@ -90,6 +93,7 @@ export default function ProfilePage() {
         setLanguages(p.languages || []);
         setInterests(p.interests || []);
         setLookingFor(p.looking_for || []);
+        setRole(p.role || "viewer");
 
         const urls: Photo[] = [];
         if (p.photos?.length) {
@@ -313,6 +317,22 @@ export default function ProfilePage() {
           from { box-shadow: 0 0 20px rgba(84,199,248,0.2), 0 20px 50px rgba(0,0,0,0.6); }
           to   { box-shadow: 0 0 50px rgba(84,199,248,0.45), 0 20px 60px rgba(0,0,0,0.6); }
         }
+        .pf-avatar-ring.ring-vip {
+          background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706, rgba(251,191,36,0.3));
+          animation: ringGlowVip 5s ease-in-out infinite alternate;
+        }
+        @keyframes ringGlowVip {
+          from { box-shadow: 0 0 20px rgba(251,191,36,0.25), 0 20px 50px rgba(0,0,0,0.6); }
+          to   { box-shadow: 0 0 55px rgba(251,191,36,0.55), 0 20px 60px rgba(0,0,0,0.6); }
+        }
+        .pf-avatar-ring.ring-streamer {
+          background: linear-gradient(135deg, #4ade80, #22c55e, #16a34a, rgba(74,222,128,0.3));
+          animation: ringGlowStreamer 5s ease-in-out infinite alternate;
+        }
+        @keyframes ringGlowStreamer {
+          from { box-shadow: 0 0 20px rgba(74,222,128,0.25), 0 20px 50px rgba(0,0,0,0.6); }
+          to   { box-shadow: 0 0 55px rgba(74,222,128,0.55), 0 20px 60px rgba(0,0,0,0.6); }
+        }
         .pf-avatar-inner {
           width: 100%; height: 100%; border-radius: 25px; overflow: hidden;
           background: var(--bg2); display: flex; align-items: center; justify-content: center;
@@ -333,6 +353,24 @@ export default function ProfilePage() {
         }
         .pf-avatar-edit-btn img { width: 16px; height: 16px; filter: brightness(0) invert(1); }
         .pf-avatar-edit-btn:hover { transform: scale(1.18) rotate(12deg); }
+
+        /* ROLE BADGE */
+        .pf-role-badge {
+          position: absolute; bottom: -6px; left: -6px;
+          width: 30px; height: 30px; border-radius: 50%;
+          border: 2.5px solid var(--bg);
+          display: flex; align-items: center; justify-content: center;
+          overflow: hidden;
+        }
+        .pf-role-badge.badge-vip {
+          background: linear-gradient(135deg, #fbbf24, #d97706);
+          box-shadow: 0 4px 14px rgba(251,191,36,0.5);
+        }
+        .pf-role-badge.badge-streamer {
+          background: linear-gradient(135deg, #4ade80, #16a34a);
+          box-shadow: 0 4px 14px rgba(74,222,128,0.5);
+        }
+        .pf-role-badge img { width: 18px; height: 18px; object-fit: contain; filter: brightness(0) invert(1); }
 
         /* HERO CENTER */
         .pf-hero-info { display: flex; flex-direction: column; gap: 6px; animation: fadeUp 0.5s 0.1s both; }
@@ -594,7 +632,7 @@ export default function ProfilePage() {
 
               {/* Avatar */}
               <div className="pf-avatar-col" style={{ animation: "fadeUp 0.5s 0.05s both" }}>
-                <div className="pf-avatar-ring">
+                <div className={`pf-avatar-ring ${role === "vip" ? "ring-vip" : role === "streamer" ? "ring-streamer" : ""}`}>
                   <div className="pf-avatar-inner">
                     {photos[0]
                       ? <img src={photos[0].url} alt={name || "Avatar"} className="photo-img" />
@@ -610,6 +648,16 @@ export default function ProfilePage() {
                 >
                   <img src={imgCamara.src} alt="" aria-hidden="true" />
                 </button>
+                {role === "vip" && (
+                  <div className="pf-role-badge badge-vip" title="VIP">
+                    <img src={imgVip.src} alt="VIP" />
+                  </div>
+                )}
+                {role === "streamer" && (
+                  <div className="pf-role-badge badge-streamer" title="Streamer">
+                    <img src={imgStreamer.src} alt="Streamer" />
+                  </div>
+                )}
               </div>
 
               {/* Info central */}
