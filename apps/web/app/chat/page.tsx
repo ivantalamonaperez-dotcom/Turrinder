@@ -294,7 +294,7 @@ export default function ChatPage() {
 
         html, body {
           height: 100%;
-          background: var(--bg);
+          background: #030a14;
           font-family: 'DM Sans', sans-serif;
           color: var(--text);
           overflow: hidden;
@@ -311,13 +311,13 @@ export default function ChatPage() {
           mix-blend-mode: difference;
         }
 
-        /* ── BG MESH ── */
+        /* ── BG CELESTE (igual que Modalidades) ── */
         .bg-mesh {
           position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          background:
-            radial-gradient(ellipse 90% 55% at -15% 0%,   rgba(84,199,248,0.11) 0%, transparent 55%),
-            radial-gradient(ellipse 55% 65% at 115% 100%,  rgba(59,158,218,0.08) 0%, transparent 55%),
-            radial-gradient(ellipse 45% 35% at 50%  115%,  rgba(84,199,248,0.04) 0%, transparent 55%);
+          background-color: #030a14;
+          background-image:
+            radial-gradient(ellipse 80% 50% at 50% -10%, rgba(84,199,248,0.12) 0%, transparent 80%),
+            radial-gradient(ellipse 60% 60% at 100% 100%, rgba(59,158,218,0.08) 0%, transparent 70%);
         }
 
         /* ══ LAYOUT ══ */
@@ -720,10 +720,6 @@ export default function ChatPage() {
           <div className={`sidebar-eyebrow ${mounted ? "in" : ""}`}>Mensajes</div>
 
           <div className={`sidebar-brand ${mounted ? "in" : ""}`}>
-            <div className="sidebar-logo">
-              <Image src={imgLogo} alt="Turrinder" width={46} height={46}
-                style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-            </div>
             <h1 className="sidebar-title">
               <span className="title-plain">Tus </span>
               <span className="title-accent">Chats</span>
