@@ -124,7 +124,6 @@ async function fetchMatches(myId: string): Promise<Match[]> {
         .limit(1)
         .maybeSingle();
 
-      // Unread: mensajes del otro hacia mí con read = false
       let unread_count = 0;
       const { data: unreadRows, error: unreadErr } = await supabase
         .from("messages")
@@ -312,7 +311,7 @@ export default function ChatPage() {
           mix-blend-mode: difference;
         }
 
-        /* ── BG CELESTE (igual que Modalidades) ── */
+        /* ── BG CELESTE ── */
         .bg-mesh {
           position: fixed; inset: 0; z-index: 0; pointer-events: none;
           background-color: #030a14;
@@ -412,7 +411,6 @@ export default function ChatPage() {
         }
         .stat-block:hover { background: rgba(255,255,255,0.062); border-color: rgba(84,199,248,0.18); }
 
-        /* Stat block de no leídos pulsa */
         .stat-block.unread-active {
           border-color: rgba(239,68,68,0.35) !important;
           background: rgba(239,68,68,0.06) !important;
@@ -553,7 +551,6 @@ export default function ChatPage() {
         }
         .match-card:active { transform: translateX(0); }
 
-        /* ── No leídos ── */
         .match-card.has-unread {
           background: rgba(84,199,248,0.042);
           border-color: rgba(84,199,248,0.18);
@@ -570,7 +567,6 @@ export default function ChatPage() {
           box-shadow: 0 0 10px rgba(239,68,68,0.7);
         }
 
-        /* ── Flash de mensaje nuevo ── */
         .match-card.new-flash {
           animation: newFlash 0.65s cubic-bezier(0.16,1,0.3,1) both;
         }
@@ -631,7 +627,6 @@ export default function ChatPage() {
         .match-preview.unread-text  { color: rgba(255,255,255,0.82); font-weight: 500; }
         .preview-you { color: rgba(84,199,248,0.52); font-weight: 500; }
 
-        /* Badge rojo con número */
         .unread-badge {
           display: flex; align-items: center; justify-content: center;
           background: #ef4444;
@@ -648,7 +643,6 @@ export default function ChatPage() {
           to   { transform: scale(1); opacity: 1; }
         }
 
-        /* Dot animado junto al nombre */
         .new-dot {
           width: 7px; height: 7px; border-radius: 50%;
           background: #ef4444;
@@ -696,19 +690,89 @@ export default function ChatPage() {
         .empty-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(84,199,248,0.4); }
         .no-results { padding: 32px 0; text-align: center; color: var(--muted); font-size: 13.5px; }
 
+        /* ══ MOBILE STATS FOOTER ══ */
+        /* Oculto en desktop */
+        .mobile-stats-footer { display: none; }
+
         /* ── MOBILE ── */
         @media (max-width: 800px) {
           html, body { overflow: auto; cursor: auto; }
           .custom-cursor { display: none; }
-          .layout { flex-direction: column; height: auto; }
-          .sidebar { width: 100%; height: auto; padding: 28px 20px 20px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.055); }
+
+          .layout {
+            flex-direction: column;
+            height: auto;
+            min-height: 100vh;
+          }
+
+          /* SIDEBAR: textos + ad, sin stats */
+          .sidebar {
+            width: 100%;
+            height: auto;
+            padding: 32px 20px 0;
+            border-right: none;
+            border-bottom: none;
+            display: flex;
+            flex-direction: column;
+          }
           .sidebar::after { display: none; }
-          .stat-blocks { grid-template-columns: repeat(3, 1fr); }
-          .panel-right { height: auto; overflow: visible; }
-          .panel-topbar { padding: 20px 20px 0; }
+
+          /* Ad pierde el margin-top: auto para quedar pegado al texto */
+          .ad-wrap {
+            margin-top: 20px;
+            margin-bottom: 0;
+          }
+
+          /* Stats del sidebar se ocultan — van al footer */
+          .stat-blocks { display: none !important; }
+
+          /* PANEL DERECHO */
+          .panel-right {
+            height: auto;
+            overflow: visible;
+            /* Espacio para el footer fijo */
+            padding-bottom: 96px;
+          }
+          .panel-topbar  { padding: 20px 20px 0; }
           .panel-divider { padding: 14px 20px 8px; }
-          .matches-scroll { overflow-y: visible; flex: none; padding: 0 20px 40px; }
-          .ad-wrap { margin-top: 16px; }
+          .matches-scroll {
+            overflow-y: visible;
+            flex: none;
+            padding: 0 20px 16px;
+          }
+
+          /* ── FOOTER FIJO CON STATS ── */
+          .mobile-stats-footer {
+            display: flex !important;
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 200;
+            padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+            gap: 8px;
+            background: rgba(3,10,20,0.86);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-top: 1px solid rgba(84,199,248,0.13);
+            box-shadow: 0 -8px 32px rgba(0,0,0,0.35);
+          }
+          .mobile-stats-footer .stat-block {
+            flex: 1;
+            padding: 10px 12px 9px;
+            border-radius: 14px;
+            /* reset hover que no aplica en mobile */
+            transition: none;
+          }
+          .mobile-stats-footer .stat-number {
+            font-size: 22px;
+          }
+          .mobile-stats-footer .stat-block.unread-active {
+            flex: 1.3;
+          }
+
+          /* En mobile los cards no tienen cursor: none */
+          .match-card { cursor: pointer; }
+          .search-input { cursor: text; }
+          .empty-btn { cursor: pointer; }
         }
       `}</style>
 
@@ -732,6 +796,7 @@ export default function ChatPage() {
             Conectá con quienes ya tienen algo en común con vos.
           </p>
 
+          {/* Stats — solo visibles en desktop (en mobile van al footer) */}
           {!loading && (
             <div className={`stat-blocks ${mounted ? "in" : ""}`}>
               <div className="stat-block">
@@ -745,7 +810,6 @@ export default function ChatPage() {
                   <span className="stat-label">Online</span>
                 </div>
               </div>
-              {/* Bloque "Sin leer" — solo aparece si hay mensajes pendientes */}
               {totalUnread > 0 && (
                 <div
                   className="stat-block unread-active"
@@ -891,6 +955,30 @@ export default function ChatPage() {
             </div>
           )}
         </div>
+
+        {/* ════ MOBILE STATS FOOTER (fixed, solo visible en mobile) ════ */}
+        {!loading && (
+          <div className="mobile-stats-footer">
+            <div className="stat-block">
+              <span className="stat-number sky">{matches.length}</span>
+              <span className="stat-label">Conexiones</span>
+            </div>
+            <div className="stat-block">
+              <span className="stat-number green">{onlineCount}</span>
+              <div className="stat-dot-row">
+                <span className="stat-dot" />
+                <span className="stat-label">Online</span>
+              </div>
+            </div>
+            {totalUnread > 0 && (
+              <div className="stat-block unread-active">
+                <span className="stat-number red">{totalUnread}</span>
+                <span className="stat-label">Sin leer</span>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </>
   );

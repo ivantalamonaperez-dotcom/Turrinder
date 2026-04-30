@@ -54,6 +54,10 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<Tab>("info");
   const [errors,    setErrors]    = useState<ValidationErrors>({});
 
+  /* — Drag state — */
+  const [dragIdx,   setDragIdx]   = useState<number | null>(null);
+  const [overIdx,   setOverIdx]   = useState<number | null>(null);
+
   /* — User data — */
   const [userId,     setUserId]     = useState("");
   const [email,      setEmail]      = useState("");
@@ -146,7 +150,104 @@ export default function ProfilePage() {
   const removePhoto = (idx: number) =>
     setPhotos(prev => prev.filter((_, i) => i !== idx));
 
-  /* ── Save (separated concerns) ── */
+  /* ── Drag & drop handlers ── */
+  const handleDragStart = (e: React.DragEvent, idx: number) => {
+    // Only allow dragging filled slots
+    if (!photos[idx]) return;
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = "move";
+    // Transparent ghost on some browsers
+    const ghost = document.createElement("div");
+    ghost.style.position = "absolute";
+    ghost.style.top = "-9999px";
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 0, 0);
+    setTimeout(() => document.body.removeChild(ghost), 0);
+  };
+
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOverIdx(idx);
+  };
+
+  const handleDragLeave = () => {
+    setOverIdx(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === targetIdx) {
+      setDragIdx(null);
+      setOverIdx(null);
+      return;
+    }
+    // Swap the two slots
+    setPhotos(prev => {
+      const next = [...prev];
+      const dragPhoto   = next[dragIdx]   ?? null;
+      const targetPhoto = next[targetIdx] ?? null;
+      // Place target photo in drag origin slot
+      if (targetPhoto) {
+        next[dragIdx] = targetPhoto;
+      } else {
+        // If target was empty, remove from original position
+        next.splice(dragIdx, 1);
+      }
+      // Place drag photo in target slot
+      if (dragPhoto) {
+        next[targetIdx] = dragPhoto;
+      }
+      return next.filter(Boolean); // clean any undefined gaps
+    });
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
+  /* ── Touch drag (mobile) ── */
+  const touchOriginIdx = useRef<number | null>(null);
+  const touchOverIdxRef = useRef<number | null>(null);
+
+  const handleTouchStart = (idx: number) => {
+    if (!photos[idx]) return;
+    touchOriginIdx.current = idx;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const slot = el?.closest("[data-slot-idx]") as HTMLElement | null;
+    const idx = slot ? parseInt(slot.dataset.slotIdx!) : null;
+    touchOverIdxRef.current = idx;
+    setOverIdx(idx);
+  };
+
+  const handleTouchEnd = () => {
+    const from = touchOriginIdx.current;
+    const to   = touchOverIdxRef.current;
+    if (from !== null && to !== null && from !== to) {
+      setPhotos(prev => {
+        const next = [...prev];
+        const dragPhoto   = next[from] ?? null;
+        const targetPhoto = next[to]   ?? null;
+        if (targetPhoto) next[from] = targetPhoto;
+        else next.splice(from, 1);
+        if (dragPhoto) next[to] = dragPhoto;
+        return next.filter(Boolean);
+      });
+    }
+    touchOriginIdx.current = null;
+    touchOverIdxRef.current = null;
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
+  /* ── Save ── */
   const uploadPhotos = async (photoList: Photo[]): Promise<string[]> => {
     const finalUrls: string[] = [];
     for (const photo of photoList) {
@@ -206,7 +307,7 @@ export default function ProfilePage() {
     router.push("/");
   };
 
-  /* ── Completion score (8 items now) ── */
+  /* ── Completion score ── */
   const completionItems = [
     !!name, !!age, !!bio, !!gender,
     photos.length > 0, lookingFor.length > 0,
@@ -245,7 +346,6 @@ export default function ProfilePage() {
           --success:  #22c55e;
         }
 
-        /* ROOT */
         .pf {
           min-height: 100dvh;
           background: var(--bg);
@@ -255,7 +355,6 @@ export default function ProfilePage() {
           padding-bottom: 120px;
         }
 
-        /* AMBIENT */
         .pf-ambient {
           position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
         }
@@ -274,7 +373,6 @@ export default function ProfilePage() {
         @keyframes orb1 { from { transform: translate(0,0) scale(1); } to { transform: translate(-40px,60px) scale(1.15); } }
         @keyframes orb2 { from { transform: translate(0,0) scale(1); } to { transform: translate(50px,-40px) scale(1.1); } }
 
-        /* FLAG */
         .pf-flag {
           position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 300;
           background: linear-gradient(90deg,
@@ -284,10 +382,8 @@ export default function ProfilePage() {
           opacity: 0.6;
         }
 
-        /* WRAP */
         .pf-wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
 
-        /* HERO */
         .pf-hero {
           position: relative; z-index: 1; width: 100%;
           background: linear-gradient(180deg, rgba(84,199,248,0.06) 0%, transparent 100%);
@@ -306,7 +402,6 @@ export default function ProfilePage() {
           align-items: start; gap: 0 28px; padding-bottom: 28px;
         }
 
-        /* AVATAR */
         .pf-avatar-col { position: relative; }
         .pf-avatar-ring {
           width: 108px; height: 108px; border-radius: 28px; padding: 3px;
@@ -354,7 +449,6 @@ export default function ProfilePage() {
         .pf-avatar-edit-btn img { width: 16px; height: 16px; filter: brightness(0) invert(1); }
         .pf-avatar-edit-btn:hover { transform: scale(1.18) rotate(12deg); }
 
-        /* ROLE BADGE */
         .pf-role-badge {
           position: absolute; bottom: -6px; left: -6px;
           width: 30px; height: 30px; border-radius: 50%;
@@ -372,7 +466,6 @@ export default function ProfilePage() {
         }
         .pf-role-badge img { width: 18px; height: 18px; object-fit: contain; filter: brightness(0) invert(1); }
 
-        /* HERO CENTER */
         .pf-hero-info { display: flex; flex-direction: column; gap: 6px; animation: fadeUp 0.5s 0.1s both; }
         .pf-hero-name {
           font-family: 'Syne', sans-serif;
@@ -397,7 +490,6 @@ export default function ProfilePage() {
           -webkit-box-orient: vertical; overflow: hidden;
         }
 
-        /* HERO STATS */
         .pf-hero-stats { display: flex; flex-direction: column; gap: 8px; animation: fadeUp 0.5s 0.2s both; }
         .pf-stat-card {
           background: var(--glass); border: 1px solid var(--glass-b);
@@ -410,7 +502,6 @@ export default function ProfilePage() {
         .pf-stat-val { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--sky); line-height: 1; }
         .pf-stat-key { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
 
-        /* COMPLETION */
         .pf-completion { position: relative; padding: 16px 0; animation: fadeUp 0.5s 0.25s both; }
         .pf-completion-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
         .pf-completion-label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
@@ -429,7 +520,6 @@ export default function ProfilePage() {
         }
         @keyframes shimBar { from { transform: translateX(-200%); } to { transform: translateX(200%); } }
 
-        /* TABS */
         .pf-tabs-wrap { position: relative; }
         .pf-tabs {
           display: flex; gap: 4px; padding: 12px 0;
@@ -449,17 +539,14 @@ export default function ProfilePage() {
         .pf-tab.active { background: rgba(84,199,248,0.10); border-color: rgba(84,199,248,0.32); color: var(--sky); }
         .pf-tab.active img { opacity: 1; filter: drop-shadow(0 0 5px rgba(84,199,248,0.7)); transform: scale(1.1); }
 
-        /* CONTENT */
         .pf-content { position: relative; padding: 28px 0 0; animation: fadeUp 0.4s 0.35s both; }
         .pf-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
-        /* SECTION HEADER */
         .pf-section-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
         .pf-section-hdr img { width: 22px; height: 22px; opacity: 0.7; filter: drop-shadow(0 0 6px rgba(84,199,248,0.35)); }
         .pf-section-hdr-title { font-size: 10px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: var(--sky); opacity: 0.8; }
         .pf-section-hdr-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--glass-b), transparent); }
 
-        /* CARD */
         .pf-card {
           background: var(--glass); border: 1px solid var(--glass-b);
           border-radius: 18px; padding: 20px;
@@ -468,7 +555,6 @@ export default function ProfilePage() {
         .pf-card:focus-within { border-color: rgba(84,199,248,0.3); background: rgba(84,199,248,0.05); }
         .pf-card.pf-card-error { border-color: rgba(248,113,113,0.4) !important; }
 
-        /* FIELD */
         .pf-field { display: flex; flex-direction: column; gap: 6px; }
 
         .pf-input {
@@ -486,7 +572,6 @@ export default function ProfilePage() {
         .pf-field-error { font-size: 11px; color: var(--error); margin-top: 2px; }
         .pf-char { text-align: right; font-size: 10px; color: var(--muted); margin-top: 3px; }
 
-        /* PILLS */
         .pf-pill-row { display: flex; gap: 7px; flex-wrap: wrap; }
         .pf-pill {
           padding: 7px 14px; background: var(--glass); border: 1.5px solid var(--glass-b);
@@ -497,7 +582,6 @@ export default function ProfilePage() {
         .pf-pill.active { background: rgba(84,199,248,0.12); border-color: rgba(84,199,248,0.45); color: var(--sky); }
         .pf-pill:hover:not(.active) { border-color: rgba(84,199,248,0.22); color: var(--w); }
 
-        /* INTEREST CHIPS */
         .pf-chips { display: flex; gap: 8px; flex-wrap: wrap; }
         .pf-chip {
           padding: 6px 13px; background: var(--glass); border: 1.5px solid var(--glass-b);
@@ -511,26 +595,64 @@ export default function ProfilePage() {
         }
         .pf-chip:hover:not(.active) { border-color: rgba(84,199,248,0.2); color: var(--w); }
 
-        /* PHOTOS */
+        /* ── PHOTOS GRID ── */
         .pf-photos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
         .pf-photo-slot {
           aspect-ratio: 3/4; border-radius: 14px; overflow: hidden; position: relative;
           background: var(--glass); border: 1.5px dashed var(--glass-b);
           cursor: pointer; transition: all 0.22s ease;
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+          user-select: none;
         }
-        .pf-photo-slot:not(.filled):hover { border-color: rgba(84,199,248,0.4); background: rgba(84,199,248,0.07); transform: scale(1.02); }
-        .pf-photo-slot.filled { border-style: solid; border-color: rgba(84,199,248,0.15); cursor: default; }
-        .pf-photo-slot img.photo-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .pf-photo-add-icon { width: 36px; height: 36px; opacity: 0.2; transition: opacity 0.2s, transform 0.2s; }
-        .pf-photo-slot:not(.filled):hover .pf-photo-add-icon { opacity: 0.45; transform: scale(1.1); }
-        .pf-photo-add-text { font-size: 10px; color: var(--muted); text-align: center; padding: 0 8px; }
+        /* Empty slot hover */
+        .pf-photo-slot.empty:hover {
+          border-color: rgba(84,199,248,0.4);
+          background: rgba(84,199,248,0.07);
+          transform: scale(1.02);
+        }
+        /* Filled slot: solid border */
+        .pf-photo-slot.filled {
+          border-style: solid;
+          border-color: rgba(84,199,248,0.15);
+          cursor: grab;
+        }
+        .pf-photo-slot.filled:active { cursor: grabbing; }
+
+        /* Dragging source: dimmed */
+        .pf-photo-slot.dragging-source {
+          opacity: 0.38;
+          transform: scale(0.96);
+          border-color: rgba(84,199,248,0.35);
+          transition: opacity 0.15s, transform 0.15s;
+        }
+
+        /* Drop target highlight */
+        .pf-photo-slot.drop-target {
+          border-color: var(--sky) !important;
+          border-style: solid !important;
+          background: rgba(84,199,248,0.10) !important;
+          box-shadow: 0 0 0 2px rgba(84,199,248,0.28), inset 0 0 20px rgba(84,199,248,0.08);
+          transform: scale(1.03);
+        }
+        /* Special glow for slot 0 (will become principal) */
+        .pf-photo-slot.drop-target.slot-0 {
+          border-color: #fbbf24 !important;
+          box-shadow: 0 0 0 2px rgba(251,191,36,0.4), inset 0 0 20px rgba(251,191,36,0.07);
+        }
+
+        .pf-photo-slot img.photo-img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+        .pf-photo-add-icon { width: 36px; height: 36px; opacity: 0.2; transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
+        .pf-photo-slot.empty:hover .pf-photo-add-icon { opacity: 0.45; transform: scale(1.1); }
+        .pf-photo-add-text { font-size: 10px; color: var(--muted); text-align: center; padding: 0 8px; pointer-events: none; }
+
         .pf-photo-main {
           position: absolute; top: 7px; left: 7px;
           background: linear-gradient(135deg, var(--sky), var(--sky3));
           color: #020d18; font-size: 9px; font-weight: 700;
           letter-spacing: 1px; text-transform: uppercase;
           padding: 3px 7px; border-radius: 6px; z-index: 2;
+          pointer-events: none;
         }
         .pf-photo-rm {
           position: absolute; top: 7px; right: 7px;
@@ -541,9 +663,42 @@ export default function ProfilePage() {
           z-index: 2; transition: background 0.15s;
         }
         .pf-photo-rm:hover { background: rgba(239,68,68,0.8); }
+
+        /* Drag handle icon overlay on filled slots */
+        .pf-drag-handle {
+          position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%);
+          display: flex; align-items: center; gap: 2px;
+          opacity: 0; transition: opacity 0.2s; z-index: 3; pointer-events: none;
+        }
+        .pf-photo-slot.filled:hover .pf-drag-handle { opacity: 1; }
+        .pf-drag-handle span {
+          display: block; width: 3px; height: 3px; border-radius: 50%;
+          background: rgba(255,255,255,0.6);
+        }
+
+        /* Drop hint overlay on slot 0 when dragging */
+        .pf-photo-slot.drop-target.slot-0::after {
+          content: '★ Principal';
+          position: absolute; bottom: 0; left: 0; right: 0;
+          background: linear-gradient(to top, rgba(251,191,36,0.7), transparent);
+          color: #fef08a; font-size: 10px; font-weight: 700;
+          letter-spacing: 1px; text-transform: uppercase;
+          padding: 16px 0 8px; text-align: center;
+          pointer-events: none; z-index: 4;
+        }
+
+        .pf-drag-hint {
+          display: flex; align-items: center; gap: 7px;
+          font-size: 11px; color: var(--muted);
+          padding: 10px 14px;
+          background: rgba(84,199,248,0.04);
+          border: 1px solid rgba(84,199,248,0.10);
+          border-radius: 10px; margin-bottom: 4px;
+        }
+        .pf-drag-hint-icon { font-size: 14px; flex-shrink: 0; }
+
         .pf-photos-hint { font-size: 12px; color: var(--muted); line-height: 1.6; text-align: center; padding: 8px 0; }
 
-        /* LOOKING FOR */
         .pf-lf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
         .pf-lf-card {
           padding: 16px 10px; background: var(--glass); border: 1.5px solid var(--glass-b);
@@ -566,7 +721,6 @@ export default function ProfilePage() {
         .pf-lf-check-dot { width: 6px; height: 6px; border-radius: 50%; background: #020d18; opacity: 0; transition: opacity 0.2s; }
         .pf-lf-card.active .pf-lf-check-dot { opacity: 1; }
 
-        /* ACTIONS */
         .pf-actions { display: flex; gap: 10px; margin-top: 6px; }
         .pf-error-banner {
           background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3);
@@ -599,14 +753,11 @@ export default function ProfilePage() {
         }
         .pf-btn-ghost:hover { background: rgba(84,199,248,0.06); border-color: rgba(84,199,248,0.28); color: var(--sky); }
 
-        /* SKELETON */
         .pf-skel { height: 48px; border-radius: 12px; background: var(--glass); animation: shimmer 1.4s ease-in-out infinite; }
         @keyframes shimmer { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; } }
 
-        /* ANIMATIONS */
         @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* RESPONSIVE */
         @media (max-width: 680px) {
           .pf-hero-inner { grid-template-columns: auto 1fr; padding-bottom: 22px; }
           .pf-hero-stats { display: none; }
@@ -630,7 +781,6 @@ export default function ProfilePage() {
           <div className="pf-wrap">
             <div className="pf-hero-inner">
 
-              {/* Avatar */}
               <div className="pf-avatar-col" style={{ animation: "fadeUp 0.5s 0.05s both" }}>
                 <div className={`pf-avatar-ring ${role === "vip" ? "ring-vip" : role === "streamer" ? "ring-streamer" : ""}`}>
                   <div className="pf-avatar-inner">
@@ -660,7 +810,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* Info central */}
               <div className="pf-hero-info">
                 <div className="pf-hero-name">{name || "Tu perfil"}</div>
                 <div className="pf-hero-email">{email}</div>
@@ -675,7 +824,6 @@ export default function ProfilePage() {
                 {bio && <div className="pf-hero-bio-preview">{bio}</div>}
               </div>
 
-              {/* Stats desktop */}
               {!loading && (
                 <div className="pf-hero-stats">
                   <div className="pf-stat-card">
@@ -763,7 +911,6 @@ export default function ProfilePage() {
               {activeTab === "info" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-                  {/* Nombre + Edad */}
                   <div className="pf-grid-2">
                     <div className={`pf-card pf-field ${errors.name ? "pf-card-error" : ""}`}>
                       <div className="pf-section-hdr">
@@ -806,7 +953,6 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {/* Ubicación + Ocupación */}
                   <div className="pf-grid-2">
                     <div className="pf-card pf-field">
                       <div className="pf-section-hdr">
@@ -841,7 +987,6 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {/* Género */}
                   <div className="pf-card pf-field">
                     <div className="pf-section-hdr">
                       <img src={imgPerfil.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
@@ -863,7 +1008,6 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {/* Idiomas */}
                   <div className="pf-card pf-field">
                     <div className="pf-section-hdr">
                       <img src={imgDiamante.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
@@ -886,7 +1030,6 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {/* Bio */}
                   <div className="pf-card pf-field">
                     <div className="pf-section-hdr">
                       <img src={imgDiamante.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
@@ -929,7 +1072,7 @@ export default function ProfilePage() {
               {activeTab === "fotos" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   <div className="pf-card">
-                    <div className="pf-section-hdr" style={{ marginBottom: 16 }}>
+                    <div className="pf-section-hdr" style={{ marginBottom: 12 }}>
                       <img src={imgCamara.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
                       <span className="pf-section-hdr-title">Mis fotos</span>
                       <div className="pf-section-hdr-line" />
@@ -938,40 +1081,80 @@ export default function ProfilePage() {
                       </span>
                     </div>
 
+                    {/* Drag hint — solo cuando hay más de 1 foto */}
+                    {photos.length > 1 && (
+                      <div className="pf-drag-hint" style={{ marginBottom: 14 }}>
+                        <span className="pf-drag-hint-icon">⇄</span>
+                        <span>Arrastrá cualquier foto al primer casillero para convertirla en principal</span>
+                      </div>
+                    )}
+
                     <div className="pf-photos-grid">
-                      {[0, 1, 2, 3, 4, 5].map(idx => (
-                        <div
-                          key={idx}
-                          className={`pf-photo-slot ${photos[idx] ? "filled" : ""}`}
-                          onClick={() => !photos[idx] && fileRef.current?.click()}
-                          role={!photos[idx] ? "button" : undefined}
-                          tabIndex={!photos[idx] ? 0 : undefined}
-                          aria-label={!photos[idx] ? (idx === 0 ? "Agregar foto principal" : `Agregar foto ${idx + 1}`) : undefined}
-                          onKeyDown={e => !photos[idx] && e.key === "Enter" && fileRef.current?.click()}
-                        >
-                          {photos[idx] ? (
-                            <>
-                              <img src={photos[idx].url} alt={`Foto ${idx + 1}`} className="photo-img" />
-                              {idx === 0 && <div className="pf-photo-main">Principal</div>}
-                              <button
-                                type="button"
-                                className="pf-photo-rm"
-                                onClick={e => { e.stopPropagation(); removePhoto(idx); }}
-                                aria-label={`Eliminar foto ${idx + 1}`}
-                              >
-                                ✕
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <img src={imgCamara.src} alt="" aria-hidden="true" className="pf-photo-add-icon" style={{ filter: "brightness(0) invert(1)" }} />
-                              <div className="pf-photo-add-text">
-                                {idx === 0 ? "Foto principal" : "Agregar foto"}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ))}
+                      {[0, 1, 2, 3, 4, 5].map(idx => {
+                        const hasPhoto    = !!photos[idx];
+                        const isDraggingSrc = dragIdx === idx;
+                        const isDropTarget  = dragIdx !== null && dragIdx !== idx && overIdx === idx;
+
+                        return (
+                          <div
+                            key={idx}
+                            data-slot-idx={idx}
+                            className={[
+                              "pf-photo-slot",
+                              hasPhoto ? "filled" : "empty",
+                              isDraggingSrc ? "dragging-source" : "",
+                              isDropTarget  ? `drop-target slot-${idx}` : "",
+                            ].filter(Boolean).join(" ")}
+                            /* ── Desktop drag ── */
+                            draggable={hasPhoto}
+                            onDragStart={e  => handleDragStart(e, idx)}
+                            onDragOver={e   => handleDragOver(e, idx)}
+                            onDragLeave={   () => handleDragLeave()}
+                            onDrop={e       => handleDrop(e, idx)}
+                            onDragEnd={     () => handleDragEnd()}
+                            /* ── Mobile touch ── */
+                            onTouchStart={  () => handleTouchStart(idx)}
+                            onTouchMove={e  => handleTouchMove(e)}
+                            onTouchEnd={    () => handleTouchEnd()}
+                            /* ── Click to add (empty slots) ── */
+                            onClick={() => !hasPhoto && fileRef.current?.click()}
+                            role={!hasPhoto ? "button" : undefined}
+                            tabIndex={!hasPhoto ? 0 : undefined}
+                            aria-label={
+                              !hasPhoto
+                                ? idx === 0 ? "Agregar foto principal" : `Agregar foto ${idx + 1}`
+                                : idx === 0 ? "Foto principal (arrastrá para reorganizar)" : `Foto ${idx + 1} (arrastrá para reorganizar)`
+                            }
+                            onKeyDown={e => !hasPhoto && e.key === "Enter" && fileRef.current?.click()}
+                          >
+                            {hasPhoto ? (
+                              <>
+                                <img src={photos[idx].url} alt={`Foto ${idx + 1}`} className="photo-img" />
+                                {idx === 0 && <div className="pf-photo-main">Principal</div>}
+                                <button
+                                  type="button"
+                                  className="pf-photo-rm"
+                                  onClick={e => { e.stopPropagation(); removePhoto(idx); }}
+                                  aria-label={`Eliminar foto ${idx + 1}`}
+                                >
+                                  ✕
+                                </button>
+                                {/* Drag handle dots */}
+                                <div className="pf-drag-handle" aria-hidden="true">
+                                  {[0,1,2,3,4,5].map(d => <span key={d} />)}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <img src={imgCamara.src} alt="" aria-hidden="true" className="pf-photo-add-icon" style={{ filter: "brightness(0) invert(1)" }} />
+                                <div className="pf-photo-add-text">
+                                  {idx === 0 ? "Foto principal" : "Agregar foto"}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1012,7 +1195,6 @@ export default function ProfilePage() {
               {activeTab === "vibe" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-                  {/* ¿Qué buscás? */}
                   <div className="pf-card">
                     <div className="pf-section-hdr" style={{ marginBottom: 16 }}>
                       <img src={imgDiamante.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
@@ -1039,7 +1221,6 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {/* Intereses */}
                   <div className="pf-card">
                     <div className="pf-section-hdr" style={{ marginBottom: 16 }}>
                       <img src={imgPerfil.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />

@@ -495,19 +495,33 @@ export default function ModalidadesPage() {
           }
           .card, .card-wide, .card-wide-bottom {
             grid-column: span 1;
-            flex-direction: column;
-            min-height: 320px;
+            min-height: 220px;
             padding: 28px 24px;
+            flex-direction: column;
+            justify-content: flex-end;
           }
-          .card-wide .card-content { max-width: 100%; }
+          .card-wide .card-content { max-width: 65%; }
+          .card-content { max-width: 65%; }
+
+          /* Imagen: esquina inferior derecha, asomando */
           .card-image-wrapper,
           .card-wide .card-image-wrapper {
-            width: 75%; height: 65%;
-            opacity: 0.35;
+            position: absolute;
+            right: -8%;
+            bottom: -12%;
+            top: auto;
+            width: 55%;
+            height: 110%;
+            opacity: 1;
           }
+          .card-image-wrapper img {
+            opacity: 0.92;
+            filter: drop-shadow(0 12px 28px rgba(0,0,0,0.5));
+          }
+
           html, body { cursor: auto; }
           .custom-cursor { display: none; }
-        }
+      }
       `}</style>
 
       {/* Cursor custom */}
