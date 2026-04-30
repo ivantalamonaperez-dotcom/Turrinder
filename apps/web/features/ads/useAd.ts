@@ -8,6 +8,10 @@
  *   Usuario ve el anuncio → vuelve a Turrinder → visibilitychange/focus detectado
  *   Si countdown terminó → cerrar modal automáticamente → UI desbloqueada
  *   Si countdown no terminó → esperar a que termine → cerrar automáticamente
+ *
+ * ROLES EXENTOS:
+ *   Si el usuario tiene rol "streamer" o "vip", los anuncios se omiten
+ *   completamente: skipCount nunca sube, AdOverlay nunca aparece.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -24,16 +28,23 @@ export interface UseAdReturn {
   adMode: AdMode;
   skipInfo: SkipInfo;
   isBlocked: boolean;
-  adReady: boolean;            // countdown terminó, UI puede desbloquearse
+  adReady: boolean;
+  /** true si el rol del usuario lo exime de ver anuncios */
+  isExempt: boolean;
   reportSkip: () => void;
   reportAdCompleted: () => void;
 }
 
-const AD_THRESHOLD  = 8;
-const AD_URL        = "https://omg10.com/4/10891625";
-const AD_WAIT_MS    = 15_000;
+const AD_THRESHOLD = 8;
+const AD_URL       = "https://omg10.com/4/10891625";
+const AD_WAIT_MS   = 15_000;
 
-export function useAd(): UseAdReturn {
+/** Roles que nunca ven anuncios */
+const EXEMPT_ROLES = ["streamer", "vip"] as const;
+
+export function useAd(userRole?: string): UseAdReturn {
+  const isExempt = EXEMPT_ROLES.includes(userRole as typeof EXEMPT_ROLES[number]);
+
   const [adMode,   setAdMode]   = useState<AdMode>("IDLE");
   const [adReady,  setAdReady]  = useState(false);
   const [skipInfo, setSkipInfo] = useState<SkipInfo>({
@@ -42,11 +53,10 @@ export function useAd(): UseAdReturn {
     remaining: AD_THRESHOLD,
   });
 
-  const adReadyRef  = useRef(false); // ref para acceder en listeners sin stale closure
+  const adReadyRef  = useRef(false);
   const adTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inAdModeRef = useRef(false); // para saber si estamos en AD_THANKS desde listeners
+  const inAdModeRef = useRef(false);
 
-  // Cerrar el modal y desbloquear UI
   const closeModal = useCallback(() => {
     setAdMode("IDLE");
     setAdReady(false);
@@ -55,28 +65,26 @@ export function useAd(): UseAdReturn {
     if (adTimerRef.current) clearTimeout(adTimerRef.current);
   }, []);
 
-  // Llamar cuando el usuario hace skip
   const reportSkip = useCallback(() => {
+    // Roles exentos: skip siempre libre, contador no avanza
+    if (isExempt) return;
+
     setSkipInfo(prev => {
       const newCount = prev.count + 1;
 
       if (newCount >= AD_THRESHOLD) {
-        // Abrir anuncio en nueva pestaña
         window.open(AD_URL, "_blank", "noopener,noreferrer");
 
-        // Activar modal
         setAdMode("AD_THANKS");
         inAdModeRef.current = true;
         adReadyRef.current  = false;
         setAdReady(false);
 
-        // Iniciar countdown — cuando termina, marcar como listo
         if (adTimerRef.current) clearTimeout(adTimerRef.current);
         adTimerRef.current = setTimeout(() => {
           adReadyRef.current = true;
           setAdReady(true);
 
-          // Si el usuario ya volvió a la pestaña → cerrar automáticamente
           if (document.visibilityState === "visible" && inAdModeRef.current) {
             setTimeout(() => closeModal(), 300);
           }
@@ -91,14 +99,12 @@ export function useAd(): UseAdReturn {
         remaining: AD_THRESHOLD - newCount,
       };
     });
-  }, [closeModal]);
+  }, [isExempt, closeModal]);
 
-  // Botón "Continuar" del modal
   const reportAdCompleted = useCallback(() => {
     closeModal();
   }, [closeModal]);
 
-  // Detectar cuando el usuario vuelve a la pestaña
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible" && adReadyRef.current && inAdModeRef.current) {
@@ -129,6 +135,7 @@ export function useAd(): UseAdReturn {
     skipInfo,
     isBlocked: adMode === "AD_THANKS",
     adReady,
+    isExempt,
     reportSkip,
     reportAdCompleted,
   };

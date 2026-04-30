@@ -10,10 +10,8 @@ import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
-import { matchingService } from "@/features/matching/matching.service";
 
 import VideoPlayer from "@/components/video/VideoPlayer";
-import MatchModal from "@/components/match/MatchModal";
 import AdOverlay from "@/components/ads/AdOverlay";
 import VideoControls from "@/components/video/Videocontrols";
 
@@ -21,12 +19,23 @@ export default function DiscoverPage() {
   const router = useRouter();
   const { socket } = useSocket();
 
+  // ─── Rol del usuario (para eximir de anuncios) ───────────────────────────
+  const [userRole, setUserRole] = useState<string>("viewer");
+
   useEffect(() => {
-    const checkUser = async () => {
+    const init = async () => {
       const { data } = await supabase.auth.getUser();
-      if (!data.user) router.push("/");
+      if (!data.user) { router.push("/"); return; }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile?.role) setUserRole(profile.role);
     };
-    checkUser();
+    init();
   }, [router]);
 
   useProfile();
@@ -35,26 +44,27 @@ export default function DiscoverPage() {
   const { room, searching, findNewMatch } = useMatchmaking("discover");
   const { matchUser } = useMatchUser(room);
 
-  const { adMode, skipInfo, isBlocked, adReady, reportSkip, reportAdCompleted } = useAd();
+  // Pasamos el rol al hook — streamer y vip quedan exentos automáticamente
+  const { adMode, skipInfo, isBlocked, adReady, isExempt, reportSkip, reportAdCompleted } = useAd(userRole);
 
-  // Estado local del modo streamer (antes vivía en VideoPlayer, ahora lo manejamos acá
-  // porque usamos customControls)
   const [streamerMode, setStreamerMode] = useState(false);
 
- const nextUser = useCallback(async () => {
-  if (isBlocked) return;
-  
-  // 1. Notificar al servidor para que el OTRO usuario reciba 'partner-left'
-  if (socket?.connected) {
-    socket.emit("leave-matchmaking"); 
-  }
-  
-  // 2. Buscar nosotros mismos tras 1 segundo
-  findNewMatch(1000);
+  // ─── nextUser: notifica skip al hook de ads + busca nueva pareja ─────────
+  const nextUser = useCallback(async () => {
+    if (isBlocked) return;
 
-  // IMPORTANTE: Quita el matchingService.endRoom(currentRoomId) 
-  // que usaba Supabase, eso es lo que causa el Error 400 ahora.
-}, [isBlocked, socket, findNewMatch]);
+    // 1. Registrar el skip (incrementa contador → dispara anuncio al llegar a 8)
+    //    reportSkip es no-op si el usuario es streamer/vip
+    reportSkip();
+
+    // 2. Notificar al servidor para que el OTRO usuario reciba 'partner-left'
+    if (socket?.connected) {
+      socket.emit("leave-matchmaking");
+    }
+
+    // 3. Buscar nueva pareja tras 1 segundo
+    findNewMatch(1000);
+  }, [isBlocked, reportSkip, socket, findNewMatch]);
 
   return (
     <>
@@ -223,16 +233,36 @@ export default function DiscoverPage() {
           letter-spacing: 0.5px;
           white-space: nowrap;
         }
+
+        /* Badge "Sin anuncios" para streamer/vip */
+        .dp-exempt-badge {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          background: rgba(84,199,248,0.08);
+          border: 1px solid rgba(84,199,248,0.25);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-radius: 100px;
+          padding: 5px 12px;
+          font-size: 10px;
+          font-weight: 500;
+          color: rgba(143,212,255,0.75);
+          letter-spacing: 0.5px;
+          white-space: nowrap;
+        }
       `}</style>
 
-      {/* No hay MatchModal ni AdOverlay en discover — solo exploración */}
-      <AdOverlay
-        visible={adMode === "AD_THANKS"}
-        onContinue={reportAdCompleted}
-        skipCount={skipInfo.count}
-        threshold={skipInfo.threshold}
-        adReady={adReady}
-      />
+      {/* AdOverlay: solo se muestra si el usuario NO es exento */}
+      {!isExempt && (
+        <AdOverlay
+          visible={adMode === "AD_THANKS"}
+          onContinue={reportAdCompleted}
+          skipCount={skipInfo.count}
+          threshold={skipInfo.threshold}
+          adReady={adReady}
+        />
+      )}
 
       <div className="dp-root">
         <div className="dp-aurora" />
@@ -245,16 +275,23 @@ export default function DiscoverPage() {
           </div>
 
           <div className="dp-header-right">
-            <div className={`dp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
-              <div className="dp-pips">
-                {Array.from({ length: skipInfo.threshold }).map((_, i) => (
-                  <div key={i} className={`dp-pip ${i < skipInfo.count ? "on" : ""}`} />
-                ))}
+            {/* Contador de skips — oculto para exentos */}
+            {!isExempt ? (
+              <div className={`dp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
+                <div className="dp-pips">
+                  {Array.from({ length: skipInfo.threshold }).map((_, i) => (
+                    <div key={i} className={`dp-pip ${i < skipInfo.count ? "on" : ""}`} />
+                  ))}
+                </div>
+                {skipInfo.remaining <= 3 && (
+                  <span className="dp-skip-label">{skipInfo.remaining} restantes</span>
+                )}
               </div>
-              {skipInfo.remaining <= 3 && (
-                <span className="dp-skip-label">{skipInfo.remaining} restantes</span>
-              )}
-            </div>
+            ) : (
+              <div className="dp-exempt-badge">
+                ✦ Sin anuncios
+              </div>
+            )}
           </div>
         </header>
 
@@ -263,12 +300,11 @@ export default function DiscoverPage() {
             room={room}
             matchUser={matchUser}
             onNext={nextUser}
-            onLike={() => {}} // no se usa — like está desactivado en discover
+            onLike={() => {}}
             liked={false}
             searching={searching || !room}
             skipBlocked={isBlocked}
             streamerModeExternal={streamerMode}
-            // ─── Inyectamos controles propios: solo skip + streamer, sin like ───
             customControls={
               <VideoControls
                 onSkip={nextUser}
@@ -278,7 +314,6 @@ export default function DiscoverPage() {
                 streamerMode={streamerMode}
                 onStreamerToggle={() => setStreamerMode(prev => !prev)}
                 hideStreamer={false}
-                // Ocultamos el like pasándole un prop extra — ver nota abajo (*)
                 hideLike
               />
             }
@@ -288,21 +323,3 @@ export default function DiscoverPage() {
     </>
   );
 }
-
-/*
- * (*) NOTA: VideoControls necesita un prop `hideLike?: boolean` para ocultar el botón.
- *     Agregalo en Videocontrols.tsx:
- *
- *       export interface VideoControlsProps {
- *         ...
- *         hideLike?: boolean;   // ← nuevo
- *       }
- *
- *     Y en el JSX, igual que hideStreamer:
- *       {!hideLike && (
- *         <div className="vc-slot-center"> ... </div>
- *       )}
- *
- *     Si preferís no tocar VideoControls, podés hacer un componente
- *     DiscoverControls.tsx mínimo con solo skip + streamer.
- */
