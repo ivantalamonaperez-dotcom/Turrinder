@@ -116,8 +116,8 @@ export default function VideoPlayer({
 
         @media (max-width: 768px) {
           .vp-video-zone { flex-direction: column; }
-          .vp-panel-remote { order: -1; flex: 1.6; min-height: 0; }
-          .vp-panel-local  { order:  1; flex: 1;   min-height: 0; }
+          .vp-panel-remote { order: -1; flex: 1.1; min-height: 0; }
+          .vp-panel-local  { order:  1; flex: 1; min-height: 0; }
           .vp-divider {
             left: 0; right: 0; top: 61.5%; bottom: auto;
             width: auto; height: 2px; transform: none;
