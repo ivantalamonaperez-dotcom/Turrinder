@@ -142,7 +142,7 @@ export default function MatchModal({ visible, onClose, user, myProfile }: Props)
           align-items: center;
           padding: 0 16px 40px;
           width: 100%;
-          max-width: 420px;
+          max-width: min(90vw, 520px);
           box-sizing: border-box;
           overflow: visible;
         }
@@ -209,14 +209,12 @@ export default function MatchModal({ visible, onClose, user, myProfile }: Props)
         /* ── Título ── */
         .mm-title {
           font-family: 'Syne', sans-serif;
-          font-size: clamp(48px, 13vw, 96px);
+          font-size: clamp(48px, 10vw, 88px);
           font-weight: 900;
-          letter-spacing: 0px;
+          letter-spacing: 2px;
           line-height: 1;
           text-align: center;
           margin-bottom: 6px;
-          width: 100%;
-          max-width: 100%;
           display: block;
           white-space: nowrap;
           background: linear-gradient(160deg,
