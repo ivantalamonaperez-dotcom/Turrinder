@@ -16,6 +16,7 @@ import { useState, useEffect } from "react";
 import { useWebRTC } from "./useWebRTC";
 import UserChip from "@/components/user/UserChip";
 import VideoControls from "./Videocontrols";
+import liguesImg from "../../Images/ligues.png";
 
 interface Props {
   room: { id: string } | null;
@@ -232,9 +233,33 @@ export default function VideoPlayer({
           box-shadow: 0 0 24px rgba(84,199,248,0.7);
           animation: radarCenterPulse 2.6s ease-in-out infinite;
         }
+        .vp-radar-center.vp-radar-center--image {
+          background: transparent;
+          box-shadow: none;
+          animation: none;
+          width: 72px; height: 72px;
+        }
         @keyframes radarCenterPulse {
           0%,100%{box-shadow:0 0 24px rgba(84,199,248,0.7)}
           50%{box-shadow:0 0 40px rgba(84,199,248,1),0 0 70px rgba(84,199,248,0.3)}
+        }
+
+        .vp-ligues-img {
+          width: 72px;
+          height: 72px;
+          object-fit: contain;
+          filter: drop-shadow(0 0 12px rgba(84,199,248,0.9)) drop-shadow(0 0 28px rgba(84,199,248,0.5));
+          animation: vp-levitate 2.6s ease-in-out infinite;
+        }
+        @keyframes vp-levitate {
+          0%,100% {
+            transform: translateY(0px) scale(1);
+            filter: drop-shadow(0 0 12px rgba(84,199,248,0.9)) drop-shadow(0 0 28px rgba(84,199,248,0.5));
+          }
+          50% {
+            transform: translateY(-10px) scale(1.08);
+            filter: drop-shadow(0 0 22px rgba(84,199,248,1)) drop-shadow(0 0 48px rgba(84,199,248,0.7)) drop-shadow(0 8px 20px rgba(84,199,248,0.35));
+          }
         }
         .vp-radar-text {
           font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
@@ -342,7 +367,11 @@ export default function VideoPlayer({
                   <div className="vp-radar-ring" style={{ animationDelay: "0s" }} />
                   <div className="vp-radar-ring" style={{ animationDelay: "0.9s" }} />
                   <div className="vp-radar-ring" style={{ animationDelay: "1.8s" }} />
-                  <div className="vp-radar-center">{searching ? "🔥" : "👤"}</div>
+                  <div className={`vp-radar-center${searching ? " vp-radar-center--image" : ""}`}>
+                    {searching
+                      ? <img src={liguesImg.src} alt="ligues" className="vp-ligues-img" />
+                      : "👤"}
+                  </div>
                 </div>
                 <div className="vp-radar-text">{searching ? "Buscando..." : "Enlazando..."}</div>
                 <div className="vp-radar-sub">{searching ? "Encontrando tu pareja" : "Estableciendo conexión"}</div>
