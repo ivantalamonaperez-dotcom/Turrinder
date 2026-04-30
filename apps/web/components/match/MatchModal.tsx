@@ -140,10 +140,11 @@ export default function MatchModal({ visible, onClose, user, myProfile }: Props)
           display: flex;
           flex-direction: column;
           align-items: center;
-          padding: 0 24px 40px;
+          padding: 0 16px 40px;
           width: 100%;
-          max-width: 380px;
+          max-width: 420px;
           box-sizing: border-box;
+          overflow: visible;
         }
 
         /* ── Partículas ── */
@@ -208,14 +209,16 @@ export default function MatchModal({ visible, onClose, user, myProfile }: Props)
         /* ── Título ── */
         .mm-title {
           font-family: 'Syne', sans-serif;
-          font-size: clamp(52px, 15vw, 96px);
+          font-size: clamp(48px, 13vw, 96px);
           font-weight: 900;
-          letter-spacing: clamp(-2px, -0.5vw, -4px);
-          line-height: 0.95;
+          letter-spacing: 0px;
+          line-height: 1;
           text-align: center;
           margin-bottom: 6px;
           width: 100%;
-          overflow: visible;
+          max-width: 100%;
+          display: block;
+          white-space: nowrap;
           background: linear-gradient(160deg,
             #a8e6ff 0%,
             var(--sky) 35%,
