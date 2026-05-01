@@ -11,11 +11,53 @@ import imgDiscover    from "../../Images/discover.png";
 import imgModalidades from "../../Images/modalidades.png";
 import imgPerfil      from "../../Images/perfil.png";
 
+// ─── Tipos ───────────────────────────────────────────────────────
+import { supabase } from "@/services/supabase.client";
+
+type VipPlan    = "monthly" | "annual";
+type VipCountry = "AR" | "OTHER";
+
+const VIP_PRICES = {
+  AR:    { monthly: { display: "$4.999", sub: "ARS / mes", save: null },          annual: { display: "$39.999", sub: "ARS / año", save: "Ahorrás $20k" } },
+  OTHER: { monthly: { display: "$4.99",  sub: "USD / mes", save: null },          annual: { display: "$39.99",  sub: "USD / año", save: "Ahorrás $19.89" } },
+};
+
+const FREE_FEATURES = [
+  { label: "Sin anuncios",        has: false },
+  { label: "Likes ilimitados",    has: false },
+  { label: "Salas privadas",      has: false },
+  { label: "Chats ilimitados",    has: true  },
+  { label: "Videollamadas",       has: true  },
+  { label: "Descubrí personas",   has: true  },
+];
+
+const VIP_FEATURES = [
+  { label: "Sin anuncios",        has: true },
+  { label: "Likes ilimitados",    has: true },
+  { label: "Crear salas privadas",has: true },
+  { label: "Chats ilimitados",    has: true },
+  { label: "Videollamadas",       has: true },
+  { label: "Descubrí personas",   has: true },
+];
+
+async function detectCountry(): Promise<VipCountry> {
+  try {
+    const res  = await fetch("https://ipapi.co/json/");
+    const data = await res.json();
+    return data.country_code === "AR" ? "AR" : "OTHER";
+  } catch { return "OTHER"; }
+}
+
 function VIPModal({ onClose }: { onClose: () => void }) {
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible]   = useState(false);
+  const [plan,    setPlan]       = useState<VipPlan>("monthly");
+  const [country, setCountry]   = useState<VipCountry>("OTHER");
+  const [loading, setLoading]   = useState(false);
+  const [error,   setError]     = useState<string | null>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
+    detectCountry().then(setCountry);
   }, []);
 
   const handleClose = () => {
@@ -23,23 +65,29 @@ function VIPModal({ onClose }: { onClose: () => void }) {
     setTimeout(onClose, 380);
   };
 
-  const freeFeatures = [
-    { label: "Anuncios",           has: false },
-    { label: "Likes limitados",    has: false },
-    { label: "Salas privadas",     has: false },
-    { label: "Chats ilimitados",   has: true  },
-    { label: "Videollamadas",      has: true  },
-    { label: "Descubrí personas",  has: true  },
-  ];
+  const handleCheckout = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setError("Tenés que estar logueado para suscribirte."); setLoading(false); return; }
 
-  const vipFeatures = [
-    { label: "Sin anuncios",              has: true },
-    { label: "Likes ilimitados",          has: true },
-    { label: "Crear salas privadas",      has: true },
-    { label: "Chats ilimitados",          has: true },
-    { label: "Videollamadas",             has: true },
-    { label: "Descubrí personas",         has: true },
-  ];
+      const res  = await fetch("/api/mp/checkout", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ plan, userId: user.id, country }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.url) { setError(data.error ?? "Error al iniciar el pago. Intentá de nuevo."); return; }
+
+      const isSandbox = process.env.NEXT_PUBLIC_MP_SANDBOX === "true";
+      window.location.href = isSandbox ? data.url_sandbox : data.url;
+    } catch { setError("Error de conexión. Verificá tu internet."); }
+    finally  { setLoading(false); }
+  };
+
+  const prices = VIP_PRICES[country];
 
   return (
     <>
@@ -59,31 +107,24 @@ function VIPModal({ onClose }: { onClose: () => void }) {
 
         .vip-modal {
           position: relative; z-index: 201;
-          width: 100%; max-width: 580px;
+          width: 100%; max-width: 560px;
           background: linear-gradient(160deg, #05101e 0%, #020a16 60%, #030d1a 100%);
-          border: 1px solid rgba(84,199,248,0.16);
+          border: 1px solid rgba(255,195,0,0.18);
           border-radius: 24px;
-          box-shadow:
-            0 40px 100px rgba(0,0,0,0.8),
-            0 0 80px rgba(84,199,248,0.06),
-            inset 0 1px 0 rgba(255,255,255,0.06);
+          box-shadow: 0 40px 100px rgba(0,0,0,0.8), 0 0 80px rgba(255,195,0,0.06), inset 0 1px 0 rgba(255,195,0,0.10);
           overflow: hidden;
           opacity: 0; transform: translateY(32px) scale(0.95);
           transition: opacity 0.42s cubic-bezier(0.16,1,0.3,1), transform 0.42s cubic-bezier(0.16,1,0.3,1);
           max-height: 90vh; overflow-y: auto;
         }
         .vip-modal.in { opacity: 1; transform: translateY(0) scale(1); }
+        .vip-modal::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,195,0,0.55), transparent); border-radius: 24px 24px 0 0; }
+        .vip-modal::-webkit-scrollbar { width: 3px; }
+        .vip-modal::-webkit-scrollbar-thumb { background: rgba(255,195,0,0.18); border-radius: 4px; }
 
-        .vip-modal::-webkit-scrollbar { width: 4px; }
-        .vip-modal::-webkit-scrollbar-track { background: transparent; }
-        .vip-modal::-webkit-scrollbar-thumb { background: rgba(84,199,248,0.2); border-radius: 4px; }
-
-        /* Aurora top glow */
         .vip-modal-aurora {
           position: absolute; top: 0; left: 0; right: 0; height: 200px;
-          background:
-            radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,195,0,0.14) 0%, transparent 60%),
-            radial-gradient(ellipse 50% 40% at 20% 0%, rgba(84,199,248,0.09) 0%, transparent 55%);
+          background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,195,0,0.13) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 20% 0%, rgba(84,199,248,0.07) 0%, transparent 55%);
           pointer-events: none; z-index: 0;
         }
 
@@ -93,246 +134,158 @@ function VIPModal({ onClose }: { onClose: () => void }) {
           background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
           color: rgba(255,255,255,0.45); font-size: 16px; line-height: 1;
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; transition: all 0.2s ease;
-          font-family: sans-serif;
+          cursor: pointer; transition: all 0.2s ease; font-family: sans-serif;
         }
         .vip-modal-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
-        .vip-modal-header {
-          position: relative; z-index: 1;
-          text-align: center;
-          padding: 40px 32px 28px;
-        }
-        .vip-crown {
-          font-size: 40px; margin-bottom: 12px; display: block;
-          filter: drop-shadow(0 0 18px rgba(255,195,0,0.6));
-          animation: crownFloat 3s ease-in-out infinite;
-        }
-        @keyframes crownFloat {
-          0%,100%{ transform: translateY(0) rotate(-4deg); }
-          50%{ transform: translateY(-7px) rotate(4deg); }
-        }
-        .vip-modal-title {
-          font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;
-          letter-spacing: -1px; color: #f5f8ff; line-height: 1.1;
-          margin-bottom: 8px;
-        }
-        .vip-modal-title .gold {
-          background: linear-gradient(135deg, #ffd700 0%, #ffb800 40%, #ff9500 100%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .vip-modal-subtitle {
-          font-family: 'DM Sans', sans-serif; font-size: 14px;
-          color: rgba(180,215,240,0.45); line-height: 1.5;
-        }
+        /* ── Header ── */
+        .vip-modal-header { position: relative; z-index: 1; text-align: center; padding: 40px 32px 20px; }
+        @keyframes crownFloat { 0%,100%{ transform: translateY(0) rotate(-4deg); } 50%{ transform: translateY(-7px) rotate(4deg); } }
+        .vip-modal-title { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; letter-spacing: -1px; color: #f5f8ff; line-height: 1.1; margin-bottom: 8px; }
+        .vip-modal-title .gold { background: linear-gradient(135deg, #ffd700 0%, #ffb800 40%, #ff9500 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .vip-modal-subtitle { font-family: 'DM Sans', sans-serif; font-size: 13px; color: rgba(180,215,240,0.42); line-height: 1.5; }
+        .vip-country-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 4px 12px; background: rgba(255,195,0,0.07); border: 1px solid rgba(255,195,0,0.15); border-radius: 100px; font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,210,60,0.6); }
 
-        /* Plans grid */
-        .vip-plans {
-          position: relative; z-index: 1;
-          display: grid; grid-template-columns: 1fr 1fr;
-          gap: 14px;
-          padding: 0 24px 28px;
-        }
-        @media(max-width:480px){
-          .vip-plans { grid-template-columns: 1fr; }
-        }
+        /* ── Plan selector ── */
+        .vip-plan-selector { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 22px 14px; }
+        .vip-plan-opt { padding: 16px 14px 14px; border-radius: 16px; cursor: pointer; border: 1.5px solid rgba(255,195,0,0.14); background: rgba(255,195,0,0.03); transition: all 0.22s cubic-bezier(0.16,1,0.3,1); position: relative; overflow: hidden; text-align: center; }
+        .vip-plan-opt:hover { border-color: rgba(255,195,0,0.3); background: rgba(255,195,0,0.06); }
+        .vip-plan-opt.sel { border-color: rgba(255,195,0,0.6); background: rgba(255,195,0,0.09); box-shadow: 0 0 0 1px rgba(255,195,0,0.18), 0 4px 20px rgba(255,195,0,0.1); }
+        .vip-plan-opt.sel::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,195,0,0.6), transparent); }
+        .vip-plan-best { position: absolute; top: -1px; left: 50%; transform: translateX(-50%); padding: 3px 10px; background: linear-gradient(135deg, #ffd700, #ff9500); border-radius: 0 0 10px 10px; font-family: 'Syne', sans-serif; font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #1a0800; white-space: nowrap; }
+        .vip-opt-label { font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,210,60,0.5); margin-bottom: 6px; }
+        .vip-opt-price { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 900; background: linear-gradient(135deg, #ffd700, #ffb800, #ff9500); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
+        .vip-opt-sub { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(255,210,60,0.32); margin-top: 3px; }
+        .vip-opt-save { display: inline-block; margin-top: 8px; padding: 3px 9px; border-radius: 100px; background: rgba(34,197,94,0.11); border: 1px solid rgba(34,197,94,0.22); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: #4ade80; }
+        .vip-opt-check { position: absolute; top: 10px; right: 10px; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid rgba(255,195,0,0.22); display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .vip-plan-opt.sel .vip-opt-check { background: rgba(255,195,0,0.9); border-color: transparent; box-shadow: 0 0 8px rgba(255,195,0,0.4); }
+        .vip-opt-check-dot { width: 7px; height: 7px; border-radius: 50%; background: #1a0800; opacity: 0; transition: opacity 0.2s; }
+        .vip-plan-opt.sel .vip-opt-check-dot { opacity: 1; }
 
-        .vip-plan {
-          border-radius: 18px;
-          padding: 22px 20px;
-          position: relative; overflow: hidden;
-        }
-        .vip-plan-free {
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.07);
-        }
-        .vip-plan-vip {
-          background: linear-gradient(145deg, rgba(255,195,0,0.08) 0%, rgba(255,140,0,0.05) 60%, rgba(84,199,248,0.04) 100%);
-          border: 1px solid rgba(255,195,0,0.28);
-          box-shadow: 0 0 40px rgba(255,195,0,0.07), inset 0 1px 0 rgba(255,195,0,0.12);
-        }
-        .vip-plan-vip::before {
-          content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(255,195,0,0.6), transparent);
-        }
+        /* ── Feature comparison ── */
+        .vip-plans { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 22px 22px; }
+        @media(max-width:480px){ .vip-plans { grid-template-columns: 1fr; } }
 
-        .vip-plan-badge {
-          display: inline-flex; align-items: center; gap: 5px;
-          font-family: 'DM Sans', sans-serif; font-size: 9px; font-weight: 700;
-          letter-spacing: 2px; text-transform: uppercase;
-          padding: 4px 10px; border-radius: 100px;
-          margin-bottom: 14px;
-        }
-        .vip-plan-free .vip-plan-badge {
-          background: rgba(255,255,255,0.06); color: rgba(180,215,240,0.4);
-          border: 1px solid rgba(255,255,255,0.06);
-        }
-        .vip-plan-vip .vip-plan-badge {
-          background: rgba(255,195,0,0.12); color: rgba(255,210,60,0.9);
-          border: 1px solid rgba(255,195,0,0.25);
-        }
+        .vip-plan { border-radius: 18px; padding: 20px 18px; position: relative; overflow: hidden; }
+        .vip-plan-free { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+        .vip-plan-vip { background: linear-gradient(145deg, rgba(255,195,0,0.08) 0%, rgba(255,140,0,0.05) 60%, rgba(84,199,248,0.04) 100%); border: 1px solid rgba(255,195,0,0.28); box-shadow: 0 0 40px rgba(255,195,0,0.07), inset 0 1px 0 rgba(255,195,0,0.12); }
+        .vip-plan-vip::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,195,0,0.6), transparent); }
+
+        .vip-plan-badge { display: inline-flex; align-items: center; gap: 5px; font-family: 'DM Sans', sans-serif; font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; padding: 4px 10px; border-radius: 100px; margin-bottom: 14px; }
+        .vip-plan-free .vip-plan-badge { background: rgba(255,255,255,0.06); color: rgba(180,215,240,0.4); border: 1px solid rgba(255,255,255,0.06); }
+        .vip-plan-vip  .vip-plan-badge { background: rgba(255,195,0,0.12); color: rgba(255,210,60,0.9); border: 1px solid rgba(255,195,0,0.25); }
         .vip-badge-dot { width: 5px; height: 5px; border-radius: 50%; }
         .vip-plan-free .vip-badge-dot { background: rgba(180,215,240,0.3); }
-        .vip-plan-vip .vip-badge-dot { background: #ffd700; box-shadow: 0 0 6px #ffd700; animation: goldPulse 2s infinite; }
+        .vip-plan-vip  .vip-badge-dot { background: #ffd700; box-shadow: 0 0 6px #ffd700; animation: goldPulse 2s infinite; }
         @keyframes goldPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-        .vip-plan-price {
-          font-family: 'Syne', sans-serif; font-weight: 800; line-height: 1;
-          margin-bottom: 4px;
-        }
-        .vip-plan-free .vip-plan-price { font-size: 26px; color: rgba(240,248,255,0.55); }
-        .vip-plan-vip .vip-plan-price {
-          font-size: 30px;
-          background: linear-gradient(135deg, #ffd700, #ffb800, #ff9500);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .vip-plan-price-sub {
-          font-family: 'DM Sans', sans-serif; font-size: 10px;
-          color: rgba(180,215,240,0.28); margin-bottom: 18px; letter-spacing: 0.3px;
-        }
-        .vip-plan-vip .vip-plan-price-sub { color: rgba(255,210,60,0.35); }
 
         .vip-features-list { display: flex; flex-direction: column; gap: 9px; }
         .vip-feature-row { display: flex; align-items: center; gap: 9px; }
-        .vip-feature-icon {
-          width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 10px;
-        }
-        .vip-feature-icon.yes-free {
-          background: rgba(84,199,248,0.1); color: #54c7f8;
-        }
-        .vip-feature-icon.no-free {
-          background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.15);
-        }
-        .vip-feature-icon.yes-vip {
-          background: rgba(255,195,0,0.12); color: #ffd700;
-          box-shadow: 0 0 8px rgba(255,195,0,0.2);
-        }
-        .vip-feature-label {
-          font-family: 'DM Sans', sans-serif; font-size: 12.5px; line-height: 1;
-        }
+        .vip-feature-icon { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+        .vip-feature-icon.yes-free { background: rgba(84,199,248,0.1); color: #54c7f8; }
+        .vip-feature-icon.no-free  { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.15); }
+        .vip-feature-icon.yes-vip  { background: rgba(255,195,0,0.12); color: #ffd700; box-shadow: 0 0 8px rgba(255,195,0,0.2); }
+        .vip-feature-label { font-family: 'DM Sans', sans-serif; font-size: 12.5px; line-height: 1; }
         .vip-plan-free .vip-feature-label { color: rgba(180,215,240,0.4); }
-        .vip-plan-vip .vip-feature-label { color: rgba(240,248,255,0.82); }
+        .vip-plan-vip  .vip-feature-label { color: rgba(240,248,255,0.82); }
         .vip-plan-free .vip-feature-row.has-no .vip-feature-label { text-decoration: line-through; color: rgba(180,215,240,0.2); }
 
-        /* CTA Buttons */
-        .vip-cta-wrap {
-          position: relative; z-index: 1;
-          padding: 0 24px 32px;
-          display: flex; flex-direction: column; gap: 10px;
-        }
+        .vip-plan-shimmer { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, rgba(255,195,0,0.06) 50%, transparent 60%); animation: shimmerMove 4s ease-in-out infinite; pointer-events: none; }
+        @keyframes shimmerMove { 0%{ transform: translateX(-100%); } 60%,100%{ transform: translateX(200%); } }
 
-        .vip-btn-primary {
+        /* ── Error ── */
+        .vip-error-banner { margin: 0 22px 8px; padding: 10px 14px; position: relative; z-index: 1; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25); border-radius: 10px; font-size: 12px; color: #fca5a5; font-family: 'DM Sans', sans-serif; }
+
+        /* ── CTA ── */
+        .vip-cta-wrap { position: relative; z-index: 1; padding: 0 22px 14px; display: flex; flex-direction: column; gap: 9px; }
+
+        .vip-btn-mp {
           width: 100%; padding: 16px;
-          background: linear-gradient(135deg, #ffd700 0%, #ffb800 50%, #ff9500 100%);
+          background: linear-gradient(135deg, #009ee3 0%, #0078c8 55%, #005fa3 100%);
           border: none; border-radius: 14px;
-          font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
-          color: #1a0a00; cursor: pointer; letter-spacing: 0.2px;
+          font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+          color: #fff; cursor: pointer; letter-spacing: 0.3px;
           position: relative; overflow: hidden;
           transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
-          box-shadow: 0 8px 32px rgba(255,195,0,0.4);
+          box-shadow: 0 8px 28px rgba(0,158,227,0.38);
+          display: flex; align-items: center; justify-content: center; gap: 10px;
         }
-        .vip-btn-primary::before {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(135deg, rgba(255,255,255,0.25), transparent 55%);
-        }
-        .vip-btn-primary:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 16px 48px rgba(255,195,0,0.55);
-        }
-        .vip-btn-primary:active { transform: translateY(0); }
+        .vip-btn-mp::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,0.18), transparent 55%); }
+        .vip-btn-mp:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(0,158,227,0.52); }
+        .vip-btn-mp:active { transform: translateY(0); }
+        .vip-btn-mp:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
-        .vip-btn-secondary {
-          width: 100%; padding: 13px;
-          background: transparent; border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 14px; color: rgba(180,215,240,0.35);
-          font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer;
-          transition: all 0.2s ease;
-        }
-        .vip-btn-secondary:hover {
-          background: rgba(255,255,255,0.04); color: rgba(180,215,240,0.6);
-          border-color: rgba(255,255,255,0.12);
-        }
+        .vip-mp-badge { display: flex; align-items: center; gap: 5px; font-size: 12px; color: rgba(255,255,255,0.9); }
+        .vip-mp-badge-dot { width: 18px; height: 18px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; color: #009ee3; flex-shrink: 0; }
 
-        .vip-disclaimer {
-          position: relative; z-index: 1;
-          text-align: center; font-family: 'DM Sans', sans-serif;
-          font-size: 10px; color: rgba(180,215,240,0.18);
-          padding: 0 24px 28px; line-height: 1.7; letter-spacing: 0.2px;
-        }
+        .vip-btn-secondary { width: 100%; padding: 13px; background: transparent; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; color: rgba(180,215,240,0.35); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: all 0.2s ease; }
+        .vip-btn-secondary:hover { background: rgba(255,255,255,0.04); color: rgba(180,215,240,0.6); border-color: rgba(255,255,255,0.12); }
 
-        /* Shimmer on VIP card */
-        .vip-plan-shimmer {
-          position: absolute; inset: 0;
-          background: linear-gradient(105deg, transparent 40%, rgba(255,195,0,0.06) 50%, transparent 60%);
-          animation: shimmerMove 4s ease-in-out infinite;
-          pointer-events: none;
-        }
-        @keyframes shimmerMove {
-          0%{ transform: translateX(-100%); }
-          60%,100%{ transform: translateX(200%); }
-        }
+        .vip-spinner { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; display: inline-block; flex-shrink: 0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .vip-disclaimer { position: relative; z-index: 1; text-align: center; font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.18); padding: 4px 22px 28px; line-height: 1.8; }
+        .vip-secure { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 5px; font-size: 11px; color: rgba(180,215,240,0.24); }
       `}</style>
 
-      <div
-        className={`vip-modal-backdrop ${visible ? "in" : ""}`}
-        onClick={handleClose}
-      >
-        <div
-          className={`vip-modal ${visible ? "in" : ""}`}
-          onClick={e => e.stopPropagation()}
-        >
+      <div className={`vip-modal-backdrop ${visible ? "in" : ""}`} onClick={handleClose}>
+        <div className={`vip-modal ${visible ? "in" : ""}`} onClick={e => e.stopPropagation()}>
           <div className="vip-modal-aurora" />
-
           <button className="vip-modal-close" onClick={handleClose}>✕</button>
 
           {/* Header */}
           <div className="vip-modal-header">
             <Image src={imgLogoVip} alt="Turrinder VIP" width={56} height={56}
               style={{ objectFit: "contain", filter: "drop-shadow(0 0 18px rgba(255,195,0,0.6))", animation: "crownFloat 3s ease-in-out infinite", display: "block", margin: "0 auto 12px" }} />
-            <h2 className="vip-modal-title">
-              Turrinder <span className="gold">VIP</span>
-            </h2>
-            <p className="vip-modal-subtitle">
-              Desbloqueá la experiencia completa sin límites.
-            </p>
+            <h2 className="vip-modal-title">Turrinder <span className="gold">VIP</span></h2>
+            <p className="vip-modal-subtitle">Desbloqueá la experiencia completa sin límites.</p>
+            <div className="vip-country-badge">
+              {country === "AR" ? "🇦🇷 Precios en pesos argentinos" : "🌍 Precios en dólares"}
+            </div>
           </div>
 
-          {/* Plans */}
-          <div className="vip-plans">
+          {/* ── Selector de plan ── */}
+          <div className="vip-plan-selector">
+            {(["monthly", "annual"] as VipPlan[]).map(p => {
+              const info = prices[p];
+              return (
+                <div
+                  key={p}
+                  className={`vip-plan-opt ${plan === p ? "sel" : ""}`}
+                  onClick={() => setPlan(p)}
+                  role="radio" aria-checked={plan === p} tabIndex={0}
+                  onKeyDown={e => e.key === "Enter" && setPlan(p)}
+                >
+                  {p === "annual" && <div className="vip-plan-best">MEJOR PRECIO</div>}
+                  <div className="vip-opt-check"><div className="vip-opt-check-dot" /></div>
+                  <div className="vip-opt-label">{p === "monthly" ? "Mensual" : "Anual"}</div>
+                  <div className="vip-opt-price">{info.display}</div>
+                  <div className="vip-opt-sub">{info.sub}</div>
+                  {info.save && <div className="vip-opt-save">{info.save}</div>}
+                </div>
+              );
+            })}
+          </div>
 
-            {/* Free */}
+          {/* ── Comparación de features ── */}
+          <div className="vip-plans">
             <div className="vip-plan vip-plan-free">
-              <div className="vip-plan-badge">
-                <div className="vip-badge-dot" />
-                Gratis
-              </div>
-              <div className="vip-plan-price">$0</div>
-              <div className="vip-plan-price-sub">Para siempre</div>
+              <div className="vip-plan-badge"><div className="vip-badge-dot" />Gratis</div>
               <div className="vip-features-list">
-                {freeFeatures.map((f, i) => (
+                {FREE_FEATURES.map((f, i) => (
                   <div key={i} className={`vip-feature-row ${f.has ? "" : "has-no"}`}>
-                    <div className={`vip-feature-icon ${f.has ? "yes-free" : "no-free"}`}>
-                      {f.has ? "✓" : "✕"}
-                    </div>
+                    <div className={`vip-feature-icon ${f.has ? "yes-free" : "no-free"}`}>{f.has ? "✓" : "✕"}</div>
                     <span className="vip-feature-label">{f.label}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* VIP */}
             <div className="vip-plan vip-plan-vip">
               <div className="vip-plan-shimmer" />
-              <div className="vip-plan-badge">
-                <div className="vip-badge-dot" />
-                VIP
-              </div>
-              <div className="vip-plan-price">$4.99</div>
-              <div className="vip-plan-price-sub">USD / mes</div>
+              <div className="vip-plan-badge"><div className="vip-badge-dot" />VIP</div>
               <div className="vip-features-list">
-                {vipFeatures.map((f, i) => (
+                {VIP_FEATURES.map((f, i) => (
                   <div key={i} className="vip-feature-row">
                     <div className="vip-feature-icon yes-vip">✓</div>
                     <span className="vip-feature-label">{f.label}</span>
@@ -340,23 +293,38 @@ function VIPModal({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </div>
-
           </div>
+
+          {/* Error */}
+          {error && <div className="vip-error-banner">⚠️ {error}</div>}
 
           {/* CTA */}
           <div className="vip-cta-wrap">
-            <button className="vip-btn-primary">
-              👑 &nbsp;Activar Turrinder VIP
+            <button className="vip-btn-mp" onClick={handleCheckout} disabled={loading}>
+              {loading ? (
+                <><span className="vip-spinner" /> Redirigiendo...</>
+              ) : (
+                <>
+                  Pagar con&nbsp;
+                  <span className="vip-mp-badge">
+                    <span className="vip-mp-badge-dot">MP</span>
+                    Mercado Pago
+                  </span>
+                  &nbsp;— {plan === "monthly" ? prices.monthly.display : prices.annual.display}
+                </>
+              )}
             </button>
             <button className="vip-btn-secondary" onClick={handleClose}>
               Quedarme con el plan gratis
             </button>
           </div>
 
-          <p className="vip-disclaimer">
-            Podés cancelar cuando quieras. Sin compromisos.<br />
+          <div className="vip-disclaimer">
+            <div className="vip-secure">🔒 Pago 100% seguro con Mercado Pago</div>
+            Renovación automática mensual o anual según el plan elegido.<br />
+            Podés cancelar cuando quieras desde tu cuenta de Mercado Pago.<br />
             Al suscribirte aceptás los Términos de Uso y la Política de Privacidad.
-          </p>
+          </div>
         </div>
       </div>
     </>
@@ -737,7 +705,7 @@ export default function SideNav() {
               style={{ objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 0 8px rgba(255,195,0,0.7))", animation: "crownBounce 3s ease-in-out infinite" }} />
             <div className="snav-vip-text">
               <span className="snav-vip-label">Turrinder VIP</span>
-              <span className="snav-vip-sub">Desbloqueá todo · $4.99/mes</span>
+              <span className="snav-vip-sub">Mensual o anual · desde $4.99</span>
             </div>
             <span className="snav-vip-arrow">›</span>
           </button>
