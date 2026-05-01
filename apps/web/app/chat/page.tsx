@@ -178,12 +178,20 @@ export default function ChatPage() {
       const data = await fetchMatches(me.user.id);
       setMatches(data);
       setLoading(false);
+
+      // Refetch diferido: cubre el race condition cuando venimos del chat individual.
+      // markMessagesAsRead en ConversationPage es async; puede terminar DESPUÉS
+      // de que fetchMatches ya corrió arriba. Con 800ms le damos tiempo suficiente.
+      setTimeout(async () => {
+        const fresh = await fetchMatches(me.user.id);
+        setMatches(fresh);
+      }, 800);
     };
 
     init();
     const t = setTimeout(() => setMounted(true), 60);
     return () => clearTimeout(t);
-  }, []);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── REALTIME ───────────────────────────────────────────────────────────────
   const refresh = useCallback(async () => {
@@ -210,25 +218,18 @@ export default function ChatPage() {
     });
   }, []);
 
-  // Refetch cuando el usuario vuelve a esta pestaña/página (visibilitychange)
-  // Esto resuelve el race condition cuando se regresa del chat individual:
-  // markMessagesAsRead puede haber terminado DESPUÉS de que fetchMatches corrió.
+  // Refetch cuando el usuario vuelve a la ventana (window focus).
+  // visibilitychange NO dispara en navegación interna de Next.js (SPA),
+  // pero window focus sí cuando el usuario vuelve desde otra tab/app.
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        refresh();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    // También refetch al montar (por si venimos de navegar de vuelta)
-    refresh();
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    const onFocus = () => { refresh(); };
+    window.addEventListener("focus", onFocus);
+    return () => { window.removeEventListener("focus", onFocus); };
   }, [refresh]);
 
   useEffect(() => {
-    if (!myIdRef.current) return;
+    // Esperar a que init() termine y myIdRef.current esté seteado
+    if (loading || !myIdRef.current) return;
 
     const channel = supabase
       .channel("chat-list-realtime")
@@ -255,9 +256,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  // Removemos `loading` de las deps: el canal debe suscribirse apenas myId esté listo,
-  // no esperar a que termine la carga inicial. Esto evita perder eventos de UPDATE (read=true).
-  }, [refresh]);
+  }, [refresh, loading]);
 
   // ── TÍTULO DEL NAVEGADOR ───────────────────────────────────────────────────
   const totalUnread = matches.reduce((acc, m) => acc + m.unread_count, 0);
