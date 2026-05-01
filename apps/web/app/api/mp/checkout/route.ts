@@ -2,13 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 
+// ── Validar variables de entorno al arrancar ──────────────────────
+// Si falta alguna, el error aparece claro en los logs de Vercel
+const MP_ACCESS_TOKEN        = process.env.MP_ACCESS_TOKEN;
+const SUPABASE_URL           = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const APP_URL                = process.env.NEXT_PUBLIC_APP_URL;
+
+if (!MP_ACCESS_TOKEN)      console.error("❌ ENV FALTANTE: MP_ACCESS_TOKEN");
+if (!SUPABASE_URL)         console.error("❌ ENV FALTANTE: NEXT_PUBLIC_SUPABASE_URL");
+if (!SUPABASE_SERVICE_KEY) console.error("❌ ENV FALTANTE: SUPABASE_SERVICE_ROLE_KEY");
+if (!APP_URL)              console.error("❌ ENV FALTANTE: NEXT_PUBLIC_APP_URL");
+
 const mp = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN!,
+  accessToken: MP_ACCESS_TOKEN ?? "",
 });
 
 const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  SUPABASE_URL    ?? "",
+  SUPABASE_SERVICE_KEY ?? ""
 );
 
 // Precios según país/moneda
@@ -17,7 +29,6 @@ const PLANS = {
     monthly: { price: 4999,  currency: "ARS", label: "VIP Mensual",  days: 30  },
     annual:  { price: 39999, currency: "ARS", label: "VIP Anual",    days: 365 },
   },
-  // Para cualquier otro país → USD
   USD: {
     monthly: { price: 4.99,  currency: "USD", label: "VIP Mensual",  days: 30  },
     annual:  { price: 39.99, currency: "USD", label: "VIP Anual",    days: 365 },
@@ -25,12 +36,21 @@ const PLANS = {
 };
 
 export async function POST(req: NextRequest) {
+  // Verificar envs antes de hacer cualquier cosa
+  if (!MP_ACCESS_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY || !APP_URL) {
+    console.error("❌ Variables de entorno faltantes en /api/mp/checkout");
+    return NextResponse.json(
+      { error: "Configuración del servidor incompleta. Contactá al soporte." },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = await req.json();
     const { plan, userId, country } = body as {
       plan: "monthly" | "annual";
       userId: string;
-      country: string; // "AR" | "MX" | "BR" | etc.
+      country: string;
     };
 
     if (!plan || !userId) {
@@ -42,13 +62,15 @@ export async function POST(req: NextRequest) {
     const selected = priceSet[plan];
 
     // Verificar usuario en Supabase
-    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (authError) {
+      console.error("❌ Supabase auth error:", authError.message);
+      return NextResponse.json({ error: "Error verificando usuario" }, { status: 500 });
+    }
     if (!authUser?.user) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
     const email = authUser.user.email ?? "";
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
 
     // Crear preferencia de Mercado Pago
     const preference = new Preference(mp);
@@ -65,29 +87,28 @@ export async function POST(req: NextRequest) {
           },
         ],
         payer: { email },
-        // Metadata que llega al webhook para asignar el VIP
         external_reference: JSON.stringify({ userId, plan, days: selected.days }),
         back_urls: {
-          success: `${appUrl}/vip/success`,
-          failure: `${appUrl}/vip?error=payment_failed`,
-          pending: `${appUrl}/vip?pending=true`,
+          success: `${APP_URL}/vip/success`,
+          failure: `${APP_URL}/vip?error=payment_failed`,
+          pending: `${APP_URL}/vip?pending=true`,
         },
-        auto_return:        "approved",
-        notification_url:   `${appUrl}/api/mp/webhook`,
-        // Expiración de la preferencia: 24hs
+        auto_return:          "approved",
+        notification_url:     `${APP_URL}/api/mp/webhook`,
         expiration_date_from: new Date().toISOString(),
         expiration_date_to:   new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       },
     });
 
     return NextResponse.json({
-      url:          response.init_point,       // URL de pago producción
-      url_sandbox:  response.sandbox_init_point, // URL de pago sandbox/test
+      url:          response.init_point,
+      url_sandbox:  response.sandbox_init_point,
       preferenceId: response.id,
     });
 
-  } catch (err) {
-    console.error("MP checkout error:", err);
+  } catch (err: any) {
+    // Log detallado para Vercel
+    console.error("❌ MP checkout error:", err?.message ?? err);
     return NextResponse.json({ error: "Error al crear la preferencia de pago" }, { status: 500 });
   }
 }
