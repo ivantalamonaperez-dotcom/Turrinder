@@ -920,7 +920,18 @@ export default function ChatPage() {
                         isFlashing  ? "new-flash" : "",
                       ].filter(Boolean).join(" ")}
                       style={{ transitionDelay: mounted ? `${0.06 + i * 0.042}s` : "0s" }}
-                      onClick={() => router.push(`/chat/${match.other_user.id}`)}
+                      onClick={() => {
+                        // Marcar como leído optimistamente en el estado local
+                        // antes de navegar, sin esperar a la DB ni al realtime.
+                        if (match.unread_count > 0) {
+                          setMatches(prev =>
+                            prev.map(m =>
+                              m.id === match.id ? { ...m, unread_count: 0 } : m
+                            )
+                          );
+                        }
+                        router.push(`/chat/${match.other_user.id}`);
+                      }}
                     >
                       <Avatar match={match} size={48} />
 
