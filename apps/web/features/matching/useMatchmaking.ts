@@ -7,8 +7,9 @@ export type MatchMode = "discover" | "ligues" | string;
 
 export const useMatchmaking = (mode: MatchMode) => {
   const { socket, connectCount } = useSocket();
-  const [room,      setRoom]      = useState<{ id: string } | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [room,        setRoom]        = useState<{ id: string } | null>(null);
+  const [searching,   setSearching]   = useState(false);
+  const [isInitiator, setIsInitiator] = useState(false);
 
   const isFindingMatch = useRef(false);
   const searchTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -17,8 +18,6 @@ export const useMatchmaking = (mode: MatchMode) => {
   const prevModeRef    = useRef<MatchMode | null>(null);
 
   useEffect(() => { socketRef.current = socket; }, [socket]);
-
-  // ─── helpers ────────────────────────────────────────────────────────────────
 
   const clearSearchTimeout = useCallback(() => {
     if (searchTimeout.current) {
@@ -33,9 +32,6 @@ export const useMatchmaking = (mode: MatchMode) => {
     }
   }, []);
 
-  // ─── findNewMatch ────────────────────────────────────────────────────────────
-  // Recibe el modo explícitamente para evitar closures con valor viejo
-
   const findNewMatch = useCallback((targetMode: MatchMode, delayMs = 0) => {
     if (!socketRef.current?.connected) return;
     if (isFindingMatch.current) return;
@@ -49,6 +45,7 @@ export const useMatchmaking = (mode: MatchMode) => {
       committedMode.current  = targetMode;
       setSearching(true);
       setRoom(null);
+      setIsInitiator(false);
       socketRef.current!.emit("find-match", { mode: targetMode });
     };
 
@@ -61,18 +58,14 @@ export const useMatchmaking = (mode: MatchMode) => {
     }
   }, [clearSearchTimeout]);
 
-  // Wrapper público — usa siempre el modo actual del hook
   const findNewMatchPublic = useCallback((delayMs = 0) => {
     findNewMatch(mode, delayMs);
   }, [findNewMatch, mode]);
 
-  // ─── Eventos de socket ───────────────────────────────────────────────────────
-
   useEffect(() => {
     if (!socket) return;
 
-    const handleMatchFound = (data: { partnerId: string; mode?: MatchMode }) => {
-      // Si el server nos emparejó en otro modo (race condition), ignorar y re-buscar
+    const handleMatchFound = (data: { partnerId: string; isInitiator: boolean; mode?: MatchMode }) => {
       if (data.mode && data.mode !== committedMode.current) {
         console.warn(
           `[Matchmaking] ⚠️ Match en modo "${data.mode}" pero esperaba "${committedMode.current}" — descartando`
@@ -82,6 +75,9 @@ export const useMatchmaking = (mode: MatchMode) => {
         return;
       }
       clearSearchTimeout();
+      // Primero isInitiator, luego room — así useWebRTC ve el valor correcto
+      // cuando el efecto de currentRoomId se dispara
+      setIsInitiator(data.isInitiator);
       setRoom({ id: data.partnerId });
       setSearching(false);
       isFindingMatch.current = false;
@@ -96,6 +92,7 @@ export const useMatchmaking = (mode: MatchMode) => {
       console.log("[Matchmaking] 💔 Partner se fue. Reiniciando...");
       isFindingMatch.current = false;
       setRoom(null);
+      setIsInitiator(false);
       findNewMatch(mode, 1500);
     };
 
@@ -111,36 +108,30 @@ export const useMatchmaking = (mode: MatchMode) => {
     };
   }, [socket, mode, findNewMatch, clearSearchTimeout]);
 
-  // ─── Auto-trigger ────────────────────────────────────────────────────────────
-
   useEffect(() => {
     if (!socket?.connected || connectCount === 0) return;
 
-    const isFirstRun   = prevModeRef.current === null;
-    const modeChanged  = !isFirstRun && prevModeRef.current !== mode;
+    const isFirstRun  = prevModeRef.current === null;
+    const modeChanged = !isFirstRun && prevModeRef.current !== mode;
     prevModeRef.current = mode;
 
     if (modeChanged) {
-      // Navegación SPA: salir de la sesión anterior, entrar en la nueva cola
       console.log(`[Matchmaking] 🔄 Modo "${mode}" detectado. Leave + re-search`);
       emitLeave();
       isFindingMatch.current = false;
       setRoom(null);
       setSearching(false);
+      setIsInitiator(false);
       findNewMatch(mode, 300);
       return;
     }
 
-    // Primera conexión / reconexión
     if (!room && !searching && !isFindingMatch.current) {
       console.log(`[Matchmaking] 🚀 Auto-búsqueda en modo: "${mode}"`);
       findNewMatch(mode);
     }
-  // Solo queremos que esto corra cuando el socket conecta o el modo cambia
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectCount, socket?.connected, mode]);
-
-  // ─── Cleanup al desmontar (salir de la página) ───────────────────────────────
 
   useEffect(() => {
     return () => {
@@ -155,6 +146,7 @@ export const useMatchmaking = (mode: MatchMode) => {
   return {
     room,
     searching,
+    isInitiator,
     setRoom,
     findNewMatch: findNewMatchPublic,
   };

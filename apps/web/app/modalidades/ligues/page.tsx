@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /modalidades/ligues/page.tsx
+ * /modalidades/ligues/page.tsx — patched: isInitiator
  */
 
 import { useEffect, useCallback, useState } from "react";
@@ -24,7 +24,6 @@ export default function LiguesPage() {
   const router = useRouter();
   const { socket } = useSocket();
 
-  // Perfil propio para mostrar en el modal
   const [myProfile, setMyProfile] = useState<{ name?: string; avatar_url?: string } | null>(null);
 
   useEffect(() => {
@@ -32,7 +31,6 @@ export default function LiguesPage() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) { router.push("/"); return; }
 
-      // Cargar mi perfil para el modal
       const { data: profile } = await supabase
         .from("profiles")
         .select("name, avatar_url")
@@ -47,7 +45,7 @@ export default function LiguesPage() {
   useProfile();
   usePresence();
 
-  const { room, searching, findNewMatch } = useMatchmaking("ligues");
+  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("ligues");
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
@@ -201,7 +199,6 @@ export default function LiguesPage() {
         .lp-back:hover { color:var(--sky); background:rgba(84,199,248,0.08); }
       `}</style>
 
-      {/* Modal de match — pasa myProfile para mostrar mi foto */}
       <MatchModal
         visible={isMatch}
         onClose={() => setIsMatch(false)}
@@ -248,6 +245,7 @@ export default function LiguesPage() {
         <div className="lp-video">
           <VideoPlayer
             room={room}
+            isInitiator={isInitiator}
             matchUser={matchUser}
             onNext={nextUser}
             onLike={likeUser}

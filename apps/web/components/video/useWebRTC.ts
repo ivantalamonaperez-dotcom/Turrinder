@@ -1,50 +1,52 @@
 "use client";
 
 /**
- * useWebRTC — CÁMARA PRIMERO, MATCH DESPUÉS (v2 — fixes asimétricos)
+ * useWebRTC v3 — UN SOLO SOURCE OF TRUTH
  *
- * BUGS CORREGIDOS:
+ * CAUSA RAÍZ DEL BUG ASIMÉTRICO:
+ *   Existían DOS listeners de "match-found" corriendo en paralelo:
+ *     1. useMatchmaking → setRoom({ id: partnerId })
+ *     2. useWebRTC      → createPeer(partnerId)
  *
- * 1. Race condition asimétrica (el bug principal del reporte):
- *    El initiator esperaba 500 ms antes de enviar la offer, lo que daba tiempo
- *    para que cameraReady resolviera. El non-initiator, en cambio, recibía la
- *    signal (offer) ANTES de que llegara su match-found, y el handler de "signal"
- *    llamaba createPeer(from) sin await cameraReadyRef.current → peer sin tracks
- *    → video unidireccional.
- *    FIX: el handler de "signal" también hace `await cameraReadyRef.current`
- *    antes de crear el peer.
+ *   El problema: cuando (1) actualizaba room, React re-renderizaba el componente,
+ *   lo que cambiaba currentRoomId en useWebRTC. Esto podía disparar el efecto de
+ *   prevRoomId en momentos inesperados, destruyendo el peer recién creado en (2).
+ *   Además, la race entre ambos listeners era no-determinista: dependiendo del
+ *   orden de micro-tareas y del lado que fuera initiator/non-initiator, uno de
+ *   los dos peers se creaba sin tracks o después de haber sido destruido.
  *
- * 2. NotReadableError / Device in use:
- *    Si la cámara fallaba por "device in use" (otro contexto de browser),
- *    cameraInitiated quedaba en true y nunca se reintentaba.
- *    FIX: al recibir match-found, si localStream es null se reintenta initCamera
- *    una vez más (el dispositivo puede estar libre para entonces).
+ * SOLUCIÓN — separar responsabilidades:
+ *   useMatchmaking  → escucha "match-found", expone { room, isInitiator }
+ *   useWebRTC       → NO escucha "match-found"; solo reacciona a currentRoomId
  *
- * 3. Cleanup del useEffect destruía peer activo en re-renders:
- *    El return del efecto llamaba closePeerConnection() incondicionalmente,
- *    matando conexiones válidas al re-montar por cambio de dependencias.
- *    FIX: el cleanup solo cancela los listeners del socket; la destrucción del
- *    peer queda en manos del efecto que observa currentRoomId → null.
+ *   Cuando currentRoomId cambia de null → valor: inicializa cámara, crea peer,
+ *   si isInitiator envía offer tras 500 ms.
+ *   Cuando currentRoomId cambia de valor → null: destruye peer.
+ *   Solo "signal" se sigue escuchando aquí (offer/answer/candidate).
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useSocket } from "@/hooks/useSocket";
 
-export const useWebRTC = (currentRoomId: string | null) => {
+interface UseWebRTCProps {
+  currentRoomId: string | null;
+  /** Viene de useMatchmaking: true si este cliente envía la offer */
+  isInitiator: boolean;
+}
+
+export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
   const { socket } = useSocket();
 
   const localStream     = useRef<MediaStream | null>(null);
   const peer            = useRef<RTCPeerConnection | null>(null);
   const remoteVideoRef  = useRef<HTMLVideoElement | null>(null);
   const localVideoRef   = useRef<HTMLVideoElement | null>(null);
-
-  /**
-   * Promise que se resuelve cuando la cámara está lista (o ha fallado).
-   * Siempre debe apuntar a la ÚLTIMA llamada a initCamera para que los
-   * handlers de signal/match-found esperen la cámara real.
-   */
   const cameraReadyRef  = useRef<Promise<void>>(Promise.resolve());
   const cameraInitiated = useRef(false);
+
+  // Ref para acceder al roomId actual dentro de closures sin re-crear funciones
+  const currentRoomIdRef = useRef<string | null>(currentRoomId);
+  useEffect(() => { currentRoomIdRef.current = currentRoomId; }, [currentRoomId]);
 
   const [isConnected,    setIsConnected]    = useState(false);
   const [remoteStream,   setRemoteStream]   = useState<MediaStream | null>(null);
@@ -52,25 +54,14 @@ export const useWebRTC = (currentRoomId: string | null) => {
   const [matchConfirmed, setMatchConfirmed] = useState(false);
 
   // ── initCamera ──────────────────────────────────────────────────────────────
-  // Permite llamarse más de una vez: si ya hay stream, es no-op.
-  // Si cameraInitiated es true pero localStream sigue null (fallo anterior),
-  // resetea el flag y reintenta — esto cubre el caso "Device in use" temporal.
   const initCamera = useCallback(async () => {
-    if (localStream.current) return; // ya funciona, salir rápido
-
-    if (cameraInitiated.current) {
-      // Esperar la promise en curso en vez de lanzar una segunda
-      return cameraReadyRef.current;
-    }
+    if (localStream.current) return;
+    if (cameraInitiated.current) return cameraReadyRef.current;
 
     cameraInitiated.current = true;
-
     const camPromise = (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localStream.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
         setCameraError(false);
@@ -78,11 +69,9 @@ export const useWebRTC = (currentRoomId: string | null) => {
       } catch (e) {
         console.warn("[WebRTC] ⚠️ Sin cámara:", e);
         setCameraError(true);
-        // Reseteamos para permitir reintentos futuros (p.ej. tras match-found)
-        cameraInitiated.current = false;
+        cameraInitiated.current = false; // permite reintentar en el próximo match
       }
     })();
-
     cameraReadyRef.current = camPromise;
     return camPromise;
   }, []);
@@ -90,8 +79,8 @@ export const useWebRTC = (currentRoomId: string | null) => {
   // ── closePeerConnection ──────────────────────────────────────────────────────
   const closePeerConnection = useCallback(() => {
     if (!peer.current) return;
-    peer.current.ontrack               = null;
-    peer.current.onicecandidate        = null;
+    peer.current.ontrack = null;
+    peer.current.onicecandidate = null;
     peer.current.oniceconnectionstatechange = null;
     peer.current.close();
     peer.current = null;
@@ -101,21 +90,10 @@ export const useWebRTC = (currentRoomId: string | null) => {
     console.log("[WebRTC] 🧹 PeerConnection destruida.");
   }, []);
 
-  // ── Room → null: destruir peer y resetear matchConfirmed ────────────────────
-  const prevRoomId = useRef<string | null>(currentRoomId);
-  useEffect(() => {
-    const prev = prevRoomId.current;
-    prevRoomId.current = currentRoomId;
-    if (prev !== null && currentRoomId === null) {
-      closePeerConnection();
-      setMatchConfirmed(false);
-    }
-  }, [currentRoomId, closePeerConnection]);
-
   // ── createPeer ───────────────────────────────────────────────────────────────
   const createPeer = useCallback((targetId: string) => {
-    console.log("[WebRTC] 🔗 Creando PeerConnection para:", targetId);
     closePeerConnection();
+    console.log("[WebRTC] 🔗 Creando PeerConnection para:", targetId);
 
     const newPeer = new RTCPeerConnection({
       iceServers: [
@@ -127,12 +105,10 @@ export const useWebRTC = (currentRoomId: string | null) => {
     peer.current = newPeer;
 
     if (localStream.current) {
-      localStream.current.getTracks().forEach((track) =>
-        newPeer.addTrack(track, localStream.current!)
-      );
-      console.log("[WebRTC] ✅ Tracks locales añadidos al peer.");
+      localStream.current.getTracks().forEach((t) => newPeer.addTrack(t, localStream.current!));
+      console.log("[WebRTC] ✅ Tracks locales añadidos.");
     } else {
-      console.warn("[WebRTC] ⚠️ Peer creado sin tracks (sin cámara).");
+      console.warn("[WebRTC] ⚠️ Peer creado sin tracks.");
     }
 
     newPeer.ontrack = (event) => {
@@ -161,68 +137,100 @@ export const useWebRTC = (currentRoomId: string | null) => {
     return newPeer;
   }, [socket, closePeerConnection]);
 
-  // ── Efecto principal: cámara + listeners ─────────────────────────────────────
+  // ── Efecto 1: cámara al montar ───────────────────────────────────────────────
   useEffect(() => {
-    if (!socket) return;
-
-    // Iniciar la cámara lo antes posible, sin esperar el match
     initCamera();
+  }, [initCamera]);
 
-    // ── match-found ─────────────────────────────────────────────────────────
-    socket.off("match-found");
-    socket.on("match-found", async ({ partnerId, isInitiator }) => {
-      console.log(`[WebRTC] 🔗 Match con ${partnerId} | iniciador: ${isInitiator}`);
+  // ── Efecto 2: reaccionar a currentRoomId — ÚNICO lugar que crea/destruye peer
+  const prevRoomId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const prev = prevRoomId.current;
+    prevRoomId.current = currentRoomId;
+
+    if (prev === null && currentRoomId === null) return;
+
+    // valor → null: destruir peer
+    if (currentRoomId === null) {
+      closePeerConnection();
+      setMatchConfirmed(false);
+      return;
+    }
+
+    // null → valor (o cambio de partner): inicializar conexión
+    let cancelled = false;
+
+    const connect = async (roomId: string, initiator: boolean) => {
       setMatchConfirmed(true);
 
-      // Si la cámara falló antes (Device in use), intentarlo de nuevo ahora
+      // Reintentar cámara si falló antes (ej: NotReadableError — Device in use)
       if (!localStream.current) {
         cameraInitiated.current = false;
         await initCamera();
       } else {
         await cameraReadyRef.current;
       }
-      console.log("[WebRTC] Cámara confirmada, procediendo con peer.");
 
-      const activePeer = createPeer(partnerId);
+      if (cancelled) {
+        console.log("[WebRTC] Conexión cancelada antes de crear peer (roomId cambió).");
+        return;
+      }
 
-      if (isInitiator) {
-        // Pequeño delay para dar tiempo al non-initiator de registrar sus listeners
+      const activePeer = createPeer(roomId);
+
+      if (initiator) {
         await new Promise((r) => setTimeout(r, 500));
-
-        if (peer.current !== activePeer) {
-          console.warn("[WebRTC] Peer reemplazado, abortando offer.");
+        if (cancelled || peer.current !== activePeer) {
+          console.warn("[WebRTC] Peer reemplazado antes de enviar offer, abortando.");
           return;
         }
-
         try {
           const offer = await activePeer.createOffer();
           await activePeer.setLocalDescription(offer);
-          socket.emit("signal", { to: partnerId, data: offer });
+          socket?.emit("signal", { to: roomId, data: offer });
           console.log("[WebRTC] 📤 Offer enviada.");
         } catch (e) {
           console.error("[WebRTC] Error creando offer:", e);
         }
       }
-    });
+    };
 
-    // ── signal ──────────────────────────────────────────────────────────────
-    socket.off("signal");
-    socket.on("signal", async ({ from, data }) => {
-      // Si no hay peer todavía (el signal llegó antes que match-found)...
+    connect(currentRoomId, isInitiator);
+
+    return () => { cancelled = true; };
+  // Solo currentRoomId e isInitiator como deps — no incluir funciones estables
+  // para evitar re-runs inesperados que destruyan el peer activo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRoomId, isInitiator]);
+
+  // ── Efecto 3: señalización (solo "signal", sin "match-found") ────────────────
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleSignal = async ({ from, data }: { from: string; data: any }) => {
+      // Si la offer llega antes de que el peer exista (race con el efecto 2),
+      // esperar cámara y crear peer de emergencia.
       if (!peer.current) {
-        // FIX: esperar cámara ANTES de crear el peer, igual que en match-found
         if (!localStream.current) {
           cameraInitiated.current = false;
           await initCamera();
         } else {
           await cameraReadyRef.current;
         }
-        createPeer(from);
-        setMatchConfirmed(true);
+        // Verificar de nuevo: el efecto 2 puede haber creado el peer mientras esperábamos
+        if (!peer.current) {
+          const roomId = currentRoomIdRef.current;
+          if (roomId) {
+            createPeer(from);
+            setMatchConfirmed(true);
+          }
+        }
       }
-      if (!peer.current) return;
 
       const activePeer = peer.current;
+      if (!activePeer) return;
+
       try {
         if (data.type === "offer") {
           await activePeer.setRemoteDescription(new RTCSessionDescription(data));
@@ -238,16 +246,22 @@ export const useWebRTC = (currentRoomId: string | null) => {
       } catch (e) {
         console.warn("[WebRTC] Señal ignorada:", e);
       }
-    });
-
-    // FIX: el cleanup solo desregistra listeners — NO destruye el peer.
-    // La destrucción del peer queda en manos del efecto que observa
-    // currentRoomId → null, evitando matar conexiones activas en re-renders.
-    return () => {
-      socket.off("match-found");
-      socket.off("signal");
     };
-  }, [socket, initCamera, createPeer, closePeerConnection]);
+
+    socket.on("signal", handleSignal);
+    return () => { socket.off("signal", handleSignal); };
+  }, [socket, initCamera, createPeer]);
+
+  // ── Cleanup al desmontar ─────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      closePeerConnection();
+      localStream.current?.getTracks().forEach((t) => t.stop());
+      localStream.current = null;
+      cameraInitiated.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     localVideoRef,

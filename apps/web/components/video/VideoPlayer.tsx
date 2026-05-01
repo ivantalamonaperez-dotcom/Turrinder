@@ -1,15 +1,9 @@
 "use client";
 
 /**
- * VideoPlayer.tsx
- *
- * Maneja SOLO la lógica de video y WebRTC.
- * Los controles están en VideoControls.tsx para poder ser reemplazados.
- *
- * Si necesitás una pantalla con la lógica de video pero botones distintos:
- *   1. No uses VideoPlayer directamente
- *   2. Importá useWebRTC y armá tu propio componente con los botones que quieras
- *   3. O usá VideoPlayer con `customControls` para inyectar tus propios botones
+ * VideoPlayer.tsx — v2
+ * Recibe `isInitiator` como prop y lo pasa a useWebRTC.
+ * Ya no hay lógica de match-found dentro de useWebRTC.
  */
 
 import { useState, useEffect } from "react";
@@ -20,20 +14,20 @@ import liguesImg from "../../Images/ligues.png";
 
 interface Props {
   room: { id: string } | null;
+  isInitiator: boolean;
   matchUser: any;
   onNext: () => void;
   onLike: () => void;
   liked: boolean;
   searching?: boolean;
   skipBlocked?: boolean;
-  /** Inyectá tus propios controles — si se pasa, VideoControls no se renderiza */
   customControls?: React.ReactNode;
-  /** Estado externo del modo streamer — usarlo cuando se pasa customControls */
   streamerModeExternal?: boolean;
 }
 
 export default function VideoPlayer({
   room,
+  isInitiator,
   matchUser,
   onNext,
   onLike,
@@ -45,14 +39,12 @@ export default function VideoPlayer({
 }: Props) {
   const targetPartnerId = room?.id || null;
   const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
-    useWebRTC(targetPartnerId);
+    useWebRTC({ currentRoomId: targetPartnerId, isInitiator });
 
-  const [audioLocked,  setAudioLocked]  = useState(true);
-  const [likeFlash,    setLikeFlash]    = useState(false);
+  const [audioLocked,          setAudioLocked]          = useState(true);
+  const [likeFlash,            setLikeFlash]            = useState(false);
   const [streamerModeInternal, setStreamerModeInternal] = useState(false);
 
-  // Si se pasa customControls, el padre maneja streamerMode externamente.
-  // Si no, VideoPlayer lo maneja solo.
   const streamerMode = streamerModeExternal !== undefined
     ? streamerModeExternal
     : streamerModeInternal;
@@ -187,79 +179,48 @@ export default function VideoPlayer({
         }
         .vp-divider-gem {
           position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-          width: 10px; height: 10px; border-radius: 50%;
-          background: radial-gradient(circle, #a8e6ff 0%, var(--sky) 55%, var(--sky2) 100%);
-          box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.35); z-index: 31;
-          animation: gemPulse 3s ease-in-out infinite;
+          width: 8px; height: 8px; background: var(--sky);
+          border-radius: 2px; transform: translate(-50%,-50%) rotate(45deg);
+          box-shadow: 0 0 10px var(--sky), 0 0 20px rgba(84,199,248,0.5);
         }
-        @keyframes gemPulse {
-          0%,100% { box-shadow: 0 0 16px rgba(84,199,248,0.9), 0 0 40px rgba(84,199,248,0.3); transform: translate(-50%,-50%) scale(1); }
-          50%      { box-shadow: 0 0 24px rgba(84,199,248,1), 0 0 60px rgba(84,199,248,0.5); transform: translate(-50%,-50%) scale(1.25); }
-        }
-
-        .vp-like-flash {
-          position: absolute; inset: 0; z-index: 50; pointer-events: none;
-          background: radial-gradient(ellipse at center, rgba(84,199,248,0.16) 0%, transparent 70%);
-          animation: likeFlash 0.6s ease-out forwards;
-        }
-        @keyframes likeFlash { 0%{opacity:1} 100%{opacity:0} }
-
-        .vp-no-cam {
-          position: absolute; inset: 0;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-          background: #040c18; z-index: 3;
-        }
-        .vp-no-cam-icon { font-size: 28px; opacity: 0.22; }
-        .vp-no-cam-text { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
 
         .vp-placeholder {
-          position: absolute; inset: 0;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
-          z-index: 5; background: #050f1e;
+          position: absolute; inset: 0; z-index: 3;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+          background: #050f1e;
         }
-        .vp-radar { position: relative; width: 80px; height: 80px; }
+        .vp-radar {
+          position: relative; width: 110px; height: 110px;
+          display: flex; align-items: center; justify-content: center;
+        }
         .vp-radar-ring {
-          position: absolute; border-radius: 50%;
-          border: 1px solid rgba(84,199,248,0.3);
-          top: 50%; left: 50%; transform: translate(-50%,-50%);
-          animation: radarExpand 2.6s ease-out infinite;
+          position: absolute;
+          border-radius: 50%;
+          border: 1.5px solid rgba(84,199,248,0.35);
+          animation: radarPulse 2.7s ease-out infinite;
         }
-        @keyframes radarExpand { 0%{width:20px;height:20px;opacity:0.9} 100%{width:110px;height:110px;opacity:0} }
+        @keyframes radarPulse {
+          0%   { width: 30px; height: 30px; opacity: 0.9; }
+          100% { width: 110px; height: 110px; opacity: 0; }
+        }
         .vp-radar-center {
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-          width: 42px; height: 42px; border-radius: 50%;
-          background: linear-gradient(135deg, var(--sky), var(--sky2));
-          display: flex; align-items: center; justify-content: center; font-size: 20px;
-          box-shadow: 0 0 24px rgba(84,199,248,0.7);
-          animation: radarCenterPulse 2.6s ease-in-out infinite;
+          position: relative; z-index: 2;
+          width: 36px; height: 36px; border-radius: 50%;
+          background: rgba(84,199,248,0.08); border: 1.5px solid rgba(84,199,248,0.35);
+          display: flex; align-items: center; justify-content: center; font-size: 16px;
         }
-        .vp-radar-center.vp-radar-center--image {
-          background: transparent;
-          box-shadow: none;
-          animation: none;
+        .vp-radar-center--image {
+          background: transparent; border: none;
           width: 72px; height: 72px;
         }
-        @keyframes radarCenterPulse {
-          0%,100%{box-shadow:0 0 24px rgba(84,199,248,0.7)}
-          50%{box-shadow:0 0 40px rgba(84,199,248,1),0 0 70px rgba(84,199,248,0.3)}
-        }
-
         .vp-ligues-img {
-          width: 72px;
-          height: 72px;
-          object-fit: contain;
+          width: 72px; height: 72px; object-fit: contain;
           filter: drop-shadow(0 0 12px rgba(84,199,248,0.9)) drop-shadow(0 0 28px rgba(84,199,248,0.5));
           animation: vp-levitate 2.6s ease-in-out infinite;
         }
         @keyframes vp-levitate {
-          0%,100% {
-            transform: translateY(0px) scale(1);
-            filter: drop-shadow(0 0 12px rgba(84,199,248,0.9)) drop-shadow(0 0 28px rgba(84,199,248,0.5));
-          }
-          50% {
-            transform: translateY(-10px) scale(1.08);
-            filter: drop-shadow(0 0 22px rgba(84,199,248,1)) drop-shadow(0 0 48px rgba(84,199,248,0.7)) drop-shadow(0 8px 20px rgba(84,199,248,0.35));
-          }
+          0%,100% { transform: translateY(0px) scale(1); }
+          50%      { transform: translateY(-10px) scale(1.08); }
         }
         .vp-radar-text {
           font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
@@ -314,40 +275,49 @@ export default function VideoPlayer({
         .vp-corner-tr { top:10px; right:10px;  border-top:1.5px solid var(--sky); border-right:1.5px solid var(--sky); }
         .vp-corner-bl { bottom:10px; left:10px;   border-bottom:1.5px solid var(--sky); border-left:1.5px solid var(--sky); }
         .vp-corner-br { bottom:10px; right:10px;  border-bottom:1.5px solid var(--sky); border-right:1.5px solid var(--sky); }
+
+        .vp-no-cam {
+          position: absolute; inset: 0; display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 8px;
+          background: #040c18; z-index: 3;
+        }
+        .vp-no-cam-icon { font-size: 32px; opacity: 0.4; }
+        .vp-no-cam-text { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+
+        .vp-like-flash {
+          position: fixed; inset: 0; z-index: 999;
+          background: rgba(84,199,248,0.12);
+          animation: likeFlash 0.6s ease forwards;
+          pointer-events: none;
+        }
+        @keyframes likeFlash { 0%{opacity:1} 100%{opacity:0} }
       `}</style>
 
       {likeFlash && <div className="vp-like-flash" />}
 
       <div className="vp-root" onClick={unlockAudio}>
 
-        {/* ════ ZONA DE VIDEO ════ */}
         <div className="vp-video-zone">
 
-          {/* Panel izquierdo — tú */}
+          {/* Panel local */}
           <div className="vp-panel vp-panel-local">
             <video ref={localVideoRef} autoPlay muted playsInline className="vp-video vp-video-local" />
-
             {cameraError && (
               <div className="vp-no-cam">
                 <div className="vp-no-cam-icon">📷</div>
                 <div className="vp-no-cam-text">Sin cámara</div>
               </div>
             )}
-
-            
-
             <div className="vp-corner vp-corner-tl" />
             <div className="vp-corner vp-corner-bl" />
           </div>
 
-          {/* Divisor central */}
           <div className="vp-divider">
             <div className="vp-divider-gem" />
           </div>
 
-          {/* Panel derecho — pareja */}
+          {/* Panel remoto */}
           <div className="vp-panel vp-panel-remote">
-
             <video
               ref={remoteVideoRef} autoPlay playsInline
               className="vp-video vp-video-remote"
@@ -415,9 +385,6 @@ export default function VideoPlayer({
 
         </div>
 
-        {/* ════ CONTROLES ════
-            Si se pasa customControls, se renderiza eso.
-            Si no, se usa VideoControls con los botones por defecto. */}
         {customControls ?? (
           <VideoControls
             onSkip={onNext}

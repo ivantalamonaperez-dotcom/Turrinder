@@ -41,7 +41,7 @@ export default function DiscoverPage() {
   useProfile();
   usePresence();
 
-  const { room, searching, findNewMatch } = useMatchmaking("discover");
+  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("discover");
   const { matchUser } = useMatchUser(room);
 
   // Pasamos el rol al hook — streamer y vip quedan exentos automáticamente
@@ -297,6 +297,7 @@ export default function DiscoverPage() {
 
         <div className="dp-video">
           <VideoPlayer
+            isInitiator={isInitiator}
             room={room}
             matchUser={matchUser}
             onNext={nextUser}
