@@ -5,11 +5,21 @@ import { useSocket } from "@/hooks/useSocket";
 
 export type MatchMode = "discover" | "ligues" | string;
 
+// room e isInitiator en un solo objeto para actualizarse atómicamente
+// y evitar renders intermedios con combinaciones inválidas.
+type MatchState = {
+  room: { id: string } | null;
+  isInitiator: boolean;
+};
+
 export const useMatchmaking = (mode: MatchMode) => {
   const { socket, connectCount } = useSocket();
-  const [room,        setRoom]        = useState<{ id: string } | null>(null);
-  const [searching,   setSearching]   = useState(false);
-  const [isInitiator, setIsInitiator] = useState(false);
+
+  const [matchState, setMatchState] = useState<MatchState>({
+    room: null,
+    isInitiator: false,
+  });
+  const [searching, setSearching] = useState(false);
 
   const isFindingMatch = useRef(false);
   const searchTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,13 +54,13 @@ export const useMatchmaking = (mode: MatchMode) => {
       isFindingMatch.current = true;
       committedMode.current  = targetMode;
       setSearching(true);
-      setRoom(null);
-      setIsInitiator(false);
+      // Reset atómico: room=null, isInitiator=false en un solo setState
+      setMatchState({ room: null, isInitiator: false });
       socketRef.current!.emit("find-match", { mode: targetMode });
     };
 
     if (delayMs > 0) {
-      setRoom(null);
+      setMatchState({ room: null, isInitiator: false });
       setSearching(true);
       searchTimeout.current = setTimeout(doSearch, delayMs);
     } else {
@@ -65,7 +75,11 @@ export const useMatchmaking = (mode: MatchMode) => {
   useEffect(() => {
     if (!socket) return;
 
-    const handleMatchFound = (data: { partnerId: string; isInitiator: boolean; mode?: MatchMode }) => {
+    const handleMatchFound = (data: {
+      partnerId: string;
+      isInitiator: boolean;
+      mode?: MatchMode;
+    }) => {
       if (data.mode && data.mode !== committedMode.current) {
         console.warn(
           `[Matchmaking] ⚠️ Match en modo "${data.mode}" pero esperaba "${committedMode.current}" — descartando`
@@ -75,10 +89,9 @@ export const useMatchmaking = (mode: MatchMode) => {
         return;
       }
       clearSearchTimeout();
-      // Primero isInitiator, luego room — así useWebRTC ve el valor correcto
-      // cuando el efecto de currentRoomId se dispara
-      setIsInitiator(data.isInitiator);
-      setRoom({ id: data.partnerId });
+      // UN SOLO setState: room e isInitiator se actualizan juntos.
+      // Esto evita el render intermedio que causaba doble-peer en useWebRTC.
+      setMatchState({ room: { id: data.partnerId }, isInitiator: data.isInitiator });
       setSearching(false);
       isFindingMatch.current = false;
     };
@@ -91,8 +104,7 @@ export const useMatchmaking = (mode: MatchMode) => {
     const handlePartnerLeft = () => {
       console.log("[Matchmaking] 💔 Partner se fue. Reiniciando...");
       isFindingMatch.current = false;
-      setRoom(null);
-      setIsInitiator(false);
+      setMatchState({ room: null, isInitiator: false });
       findNewMatch(mode, 1500);
     };
 
@@ -119,14 +131,13 @@ export const useMatchmaking = (mode: MatchMode) => {
       console.log(`[Matchmaking] 🔄 Modo "${mode}" detectado. Leave + re-search`);
       emitLeave();
       isFindingMatch.current = false;
-      setRoom(null);
+      setMatchState({ room: null, isInitiator: false });
       setSearching(false);
-      setIsInitiator(false);
       findNewMatch(mode, 300);
       return;
     }
 
-    if (!room && !searching && !isFindingMatch.current) {
+    if (!matchState.room && !searching && !isFindingMatch.current) {
       console.log(`[Matchmaking] 🚀 Auto-búsqueda en modo: "${mode}"`);
       findNewMatch(mode);
     }
@@ -144,10 +155,11 @@ export const useMatchmaking = (mode: MatchMode) => {
   }, []);
 
   return {
-    room,
+    room:        matchState.room,
+    isInitiator: matchState.isInitiator,
     searching,
-    isInitiator,
-    setRoom,
+    setRoom: (room: { id: string } | null) =>
+      setMatchState((prev) => ({ ...prev, room })),
     findNewMatch: findNewMatchPublic,
   };
 };
