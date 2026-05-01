@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/services/supabase.client";
 
-export default function VipSuccessPage() {
+// Componente interno separado — necesario para que Suspense funcione con useRouter
+function VipSuccessContent() {
   const router       = useRouter();
-  const searchParams = useSearchParams();
   const [count,    setCount]    = useState(6);
   const [verified, setVerified] = useState(false);
 
@@ -111,5 +111,19 @@ export default function VipSuccessPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// Suspense es obligatorio cuando hay hooks de navegación en páginas estáticas de Next.js
+export default function VipSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: "100dvh", background: "#030a14", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid rgba(255,195,0,0.2)", borderTopColor: "#ffd700", animation: "spin 0.7s linear infinite" }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    }>
+      <VipSuccessContent />
+    </Suspense>
   );
 }
