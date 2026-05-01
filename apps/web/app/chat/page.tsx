@@ -210,6 +210,23 @@ export default function ChatPage() {
     });
   }, []);
 
+  // Refetch cuando el usuario vuelve a esta pestaña/página (visibilitychange)
+  // Esto resuelve el race condition cuando se regresa del chat individual:
+  // markMessagesAsRead puede haber terminado DESPUÉS de que fetchMatches corrió.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    // También refetch al montar (por si venimos de navegar de vuelta)
+    refresh();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh]);
+
   useEffect(() => {
     if (!myIdRef.current) return;
 
@@ -238,7 +255,9 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [refresh, loading]);
+  // Removemos `loading` de las deps: el canal debe suscribirse apenas myId esté listo,
+  // no esperar a que termine la carga inicial. Esto evita perder eventos de UPDATE (read=true).
+  }, [refresh]);
 
   // ── TÍTULO DEL NAVEGADOR ───────────────────────────────────────────────────
   const totalUnread = matches.reduce((acc, m) => acc + m.unread_count, 0);
