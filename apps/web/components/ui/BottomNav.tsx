@@ -63,9 +63,14 @@ function VIPModal({ onClose }: { onClose: () => void }) {
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string | null>(null);
 
+  const [countryReady, setCountryReady] = useState(false);
+
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
-    detectCountry().then(setCountry);
+    detectCountry().then(c => {
+      setCountry(c);
+      setCountryReady(true);  // señal de que ya tenemos el país real
+    });
   }, []);
 
   const handleClose = () => {
@@ -73,9 +78,13 @@ function VIPModal({ onClose }: { onClose: () => void }) {
     setTimeout(onClose, 380);
   };
 
-  // Crear preferencia cada vez que cambia el plan o el país
-  // El Wallet Brick necesita el preferenceId antes de renderizarse
+  // Crear preferencia solo cuando ya tenemos el país resuelto
+  // Esto evita que se ejecute dos veces (una con "OTHER" y otra con el país real)
   useEffect(() => {
+    if (!countryReady) return;  // esperar a tener el país antes de crear preferencia
+
+    let cancelled = false;  // evitar race conditions si el plan cambia rápido
+
     const createPreference = async () => {
       setPreferenceId(null);
       setError(null);
@@ -91,17 +100,22 @@ function VIPModal({ onClose }: { onClose: () => void }) {
         });
         const data = await res.json();
 
+        if (cancelled) return;  // si el plan cambió mientras esperábamos, ignorar
+
         if (!res.ok || !data.preferenceId) {
           setError(data.error ?? "Error al preparar el pago.");
           return;
         }
         setPreferenceId(data.preferenceId);
-      } catch { setError("Error de conexión."); }
-      finally  { setLoading(false); }
+      } catch { if (!cancelled) setError("Error de conexión."); }
+      finally  { if (!cancelled) setLoading(false); }
     };
+
     createPreference();
+
+    return () => { cancelled = true; };  // cleanup si el efecto se re-ejecuta
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, country]);
+  }, [plan, countryReady]);
 
   const prices = VIP_PRICES[country];
 
