@@ -20,7 +20,7 @@ export const useMatchUser = (room: any) => {
 
         const { data, error } = await supabase
           .from("profiles")
-          .select("id, name, age, avatar_url, bio, photos, interests, looking_for, gender")
+          .select("id, name, age, avatar_url, bio, photos, interests, looking_for, gender, role")
           .eq("id", otherId)
           .single();
 
