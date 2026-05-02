@@ -177,15 +177,6 @@ export default function DiscoverPage() {
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
-        .dp-logo-wrap::after {
-          content: '';
-          position: absolute;
-          bottom: -4px; left: 0;
-          width: 100%; height: 1.5px;
-          background: linear-gradient(90deg, var(--sky), var(--sky2));
-          border-radius: 2px;
-          opacity: 0.4;
-        }
 
         .dp-header-right {
           display: flex;

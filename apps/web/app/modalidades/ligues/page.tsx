@@ -151,12 +151,6 @@ export default function LiguesPage() {
           background:linear-gradient(120deg, var(--sky) 0%, #a8e6ff 55%, var(--sky2) 100%);
           -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
         }
-        .lp-logo-wrap::after {
-          content:''; position:absolute; bottom:-4px; left:0;
-          width:100%; height:1.5px;
-          background:linear-gradient(90deg, var(--sky), var(--sky2));
-          border-radius:2px; opacity:0.4;
-        }
 
         .lp-header-right {
           display: flex; align-items: center; gap: 7px; pointer-events: all;
