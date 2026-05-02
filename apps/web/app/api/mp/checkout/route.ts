@@ -26,11 +26,11 @@ const supabaseAdmin = createClient(
 // Precios según país/moneda
 const PLANS = {
   AR: {
-    monthly: { price: 4999,  currency: "ARS", label: "VIP Mensual",  days: 30  },
+    monthly: { price: 1,  currency: "ARS", label: "VIP Mensual",  days: 30  },
     annual:  { price: 39999, currency: "ARS", label: "VIP Anual",    days: 365 },
   },
   USD: {
-    monthly: { price: 4.99,  currency: "USD", label: "VIP Mensual",  days: 30  },
+    monthly: { price: .55,  currency: "USD", label: "VIP Mensual",  days: 30  },
     annual:  { price: 39.99, currency: "USD", label: "VIP Anual",    days: 365 },
   },
 };
