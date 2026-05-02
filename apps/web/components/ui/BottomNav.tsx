@@ -13,6 +13,13 @@ import imgPerfil      from "../../Images/perfil.png";
 
 // ─── Tipos ───────────────────────────────────────────────────────
 import { supabase } from "@/services/supabase.client";
+import { initMercadoPago, Wallet } from "@mercadopago/sdk-react";
+
+// Inicializar MP SDK una sola vez con la public key
+// (distinta del access token — va en el cliente)
+initMercadoPago(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY!, {
+  locale: "es-AR",
+});
 
 type VipPlan    = "monthly" | "annual";
 type VipCountry = "AR" | "OTHER";
@@ -49,11 +56,12 @@ async function detectCountry(): Promise<VipCountry> {
 }
 
 function VIPModal({ onClose }: { onClose: () => void }) {
-  const [visible, setVisible]   = useState(false);
-  const [plan,    setPlan]       = useState<VipPlan>("monthly");
-  const [country, setCountry]   = useState<VipCountry>("OTHER");
-  const [loading, setLoading]   = useState(false);
-  const [error,   setError]     = useState<string | null>(null);
+  const [visible,      setVisible]      = useState(false);
+  const [plan,         setPlan]         = useState<VipPlan>("monthly");
+  const [country,      setCountry]      = useState<VipCountry>("OTHER");
+  const [preferenceId, setPreferenceId] = useState<string | null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -65,27 +73,35 @@ function VIPModal({ onClose }: { onClose: () => void }) {
     setTimeout(onClose, 380);
   };
 
-  const handleCheckout = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setError("Tenés que estar logueado para suscribirte."); setLoading(false); return; }
+  // Crear preferencia cada vez que cambia el plan o el país
+  // El Wallet Brick necesita el preferenceId antes de renderizarse
+  useEffect(() => {
+    const createPreference = async () => {
+      setPreferenceId(null);
+      setError(null);
+      setLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setError("Tenés que estar logueado."); setLoading(false); return; }
 
-      const res  = await fetch("/api/mp/checkout", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ plan, userId: user.id, country }),
-      });
-      const data = await res.json();
+        const res  = await fetch("/api/mp/checkout", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ plan, userId: user.id, country }),
+        });
+        const data = await res.json();
 
-      if (!res.ok || !data.url) { setError(data.error ?? "Error al iniciar el pago. Intentá de nuevo."); return; }
-
-      const isSandbox = process.env.NEXT_PUBLIC_MP_SANDBOX === "true";
-      window.location.href = isSandbox ? data.url_sandbox : data.url;
-    } catch { setError("Error de conexión. Verificá tu internet."); }
-    finally  { setLoading(false); }
-  };
+        if (!res.ok || !data.preferenceId) {
+          setError(data.error ?? "Error al preparar el pago.");
+          return;
+        }
+        setPreferenceId(data.preferenceId);
+      } catch { setError("Error de conexión."); }
+      finally  { setLoading(false); }
+    };
+    createPreference();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, country]);
 
   const prices = VIP_PRICES[country];
 
@@ -224,6 +240,21 @@ function VIPModal({ onClose }: { onClose: () => void }) {
         .vip-spinner { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; display: inline-block; flex-shrink: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* ── Wallet Brick oficial de MP ── */
+        .vip-wallet-wrap { width: 100%; }
+        /* Forzar que el iframe del Wallet Brick tenga border-radius consistente */
+        .vip-wallet-wrap > div { border-radius: 14px !important; overflow: hidden; }
+        .vip-wallet-wrap iframe { border-radius: 14px !important; }
+
+        /* Skeleton mientras carga la preferencia */
+        .vip-wallet-skeleton {
+          width: 100%; height: 52px; border-radius: 14px;
+          background: rgba(0,158,227,0.08); border: 1px solid rgba(0,158,227,0.2);
+          display: flex; align-items: center; justify-content: center; gap: 10px;
+          font-family: "DM Sans", sans-serif; font-size: 13px;
+          color: rgba(0,158,227,0.6);
+        }
+
         .vip-disclaimer { position: relative; z-index: 1; text-align: center; font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.18); padding: 4px 22px 28px; line-height: 1.8; }
         .vip-secure { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 5px; font-size: 11px; color: rgba(180,215,240,0.24); }
       `}</style>
@@ -298,22 +329,31 @@ function VIPModal({ onClose }: { onClose: () => void }) {
           {/* Error */}
           {error && <div className="vip-error-banner">⚠️ {error}</div>}
 
-          {/* CTA */}
+          {/* CTA — Wallet Brick oficial de Mercado Pago */}
           <div className="vip-cta-wrap">
-            <button className="vip-btn-mp" onClick={handleCheckout} disabled={loading}>
-              {loading ? (
-                <><span className="vip-spinner" /> Redirigiendo...</>
-              ) : (
-                <>
-                  Pagar con&nbsp;
-                  <span className="vip-mp-badge">
-                    <span className="vip-mp-badge-dot">MP</span>
-                    Mercado Pago
-                  </span>
-                  &nbsp;— {plan === "monthly" ? prices.monthly.display : prices.annual.display}
-                </>
-              )}
-            </button>
+
+            {/* Skeleton mientras carga la preferencia */}
+            {loading && (
+              <div className="vip-wallet-skeleton">
+                <span className="vip-spinner" />
+                <span>Preparando pago seguro...</span>
+              </div>
+            )}
+
+            {/* Wallet Brick oficial — solo se renderiza cuando hay preferenceId */}
+            {!loading && preferenceId && (
+              <div className="vip-wallet-wrap">
+                <Wallet
+                  initialization={{ preferenceId, redirectMode: "self" }}
+                  onReady={() => {}}
+                  onError={(err: any) => {
+                    console.error("Wallet Brick error:", err);
+                    setError("Error al cargar el botón de pago. Recargá la página.");
+                  }}
+                />
+              </div>
+            )}
+
             <button className="vip-btn-secondary" onClick={handleClose}>
               Quedarme con el plan gratis
             </button>
