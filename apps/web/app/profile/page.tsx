@@ -384,52 +384,90 @@ export default function ProfilePage() {
 
         .pf-wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
 
+        /* ═══════════ HERO REDESIGN ═══════════ */
+
+        :root {
+          --vip-a: #fbbf24; --vip-b: #f59e0b; --vip-c: #92400e;
+          --str-a: #4ade80; --str-b: #22c55e; --str-c: #14532d;
+        }
+
         .pf-hero {
           position: relative; z-index: 1; width: 100%;
-          background: linear-gradient(180deg, rgba(84,199,248,0.06) 0%, transparent 100%);
-          border-bottom: 1px solid var(--glass-b);
-          padding: 56px 0 0; overflow: hidden;
+          padding: 52px 0 0; overflow: visible;
         }
         .pf-hero::before {
           content: ''; position: absolute; inset: 0;
           background-image: repeating-linear-gradient(
             0deg, transparent, transparent 39px,
-            rgba(84,199,248,0.025) 39px, rgba(84,199,248,0.025) 40px);
+            rgba(84,199,248,0.018) 39px, rgba(84,199,248,0.018) 40px);
           pointer-events: none;
         }
-        .pf-hero-inner {
-          display: grid; grid-template-columns: auto 1fr auto;
-          align-items: start; gap: 0 28px; padding-bottom: 28px;
+
+        /* ── Role-specific hero tint ── */
+        .pf-hero.hero-vip::after {
+          content: ''; position: absolute; inset: 0; pointer-events: none;
+          background: radial-gradient(ellipse 70% 60% at 50% -10%, rgba(251,191,36,0.10) 0%, transparent 70%);
+        }
+        .pf-hero.hero-streamer::after {
+          content: ''; position: absolute; inset: 0; pointer-events: none;
+          background: radial-gradient(ellipse 70% 60% at 50% -10%, rgba(74,222,128,0.09) 0%, transparent 70%);
         }
 
-        .pf-avatar-col { position: relative; }
+        .pf-hero-card {
+          position: relative; z-index: 2;
+          border-radius: 24px 24px 0 0;
+          border: 1px solid var(--glass-b); border-bottom: none;
+          background: linear-gradient(180deg, rgba(84,199,248,0.055) 0%, rgba(84,199,248,0.02) 100%);
+          backdrop-filter: blur(2px);
+          padding: 28px 28px 0;
+          overflow: visible;
+        }
+        .pf-hero-card.card-vip {
+          border-color: rgba(251,191,36,0.22);
+          background: linear-gradient(180deg, rgba(251,191,36,0.07) 0%, rgba(251,191,36,0.02) 100%);
+        }
+        .pf-hero-card.card-streamer {
+          border-color: rgba(74,222,128,0.20);
+          background: linear-gradient(180deg, rgba(74,222,128,0.07) 0%, rgba(74,222,128,0.02) 100%);
+        }
+
+        .pf-hero-inner {
+          display: grid; grid-template-columns: auto 1fr auto;
+          align-items: start; gap: 0 24px; padding-bottom: 24px;
+        }
+
+        /* ── AVATAR ── */
+        .pf-avatar-col { position: relative; flex-shrink: 0; }
+
         .pf-avatar-ring {
-          width: 108px; height: 108px; border-radius: 28px; padding: 3px;
-          background: linear-gradient(135deg, var(--sky), var(--sky3), rgba(84,199,248,0.2));
-          animation: ringGlow 5s ease-in-out infinite alternate; flex-shrink: 0;
+          width: 118px; height: 118px; border-radius: 32px; padding: 3px;
+          background: linear-gradient(145deg, var(--sky) 0%, var(--sky3) 60%, rgba(84,199,248,0.15) 100%);
+          animation: ringGlow 6s ease-in-out infinite alternate; flex-shrink: 0;
+          position: relative;
         }
         @keyframes ringGlow {
-          from { box-shadow: 0 0 20px rgba(84,199,248,0.2), 0 20px 50px rgba(0,0,0,0.6); }
-          to   { box-shadow: 0 0 50px rgba(84,199,248,0.45), 0 20px 60px rgba(0,0,0,0.6); }
+          from { box-shadow: 0 0 18px rgba(84,199,248,0.18), 0 16px 48px rgba(0,0,0,0.55); }
+          to   { box-shadow: 0 0 46px rgba(84,199,248,0.42), 0 20px 60px rgba(0,0,0,0.6); }
         }
         .pf-avatar-ring.ring-vip {
-          background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706, rgba(251,191,36,0.3));
+          background: linear-gradient(145deg, var(--vip-a) 0%, var(--vip-b) 50%, var(--vip-c) 100%);
           animation: ringGlowVip 5s ease-in-out infinite alternate;
         }
         @keyframes ringGlowVip {
-          from { box-shadow: 0 0 20px rgba(251,191,36,0.25), 0 20px 50px rgba(0,0,0,0.6); }
-          to   { box-shadow: 0 0 55px rgba(251,191,36,0.55), 0 20px 60px rgba(0,0,0,0.6); }
+          from { box-shadow: 0 0 22px rgba(251,191,36,0.3),  0 16px 48px rgba(0,0,0,0.6); }
+          to   { box-shadow: 0 0 60px rgba(251,191,36,0.65), 0 20px 60px rgba(0,0,0,0.6); }
         }
         .pf-avatar-ring.ring-streamer {
-          background: linear-gradient(135deg, #4ade80, #22c55e, #16a34a, rgba(74,222,128,0.3));
+          background: linear-gradient(145deg, var(--str-a) 0%, var(--str-b) 50%, var(--str-c) 100%);
           animation: ringGlowStreamer 5s ease-in-out infinite alternate;
         }
         @keyframes ringGlowStreamer {
-          from { box-shadow: 0 0 20px rgba(74,222,128,0.25), 0 20px 50px rgba(0,0,0,0.6); }
-          to   { box-shadow: 0 0 55px rgba(74,222,128,0.55), 0 20px 60px rgba(0,0,0,0.6); }
+          from { box-shadow: 0 0 22px rgba(74,222,128,0.28), 0 16px 48px rgba(0,0,0,0.6); }
+          to   { box-shadow: 0 0 58px rgba(74,222,128,0.62), 0 20px 60px rgba(0,0,0,0.6); }
         }
+
         .pf-avatar-inner {
-          width: 100%; height: 100%; border-radius: 25px; overflow: hidden;
+          width: 100%; height: 100%; border-radius: 29px; overflow: hidden;
           background: var(--bg2); display: flex; align-items: center; justify-content: center;
         }
         .pf-avatar-inner img { width: 100%; height: 100%; object-fit: cover; }
@@ -437,59 +475,110 @@ export default function ProfilePage() {
           width: 58px; height: 58px; opacity: 0.3;
           filter: brightness(0) invert(1) drop-shadow(0 0 8px rgba(84,199,248,0.4));
         }
+
+        /* Edit button */
         .pf-avatar-edit-btn {
-          position: absolute; bottom: -6px; right: -6px;
-          width: 30px; height: 30px; border-radius: 50%;
+          position: absolute; bottom: -7px; right: -7px;
+          width: 32px; height: 32px; border-radius: 50%;
           background: linear-gradient(135deg, var(--sky), var(--sky3));
           border: 2.5px solid var(--bg); cursor: pointer;
           display: flex; align-items: center; justify-content: center;
           transition: transform 0.25s cubic-bezier(.34,1.56,.64,1);
-          box-shadow: 0 4px 14px rgba(84,199,248,0.45);
+          box-shadow: 0 4px 16px rgba(84,199,248,0.5); z-index: 5;
         }
-        .pf-avatar-edit-btn img { width: 16px; height: 16px; filter: brightness(0) invert(1); }
-        .pf-avatar-edit-btn:hover { transform: scale(1.18) rotate(12deg); }
+        .pf-avatar-edit-btn img { width: 15px; height: 15px; filter: brightness(0) invert(1); }
+        .pf-avatar-edit-btn:hover { transform: scale(1.2) rotate(14deg); }
 
+        /* Role badge — bottom-left of avatar */
         .pf-role-badge {
-          position: absolute; bottom: -6px; left: -6px;
-          width: 30px; height: 30px; border-radius: 50%;
-          border: 2.5px solid var(--bg);
+          position: absolute; bottom: -7px; left: -7px; z-index: 5;
+          border: 2.5px solid var(--bg); border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
-          overflow: hidden;
+          width: 32px; height: 32px; overflow: hidden;
         }
         .pf-role-badge.badge-vip {
-          background: linear-gradient(135deg, #fbbf24, #d97706);
-          box-shadow: 0 4px 14px rgba(251,191,36,0.5);
+          background: linear-gradient(135deg, var(--vip-a), var(--vip-b));
+          box-shadow: 0 4px 16px rgba(251,191,36,0.6);
         }
         .pf-role-badge.badge-streamer {
-          background: linear-gradient(135deg, #4ade80, #16a34a);
-          box-shadow: 0 4px 14px rgba(74,222,128,0.5);
+          background: linear-gradient(135deg, var(--str-a), var(--str-b));
+          box-shadow: 0 4px 16px rgba(74,222,128,0.6);
         }
         .pf-role-badge img { width: 18px; height: 18px; object-fit: contain; filter: brightness(0) invert(1); }
 
-        .pf-hero-info { display: flex; flex-direction: column; gap: 6px; animation: fadeUp 0.5s 0.1s both; }
+        /* ── ROLE TIER BANNER ── */
+        .pf-role-tier {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 4px 12px 4px 8px; border-radius: 100px;
+          font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800;
+          letter-spacing: 1.5px; text-transform: uppercase;
+          border: 1.5px solid; margin-top: 2px; width: fit-content;
+          transition: all 0.2s;
+        }
+        .pf-role-tier.tier-viewer {
+          background: rgba(84,199,248,0.07); border-color: rgba(84,199,248,0.18);
+          color: rgba(84,199,248,0.7);
+        }
+        .pf-role-tier.tier-vip {
+          background: linear-gradient(90deg, rgba(251,191,36,0.14), rgba(245,158,11,0.08));
+          border-color: rgba(251,191,36,0.40); color: var(--vip-a);
+          box-shadow: 0 0 16px rgba(251,191,36,0.14), inset 0 1px 0 rgba(255,255,255,0.05);
+          animation: vipPulse 3s ease-in-out infinite;
+        }
+        @keyframes vipPulse {
+          0%,100% { box-shadow: 0 0 12px rgba(251,191,36,0.14); }
+          50%      { box-shadow: 0 0 26px rgba(251,191,36,0.28); }
+        }
+        .pf-role-tier.tier-streamer {
+          background: linear-gradient(90deg, rgba(74,222,128,0.13), rgba(34,197,94,0.07));
+          border-color: rgba(74,222,128,0.38); color: var(--str-a);
+          box-shadow: 0 0 16px rgba(74,222,128,0.13), inset 0 1px 0 rgba(255,255,255,0.04);
+          animation: strPulse 3s ease-in-out infinite;
+        }
+        @keyframes strPulse {
+          0%,100% { box-shadow: 0 0 12px rgba(74,222,128,0.13); }
+          50%      { box-shadow: 0 0 26px rgba(74,222,128,0.27); }
+        }
+        .pf-role-tier-dot {
+          width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+          animation: dotBlink 2s ease-in-out infinite;
+        }
+        .tier-viewer .pf-role-tier-dot  { background: rgba(84,199,248,0.6); animation: none; }
+        .tier-vip    .pf-role-tier-dot  { background: var(--vip-a); box-shadow: 0 0 6px var(--vip-a); }
+        .tier-streamer .pf-role-tier-dot { background: var(--str-a); box-shadow: 0 0 6px var(--str-a); }
+        @keyframes dotBlink { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+        /* ── HERO INFO ── */
+        .pf-hero-info { display: flex; flex-direction: column; gap: 5px; animation: fadeUp 0.5s 0.1s both; min-width: 0; }
+
         .pf-hero-name {
           font-family: 'Syne', sans-serif;
-          font-size: clamp(22px, 4vw, 32px); font-weight: 800;
+          font-size: clamp(22px, 4vw, 34px); font-weight: 800;
           color: var(--w); letter-spacing: -0.8px; line-height: 1.1;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .pf-hero-email { font-size: 12px; color: var(--muted); letter-spacing: 0.3px; }
-        .pf-hero-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+        .pf-hero-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
         .pf-badge {
           padding: 4px 10px; border-radius: 100px;
-          font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+          font-size: 11px; font-weight: 600; letter-spacing: 0.4px;
           border: 1px solid; transition: all 0.2s;
         }
         .pf-badge-gender { background: rgba(84,199,248,0.08); border-color: rgba(84,199,248,0.22); color: var(--sky); }
         .pf-badge-age    { background: rgba(59,158,218,0.08);  border-color: rgba(59,158,218,0.22);  color: var(--sky2); }
         .pf-badge-loc    { background: rgba(26,111,168,0.10);  border-color: rgba(26,111,168,0.28);  color: #7ec8f0; }
         .pf-badge-occ    { background: rgba(84,199,248,0.06);  border-color: rgba(84,199,248,0.16);  color: var(--muted); }
+
+        /* Bio — NUNCA cortada, altura libre */
         .pf-hero-bio-preview {
-          font-size: 13px; color: var(--muted); line-height: 1.55;
-          max-width: 360px; margin-top: 2px;
-          display: -webkit-box; -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical; overflow: hidden;
+          font-size: 13px; color: var(--muted); line-height: 1.6;
+          margin-top: 6px; width: 100%;
+          /* Sin clamp, sin overflow hidden, sin -webkit-line-clamp */
+          word-break: break-word; white-space: pre-wrap;
         }
 
+        /* ── STATS ── */
         .pf-hero-stats { display: flex; flex-direction: column; gap: 8px; animation: fadeUp 0.5s 0.2s both; }
         .pf-stat-card {
           background: var(--glass); border: 1px solid var(--glass-b);
@@ -759,8 +848,9 @@ export default function ProfilePage() {
         @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
         @media (max-width: 680px) {
-          .pf-hero-inner { grid-template-columns: auto 1fr; padding-bottom: 22px; }
+          .pf-hero-inner { grid-template-columns: auto 1fr; padding-bottom: 20px; gap: 0 18px; }
           .pf-hero-stats { display: none; }
+          .pf-hero-card { padding: 20px 18px 0; }
           .pf-wrap { padding: 0 18px; }
           .pf-content { padding: 20px 0 0; }
           .pf-grid-2 { grid-template-columns: 1fr; }
@@ -768,6 +858,8 @@ export default function ProfilePage() {
           .pf-lf-grid { grid-template-columns: repeat(2, 1fr); }
           .pf-actions { flex-direction: column; }
           .pf-btn-ghost { width: 100%; }
+          .pf-avatar-ring { width: 96px; height: 96px; }
+          .pf-hero-bio-preview { font-size: 12px; }
         }
       `}</style>
 
@@ -777,8 +869,9 @@ export default function ProfilePage() {
       <div className="pf">
 
         {/* ════ HERO ════ */}
-        <div className="pf-hero">
+        <div className={`pf-hero${role === "vip" ? " hero-vip" : role === "streamer" ? " hero-streamer" : ""}`}>
           <div className="pf-wrap">
+            <div className={`pf-hero-card${role === "vip" ? " card-vip" : role === "streamer" ? " card-streamer" : ""}`}>
             <div className="pf-hero-inner">
 
               <div className="pf-avatar-col" style={{ animation: "fadeUp 0.5s 0.05s both" }}>
@@ -813,6 +906,15 @@ export default function ProfilePage() {
               <div className="pf-hero-info">
                 <div className="pf-hero-name">{name || "Tu perfil"}</div>
                 <div className="pf-hero-email">{email}</div>
+
+                {/* Role tier pill */}
+                {!loading && (
+                  <div className={`pf-role-tier ${role === "vip" ? "tier-vip" : role === "streamer" ? "tier-streamer" : "tier-viewer"}`}>
+                    <span className="pf-role-tier-dot" />
+                    {role === "vip" ? "✦ VIP" : role === "streamer" ? "◉ Streamer" : "Viewer"}
+                  </div>
+                )}
+
                 {!loading && (
                   <div className="pf-hero-badges">
                     {gender     && <span className="pf-badge pf-badge-gender">{gender}</span>}
@@ -842,6 +944,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
+            </div>
             </div>
           </div>
         </div>
