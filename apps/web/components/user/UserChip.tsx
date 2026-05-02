@@ -23,6 +23,7 @@ export interface MatchUserProfile {
   interests?: string[];
   looking_for?: string[];
   gender?: string;
+  role?: "viewer" | "vip" | "streamer";
 }
 
 interface Props {
