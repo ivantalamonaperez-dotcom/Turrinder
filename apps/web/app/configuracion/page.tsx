@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import VideoAudioSection from "./VideoAudioSection";
+import { supabase } from "@/services/supabase.client";
 
 // ─── Types ────────────────────────────────────────────────────────
 type Section =
@@ -268,84 +269,361 @@ function ModeracionSection() {
 }
 
 // ─── Section: Premium ────────────────────────────────────────────
+interface VipPayment {
+  id: string;
+  payment_id: string;
+  plan: string;
+  days: number;
+  vip_until: string;
+  status: string;
+  created_at: string;
+}
+
+interface VipProfile {
+  role: string;
+  vip_since: string | null;
+  vip_until: string | null;
+}
+
 function PremiumSection() {
-  const pagos = [
-    { fecha: "01 May 2026", monto: "$4.999 ARS", concepto: "VIP Mensual",  estado: "Pagado" },
-    { fecha: "01 Abr 2026", monto: "$4.999 ARS", concepto: "VIP Mensual",  estado: "Pagado" },
-    { fecha: "01 Mar 2026", monto: "$4.999 ARS", concepto: "VIP Mensual",  estado: "Pagado" },
-  ];
+  const [profile,        setProfile]        = useState<VipProfile | null>(null);
+  const [payments,       setPayments]       = useState<VipPayment[]>([]);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingPayments,setLoadingPayments]= useState(true);
+  const [autoRenew,      setAutoRenew]      = useState(true);
+  const [cancelLoading,  setCancelLoading]  = useState(false);
+  const [cancelDone,     setCancelDone]     = useState(false);
+  const [autoRenewMsg,   setAutoRenewMsg]   = useState<string | null>(null);
+  const [userId,         setUserId]         = useState<string | null>(null);
+
+  // ── Cargar perfil y pagos ─────────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserId(user.id);
+
+      // Perfil VIP
+      const { data: p } = await supabase
+        .from("profiles")
+        .select("role, vip_since, vip_until")
+        .eq("id", user.id)
+        .single();
+
+      if (p) setProfile(p);
+      setLoadingProfile(false);
+
+      // Pagos
+      const { data: pag } = await supabase
+        .from("vip_payments")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (pag) setPayments(pag);
+      setLoadingPayments(false);
+
+      // Estado de renovación automática (guardado en profiles)
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("auto_renew")
+        .eq("id", user.id)
+        .single();
+
+      if (prof?.auto_renew !== undefined) setAutoRenew(prof.auto_renew);
+    };
+    load();
+  }, []);
+
+  // ── Toggle renovación automática ─────────────────────────────────
+  const handleAutoRenew = useCallback(async (val: boolean) => {
+    if (!userId) return;
+    setAutoRenew(val);
+    setAutoRenewMsg(null);
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ auto_renew: val })
+      .eq("id", userId);
+
+    if (error) {
+      setAutoRenew(!val); // revertir en caso de error
+      setAutoRenewMsg("Error al guardar. Intentá de nuevo.");
+    } else {
+      setAutoRenewMsg(val ? "Renovación automática activada ✓" : "Renovación automática desactivada ✓");
+      setTimeout(() => setAutoRenewMsg(null), 3000);
+    }
+  }, [userId]);
+
+  // ── Cancelar suscripción ──────────────────────────────────────────
+  const handleCancel = useCallback(async () => {
+    if (!userId || cancelDone) return;
+    const confirmed = window.confirm(
+      "¿Cancelar la suscripción VIP? Seguirás teniendo acceso hasta que venza el período actual."
+    );
+    if (!confirmed) return;
+
+    setCancelLoading(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ auto_renew: false })
+      .eq("id", userId);
+
+    if (!error) {
+      setAutoRenew(false);
+      setCancelDone(true);
+    }
+    setCancelLoading(false);
+  }, [userId, cancelDone]);
+
+  // ── Helpers de formato ────────────────────────────────────────────
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const daysLeft = (iso: string) => {
+    const diff = new Date(iso).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  };
+
+  const planLabel = (plan: string) =>
+    plan === "monthly" ? "VIP Mensual" : plan === "annual" ? "VIP Anual" : plan;
+
+  const isVip      = profile?.role === "vip";
+  const remaining  = profile?.vip_until ? daysLeft(profile.vip_until) : 0;
+  const urgentDays = remaining <= 7;
+
+  // ── Skeleton ──────────────────────────────────────────────────────
+  if (loadingProfile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {[1,2,3].map(i => (
+          <div key={i} style={{
+            height: 56, borderRadius: 14,
+            background: "rgba(255,255,255,0.04)",
+            animation: "shimmer 1.4s ease-in-out infinite",
+          }} />
+        ))}
+        <style>{`@keyframes shimmer { 0%,100%{opacity:.3} 50%{opacity:.8} }`}</style>
+      </div>
+    );
+  }
 
   return (
     <>
+      {/* ── Plan actual ─────────────────────────────────────── */}
       <Block title="Tu plan actual">
         <div style={{ padding: "16px 0" }}>
-          <div style={{
-            background: "linear-gradient(135deg, rgba(255,195,0,0.10) 0%, rgba(255,140,0,0.07) 100%)",
-            border: "1px solid rgba(255,195,0,0.28)",
-            borderRadius: 14, padding: "16px 18px",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-          }}>
-            <div>
-              <div style={{
-                fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 800,
-                background: "linear-gradient(135deg, #ffd700, #ff9500)",
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-              }}>Turrinder VIP</div>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "rgba(255,210,60,0.5)", marginTop: 3 }}>
-                Plan mensual · Renueva el 1 Jun 2026
+          {isVip ? (
+            <div style={{
+              background: "linear-gradient(135deg, rgba(255,195,0,0.10) 0%, rgba(255,140,0,0.07) 100%)",
+              border: `1px solid ${urgentDays ? "rgba(249,115,22,0.55)" : "rgba(255,195,0,0.28)"}`,
+              borderRadius: 14, padding: "16px 18px",
+            }}>
+              {/* Cabecera */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
+                <div>
+                  <div style={{
+                    fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 800,
+                    background: "linear-gradient(135deg, #ffd700, #ff9500)",
+                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                  }}>Turrinder VIP 👑</div>
+                  {profile?.vip_until && (
+                    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, marginTop: 4,
+                      color: urgentDays ? "rgba(249,115,22,0.85)" : "rgba(255,210,60,0.5)",
+                    }}>
+                      {autoRenew ? "Renueva" : "Vence"} el {formatDate(profile.vip_until)}
+                      {urgentDays && <span style={{ marginLeft: 6, fontWeight: 700 }}>· {remaining}d restantes</span>}
+                    </div>
+                  )}
+                </div>
+                <Badge label="ACTIVO" color="#4ade80" />
               </div>
+
+              {/* Barra de progreso del período */}
+              {profile?.vip_since && profile?.vip_until && (() => {
+                const total = new Date(profile.vip_until).getTime() - new Date(profile.vip_since).getTime();
+                const elapsed = Date.now() - new Date(profile.vip_since).getTime();
+                const pct = Math.min(100, Math.round((elapsed / total) * 100));
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 10, color: "rgba(255,210,60,0.4)", fontFamily: "'DM Sans', sans-serif" }}>
+                        Período actual
+                      </span>
+                      <span style={{ fontSize: 10, color: "rgba(255,210,60,0.5)", fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
+                        {remaining}d restantes
+                      </span>
+                    </div>
+                    <div style={{ height: 4, borderRadius: 100, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                      <div style={{
+                        height: "100%", borderRadius: 100,
+                        width: `${pct}%`,
+                        background: urgentDays
+                          ? "linear-gradient(90deg, #f97316, #ef4444)"
+                          : "linear-gradient(90deg, #ffd700, #ff9500)",
+                        transition: "width 0.6s ease",
+                      }} />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-            <ActionBtn label="Gestionar" accent="#ffd700" />
-          </div>
-        </div>
-        <Row label="Boosts disponibles" sub="Aparecés primero en Discover por 30 min">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Badge label="3 BOOSTS" color="#ffd700" />
-            <ActionBtn label="Comprar" accent="#ffd700" />
-          </div>
-        </Row>
-        <Row label="Monedas / créditos" sub="Usalos en salas, stickers y más">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Badge label="💰 850" color="#ffd700" />
-            <ActionBtn label="Recargar" accent="#ffd700" />
-          </div>
-        </Row>
-      </Block>
-
-      <Block title="Beneficios activos">
-        {[
-          { icon: "✓", text: "Sin anuncios" },
-          { icon: "✓", text: "Likes ilimitados" },
-          { icon: "✓", text: "Crear salas privadas" },
-          { icon: "✓", text: "Chats ilimitados" },
-          { icon: "✓", text: "Videollamadas HD" },
-        ].map((b, i) => (
-          <Row key={i} label={b.text}>
-            <span style={{ color: "#4ade80", fontSize: 14 }}>{b.icon}</span>
-          </Row>
-        ))}
-      </Block>
-
-      <Block title="Historial de pagos">
-        <div style={{ paddingTop: 4, paddingBottom: 4 }}>
-          {pagos.map((p, i) => (
-            <div key={i} style={{
+          ) : (
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              borderRadius: 14, padding: "20px 18px",
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 0",
-              borderBottom: i < pagos.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
             }}>
               <div>
-                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "rgba(240,248,255,0.8)" }}>{p.concepto}</div>
-                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "rgba(180,215,240,0.35)", marginTop: 2 }}>{p.fecha}</div>
+                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: "rgba(240,248,255,0.5)" }}>
+                  Plan Gratuito
+                </div>
+                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "rgba(180,215,240,0.3)", marginTop: 3 }}>
+                  Algunas funciones están limitadas
+                </div>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 13, fontWeight: 700, color: "rgba(255,210,60,0.85)" }}>{p.monto}</div>
-                <Badge label={p.estado.toUpperCase()} color="#4ade80" />
-              </div>
+              <ActionBtn label="Mejorar a VIP" accent="#ffd700" />
             </div>
-          ))}
+          )}
         </div>
+
+        {/* Renovación automática — solo si es VIP */}
+        {isVip && (
+          <>
+            <Row
+              label="Renovación automática"
+              sub={autoRenew
+                ? `Se renueva automáticamente el ${profile?.vip_until ? formatDate(profile.vip_until) : "próximo período"}`
+                : "No se renovará — acceso hasta fin del período actual"
+              }
+            >
+              <Toggle value={autoRenew} onChange={handleAutoRenew} />
+            </Row>
+
+            {autoRenewMsg && (
+              <div style={{
+                padding: "8px 14px", borderRadius: 10, marginBottom: 4,
+                background: autoRenewMsg.includes("Error") ? "rgba(239,68,68,0.08)" : "rgba(74,222,128,0.08)",
+                border: `1px solid ${autoRenewMsg.includes("Error") ? "rgba(239,68,68,0.2)" : "rgba(74,222,128,0.2)"}`,
+                fontFamily: "'DM Sans', sans-serif", fontSize: 12,
+                color: autoRenewMsg.includes("Error") ? "#f87171" : "#4ade80",
+              }}>{autoRenewMsg}</div>
+            )}
+
+            {!cancelDone ? (
+              <Row label="Cancelar suscripción" sub="Seguirás con VIP hasta que venza el período">
+                <ActionBtn
+                  label={cancelLoading ? "Cancelando..." : "Cancelar"}
+                  accent="#ef4444"
+                  onClick={handleCancel}
+                />
+              </Row>
+            ) : (
+              <Row label="Suscripción cancelada" sub="Tenés VIP hasta fin del período actual">
+                <Badge label="CANCELADA" color="#f97316" />
+              </Row>
+            )}
+          </>
+        )}
       </Block>
+
+      {/* ── Beneficios activos ───────────────────────────────── */}
+      {isVip && (
+        <Block title="Beneficios activos">
+          {[
+            { text: "Sin anuncios en toda la app" },
+            { text: "Likes ilimitados" },
+            { text: "Crear salas privadas" },
+            { text: "Chats ilimitados" },
+            { text: "Videollamadas HD" },
+          ].map((b, i) => (
+            <Row key={i} label={b.text}>
+              <span style={{ color: "#4ade80", fontSize: 14 }}>✓</span>
+            </Row>
+          ))}
+        </Block>
+      )}
+
+      {/* ── Historial de pagos ───────────────────────────────── */}
+      <Block title="Historial de pagos">
+        {loadingPayments ? (
+          <div style={{ padding: "18px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,195,0,0.2)", borderTopColor: "#ffd700", animation: "spin 0.7s linear infinite" }} />
+            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "rgba(180,215,240,0.3)" }}>
+              Cargando pagos...
+            </span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : payments.length === 0 ? (
+          <div style={{ padding: "20px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>💳</div>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "rgba(180,215,240,0.3)" }}>
+              Sin pagos registrados todavía
+            </div>
+          </div>
+        ) : (
+          <div style={{ paddingTop: 4, paddingBottom: 4 }}>
+            {payments.map((p, i) => (
+              <div key={p.id} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "12px 0",
+                borderBottom: i < payments.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                    background: "rgba(255,195,0,0.08)", border: "1px solid rgba(255,195,0,0.15)",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+                  }}>👑</div>
+                  <div>
+                    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "rgba(240,248,255,0.85)", fontWeight: 500 }}>
+                      {planLabel(p.plan)}
+                    </div>
+                    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "rgba(180,215,240,0.35)", marginTop: 2 }}>
+                      {formatDate(p.created_at)} · ID {p.payment_id.slice(-8).toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <Badge
+                    label={p.status === "approved" ? "PAGADO" : p.status.toUpperCase()}
+                    color={p.status === "approved" ? "#4ade80" : "#f97316"}
+                  />
+                  <div style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: 10,
+                    color: "rgba(180,215,240,0.3)", marginTop: 4,
+                  }}>
+                    {p.days} días
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Block>
+
+      {/* ── Información de la suscripción ────────────────────── */}
+      {isVip && profile?.vip_since && (
+        <Block title="Detalles de la suscripción">
+          <Row label="VIP desde" sub="Fecha de primera activación">
+            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 13, fontWeight: 700, color: "rgba(255,210,60,0.8)" }}>
+              {formatDate(profile.vip_since)}
+            </span>
+          </Row>
+          <Row label="Pagos realizados" sub="Total de renovaciones">
+            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 13, fontWeight: 700, color: "rgba(255,210,60,0.8)" }}>
+              {payments.length}
+            </span>
+          </Row>
+          <Row label="Soporte prioritario" sub="Respondemos en menos de 24hs">
+            <ActionBtn label="Contactar" accent="#ffd700" />
+          </Row>
+        </Block>
+      )}
     </>
   );
 }
