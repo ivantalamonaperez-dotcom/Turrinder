@@ -9,7 +9,8 @@ import imgLogoVip     from "../../Images/logovip.png";
 import imgChat        from "../../Images/chat.png";
 import imgDiscover    from "../../Images/discover.png";
 import imgModalidades from "../../Images/modalidades.png";
-import imgPerfil      from "../../Images/perfil.png";
+import imgPerfil         from "../../Images/perfil.png";
+import imgConfiguracion  from "../../Images/configuracion.png";
 
 // ─── Tipos ───────────────────────────────────────────────────────
 import { supabase } from "@/services/supabase.client";
@@ -424,10 +425,11 @@ export default function SideNav() {
   };
 
   const tabs = [
-    { path: "/discover",    img: imgDiscover,    label: "Discover",    desc: "Conocé gente nueva",    accent: "#54c7f8" },
-    { path: "/modalidades", img: imgModalidades, label: "Modalidades", desc: "Elegí cómo conectar",   accent: "#a78bfa" },
-    { path: "/chat",        img: imgChat,        label: "Chats",       desc: "Tus conversaciones",    accent: "#3b9eda" },
-    { path: "/profile",     img: imgPerfil,      label: "Perfil",      desc: "Tu cuenta",             accent: "#7dd8f8" },
+    { path: "/discover",       img: imgDiscover,       label: "Discover",       desc: "Conocé gente nueva",    accent: "#54c7f8" },
+    { path: "/modalidades",    img: imgModalidades,    label: "Modalidades",    desc: "Elegí cómo conectar",   accent: "#a78bfa" },
+    { path: "/chat",           img: imgChat,           label: "Chats",          desc: "Tus conversaciones",    accent: "#3b9eda" },
+    { path: "/profile",        img: imgPerfil,         label: "Perfil",         desc: "Tu cuenta",             accent: "#7dd8f8" },
+    { path: "/configuracion",  img: imgConfiguracion,  label: "Configuración",  desc: "Ajustes y privacidad",  accent: "#94a3b8" },
   ];
 
   return (
