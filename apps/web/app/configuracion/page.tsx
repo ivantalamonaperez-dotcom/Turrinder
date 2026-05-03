@@ -477,27 +477,32 @@ export default function ConfiguracionPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-          background: #030d1a;
+          background: #030a14;
           color: #e8f4fd;
           min-height: 100vh;
         }
 
-        .cfg-root {
-          display: flex;
-          min-height: 100vh;
-          /* left offset matches the SideNav collapsed width */
-          padding-left: 64px;
+        /* ── BG MESH — mismo estilo que ChatPage ── */
+        .cfg-bg-mesh {
+          position: fixed; inset: 0; z-index: 0; pointer-events: none;
+          background-color: #030a14;
+          background-image:
+            radial-gradient(ellipse 80% 50% at 50% -10%, rgba(84,199,248,0.12) 0%, transparent 80%),
+            radial-gradient(ellipse 60% 60% at 100% 100%, rgba(59,158,218,0.08) 0%, transparent 70%);
         }
 
-        @media (max-width: 768px) {
-          .cfg-root { padding-left: 64px; }
+        .cfg-root {
+          position: relative; z-index: 1;
+          display: flex;
+          min-height: 100vh;
+          /* Sin padding-left: el SideNav es position:fixed y no empuja el flujo */
         }
 
         /* ── Sidebar de secciones ── */
         .cfg-sidenav {
           width: 240px;
           flex-shrink: 0;
-          background: rgba(3,10,20,0.85);
+          background: rgba(3,10,20,0.72);
           border-right: 1px solid rgba(84,199,248,0.10);
           padding: 28px 12px;
           position: sticky;
@@ -505,6 +510,7 @@ export default function ConfiguracionPage() {
           height: 100vh;
           overflow-y: auto;
           backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
         }
         .cfg-sidenav::-webkit-scrollbar { width: 3px; }
         .cfg-sidenav::-webkit-scrollbar-thumb { background: rgba(84,199,248,0.15); border-radius: 4px; }
@@ -600,7 +606,6 @@ export default function ConfiguracionPage() {
           font-family: 'Syne', sans-serif;
           font-size: 22px; font-weight: 800;
           letter-spacing: -0.5px;
-          color: #f5f8ff;
           display: flex; align-items: center; gap: 10px;
           margin-bottom: 6px;
         }
@@ -609,14 +614,6 @@ export default function ConfiguracionPage() {
           font-family: 'DM Sans', sans-serif;
           font-size: 13px;
           color: rgba(180,215,240,0.38);
-        }
-
-        .cfg-aurora {
-          position: fixed; top: 0; left: 0; right: 0; height: 300px;
-          pointer-events: none; z-index: 0;
-          background:
-            radial-gradient(ellipse 60% 40% at 30% -10%, rgba(84,199,248,0.07) 0%, transparent 60%),
-            radial-gradient(ellipse 40% 30% at 80% -5%, rgba(167,139,250,0.05) 0%, transparent 60%);
         }
 
         .cfg-divider {
@@ -647,7 +644,7 @@ export default function ConfiguracionPage() {
         }
       `}</style>
 
-      <div className="cfg-aurora" />
+      <div className="cfg-bg-mesh" />
 
       <div className="cfg-root">
         {/* ── Sidebar ── */}
@@ -678,12 +675,13 @@ export default function ConfiguracionPage() {
         {/* ── Content ── */}
         <main className="cfg-content">
           <div className="cfg-section-header">
-            <h1 className="cfg-section-title" style={{ color: current.accent }}>
-              <span>{current.emoji}</span>
+            <h1 className="cfg-section-title">
+              <span style={{ color: "rgba(240,248,255,0.6)", fontSize: 20 }}>{current.emoji}</span>
               <span style={{
-                background: `linear-gradient(135deg, ${current.accent}, ${current.accent}aa)`,
+                background: `linear-gradient(135deg, ${current.accent}, ${current.accent}bb)`,
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
               }}>
                 {current.label}
               </span>
