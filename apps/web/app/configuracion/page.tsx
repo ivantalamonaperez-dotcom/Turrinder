@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import VideoAudioSection from "./VideoAudioSection";
 
 // ─── Types ────────────────────────────────────────────────────────
 type Section =
@@ -170,68 +171,6 @@ function ActionBtn({ label, accent, onClick }: { label: string; accent: string; 
         transition: "all 0.2s ease", whiteSpace: "nowrap",
       }}
     >{label}</button>
-  );
-}
-
-// ─── Section: Video y Audio ──────────────────────────────────────
-function VideoAudioSection() {
-  const [camara, setCamara] = useState("Cámara frontal");
-  const [calidad, setCalidad] = useState("720p");
-  const [desenfoque, setDesenfoque] = useState(false);
-  const [espejo, setEspejo] = useState(true);
-  const [iluminacion, setIluminacion] = useState(true);
-  const [mic, setMic] = useState("Micrófono integrado");
-  const [supresion, setSupresion] = useState(true);
-  const [ptt, setPtt] = useState(false);
-  const [sensibilidad, setSensibilidad] = useState(70);
-
-  return (
-    <>
-      <Block title="Cámara">
-        <Row label="Selección de cámara" sub="Dispositivo de video activo">
-          <Select options={["Cámara frontal", "Cámara trasera", "Webcam externa"]}
-            value={camara} onChange={setCamara} accent="#54c7f8" />
-        </Row>
-        <Row label="Calidad de video" sub="Resolución de transmisión">
-          <Select options={["480p", "720p", "1080p"]}
-            value={calidad} onChange={setCalidad} accent="#54c7f8" />
-        </Row>
-        <Row label="Fondo desenfocado" sub="Efecto bokeh en tiempo real">
-          <Toggle value={desenfoque} onChange={setDesenfoque} />
-        </Row>
-        <Row label="Espejar cámara" sub="Voltear imagen horizontalmente">
-          <Toggle value={espejo} onChange={setEspejo} />
-        </Row>
-        <Row label="Autoajuste de iluminación" sub="Mejora de imagen con poca luz">
-          <Toggle value={iluminacion} onChange={setIluminacion} />
-        </Row>
-      </Block>
-
-      <Block title="Micrófono">
-        <Row label="Selección de micrófono" sub="Dispositivo de audio activo">
-          <Select options={["Micrófono integrado", "Auriculares", "Micrófono USB"]}
-            value={mic} onChange={setMic} accent="#54c7f8" />
-        </Row>
-        <Row label="Supresión de ruido" sub="Filtra ruido de fondo">
-          <Toggle value={supresion} onChange={setSupresion} />
-        </Row>
-        <Row label="Push to talk" sub="Solo transmite cuando mantenés presionado">
-          <Toggle value={ptt} onChange={setPtt} />
-        </Row>
-        <Row label="Sensibilidad automática" sub={`Nivel: ${sensibilidad}%`}>
-          <Slider value={sensibilidad} onChange={setSensibilidad} accent="#54c7f8" />
-        </Row>
-      </Block>
-
-      <Block title="Extras">
-        <Row label="Test de cámara y micrófono" sub="Verificá tu dispositivo antes de entrar">
-          <ActionBtn label="Iniciar test" accent="#54c7f8" />
-        </Row>
-        <Row label="Preview antes de entrar" sub="Ver cómo te ven antes de unirte">
-          <ActionBtn label="Abrir preview" accent="#54c7f8" />
-        </Row>
-      </Block>
-    </>
   );
 }
 
@@ -414,12 +353,12 @@ function PremiumSection() {
 // ─── Section: Estadísticas ───────────────────────────────────────
 function EstadisticasSection() {
   const stats = [
-    { label: "Tiempo en llamadas",          value: "47h 23m",   sub: "este mes",       color: "#54c7f8", icon: "📞" },
+    { label: "Tiempo en llamadas",          value: "47h 23m",   sub: "este mes",           color: "#54c7f8", icon: "📞" },
     { label: "Matches totales",             value: "284",       sub: "desde que empezaste", color: "#a78bfa", icon: "🔥" },
-    { label: "Debates ganados",             value: "61%",       sub: "tasa de victoria",   color: "#f97316", icon: "🏆" },
-    { label: "Likes recibidos",             value: "1.204",     sub: "total acumulado",    color: "#f472b6", icon: "❤️" },
-    { label: "Tiempo prom. de conversación", value: "18 min",   sub: "por sesión",         color: "#4ade80", icon: "⏱️" },
-    { label: "Ranking / Reputación",        value: "#342",      sub: "top 5% global",      color: "#ffd700", icon: "⭐" },
+    { label: "Debates ganados",             value: "61%",       sub: "tasa de victoria",    color: "#f97316", icon: "🏆" },
+    { label: "Likes recibidos",             value: "1.204",     sub: "total acumulado",     color: "#f472b6", icon: "❤️" },
+    { label: "Tiempo prom. de conversación", value: "18 min",   sub: "por sesión",          color: "#4ade80", icon: "⏱️" },
+    { label: "Ranking / Reputación",        value: "#342",      sub: "top 5% global",       color: "#ffd700", icon: "⭐" },
   ];
 
   return (
@@ -495,7 +434,6 @@ export default function ConfiguracionPage() {
           position: relative; z-index: 1;
           display: flex;
           min-height: 100vh;
-          /* Sin padding-left: el SideNav es position:fixed y no empuja el flujo */
         }
 
         /* ── Sidebar de secciones ── */
