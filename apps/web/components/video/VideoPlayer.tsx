@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * VideoPlayer.tsx — v2
- * Recibe `isInitiator` como prop y lo pasa a useWebRTC.
- * Ya no hay lógica de match-found dentro de useWebRTC.
+ * VideoPlayer.tsx — v3
+ * Agrega soporte para likeBlocked (viewer sin likes diarios)
+ * y un toast informativo cuando el límite se alcanzó.
  */
 
 import { useState, useEffect } from "react";
@@ -23,6 +23,10 @@ interface Props {
   skipBlocked?: boolean;
   customControls?: React.ReactNode;
   streamerModeExternal?: boolean;
+  /** true cuando el viewer agotó sus likes del día */
+  likeBlocked?: boolean;
+  /** likes restantes (undefined = ilimitado) */
+  remainingLikes?: number;
 }
 
 export default function VideoPlayer({
@@ -36,6 +40,8 @@ export default function VideoPlayer({
   skipBlocked,
   customControls,
   streamerModeExternal,
+  likeBlocked = false,
+  remainingLikes,
 }: Props) {
   const targetPartnerId = room?.id || null;
   const { localVideoRef, remoteVideoRef, isConnected, remoteStream, cameraError, matchConfirmed } =
@@ -44,6 +50,8 @@ export default function VideoPlayer({
   const [audioLocked,          setAudioLocked]          = useState(true);
   const [likeFlash,            setLikeFlash]            = useState(false);
   const [streamerModeInternal, setStreamerModeInternal] = useState(false);
+  /** Muestra el toast "sin likes" cuando el viewer intenta dar like bloqueado */
+  const [showLimitToast,       setShowLimitToast]       = useState(false);
 
   const streamerMode = streamerModeExternal !== undefined
     ? streamerModeExternal
@@ -63,6 +71,12 @@ export default function VideoPlayer({
   };
 
   const handleLike = () => {
+    if (likeBlocked) {
+      // Mostrar toast informativo
+      setShowLimitToast(true);
+      setTimeout(() => setShowLimitToast(false), 2800);
+      return;
+    }
     setLikeFlash(true);
     setTimeout(() => setLikeFlash(false), 600);
     onLike();
@@ -186,32 +200,34 @@ export default function VideoPlayer({
 
         .vp-placeholder {
           position: absolute; inset: 0; z-index: 3;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-          background: #050f1e;
+          display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 16px;
+          background: radial-gradient(ellipse at 50% 40%, rgba(84,199,248,0.06) 0%, #050f1e 70%);
         }
         .vp-radar {
-          position: relative; width: 110px; height: 110px;
+          position: relative;
+          width: 140px; height: 140px;
           display: flex; align-items: center; justify-content: center;
         }
         .vp-radar-ring {
-          position: absolute;
-          border-radius: 50%;
-          border: 1.5px solid rgba(84,199,248,0.35);
+          position: absolute; border-radius: 50%;
+          border: 1.5px solid rgba(84,199,248,0.22);
           animation: radarPulse 2.7s ease-out infinite;
         }
         @keyframes radarPulse {
-          0%   { width: 30px; height: 30px; opacity: 0.9; }
-          100% { width: 110px; height: 110px; opacity: 0; }
+          0%   { width:40px; height:40px; opacity:0.7; }
+          100% { width:140px; height:140px; opacity:0; }
         }
         .vp-radar-center {
           position: relative; z-index: 2;
-          width: 36px; height: 36px; border-radius: 50%;
-          background: rgba(84,199,248,0.08); border: 1.5px solid rgba(84,199,248,0.35);
-          display: flex; align-items: center; justify-content: center; font-size: 16px;
+          width: 44px; height: 44px; border-radius: 50%;
+          background: rgba(84,199,248,0.08);
+          border: 1.5px solid rgba(84,199,248,0.3);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 22px;
         }
         .vp-radar-center--image {
           background: transparent; border: none;
-          width: 72px; height: 72px;
         }
         .vp-ligues-img {
           width: 72px; height: 72px; object-fit: contain;
@@ -291,6 +307,30 @@ export default function VideoPlayer({
           pointer-events: none;
         }
         @keyframes likeFlash { 0%{opacity:1} 100%{opacity:0} }
+
+        /* ── Toast: límite de likes alcanzado ── */
+        .vp-limit-toast {
+          position: absolute;
+          bottom: 90px; left: 50%; transform: translateX(-50%);
+          z-index: 100;
+          display: flex; align-items: center; gap: 9px;
+          background: rgba(10,5,20,0.90);
+          border: 1px solid rgba(255,45,107,0.40);
+          backdrop-filter: blur(14px);
+          border-radius: 14px; padding: 10px 18px;
+          font-size: 12px; font-weight: 500;
+          color: rgba(255,180,200,0.95);
+          white-space: nowrap;
+          box-shadow: 0 4px 24px rgba(255,45,107,0.20);
+          animation: toastIn 0.3s cubic-bezier(0.34,1.56,0.64,1) both;
+          pointer-events: none;
+        }
+        .vp-limit-toast.hiding {
+          animation: toastOut 0.4s ease forwards;
+        }
+        .vp-limit-toast-icon { font-size: 16px; flex-shrink: 0; }
+        @keyframes toastIn  { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+        @keyframes toastOut { from { opacity:1; } to { opacity:0; transform: translateX(-50%) translateY(8px); } }
       `}</style>
 
       {likeFlash && <div className="vp-like-flash" />}
@@ -381,6 +421,14 @@ export default function VideoPlayer({
 
             <div className="vp-corner vp-corner-tr" />
             <div className="vp-corner vp-corner-br" />
+
+            {/* Toast: límite de likes agotado */}
+            {showLimitToast && (
+              <div className="vp-limit-toast">
+                <span className="vp-limit-toast-icon">♥</span>
+                <span>Límite diario alcanzado · Volvé mañana o subí a VIP</span>
+              </div>
+            )}
           </div>
 
         </div>
