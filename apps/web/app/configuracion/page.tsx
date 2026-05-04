@@ -29,6 +29,26 @@ interface SectionMeta {
   accent: string;
 }
 
+interface Report {
+  id: string;
+  reported_user_id: string | null;
+  reporter_user_id: string | null;
+  reported_name: string | null;
+  reason: string;
+  details: string | null;
+  status: "pendiente" | "en_revision" | "resuelto" | "descartado";
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+const STATUS_META: Record<Report["status"], { label: string; color: string }> = {
+  pendiente:   { label: "PENDIENTE",    color: "#f97316" },
+  en_revision: { label: "EN REVISIÓN", color: "#fbbf24" },
+  resuelto:    { label: "RESUELTO",    color: "#4ade80" },
+  descartado:  { label: "DESCARTADO",  color: "rgba(180,215,240,0.35)" },
+};
+
 const SECTIONS: SectionMeta[] = [
   { id: "video-audio",  img: imgWebcam,       label: "Video y Audio",         desc: "Cámara, micrófono y extras",   accent: "#54c7f8" },
   { id: "privacidad",   img: imgCandado,      label: "Privacidad y Seguridad", desc: "2FA, contraseña, verificación", accent: "#a78bfa" },
@@ -186,16 +206,80 @@ function ActionBtn({ label, accent, onClick }: { label: string; accent: string; 
 
 // ─── Section: Moderación ─────────────────────────────────────────
 function ModeracionSection() {
-  const [autoBlock, setAutoBlock] = useState(true);
+  // Opciones locales
+  const [autoBlock,    setAutoBlock]    = useState(true);
   const [sensibilidad, setSensibilidad] = useState(60);
   const [skipReported, setSkipReported] = useState(true);
-  const [anonimos, setAnonimos] = useState(false);
+  const [anonimos,     setAnonimos]     = useState(false);
 
-  const reportes = [
-    { usuario: "@dragonfire99",  motivo: "Insultos",      estado: "Resuelto",    color: "#4ade80" },
-    { usuario: "@xX_troll_Xx",   motivo: "Spam",           estado: "En revisión", color: "#f97316" },
-    { usuario: "@anon_user77",   motivo: "Acoso",          estado: "Resuelto",    color: "#4ade80" },
-  ];
+  // Reportes reales desde Supabase
+  const [reports,    setReports]    = useState<Report[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [expanded,   setExpanded]   = useState<string | null>(null);
+
+  // Form para agregar/editar detalles
+  const [editingId,   setEditingId]   = useState<string | null>(null);
+  const [detailInput, setDetailInput] = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [saveMsg,     setSaveMsg]     = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
+      const { data, error } = await supabase
+        .from("reports")
+        .select("*")
+        .eq("reporter_user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (!error && data) setReports(data as Report[]);
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const handleAddDetails = useCallback(async (reportId: string) => {
+    if (!detailInput.trim()) return;
+    setSaving(true);
+    setSaveMsg(null);
+
+    const { error } = await supabase
+      .from("reports")
+      .update({
+        details: detailInput.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", reportId);
+
+    if (error) {
+      setSaveMsg("Error al guardar. Intentá de nuevo.");
+    } else {
+      setReports(prev => prev.map(r =>
+        r.id === reportId
+          ? { ...r, details: detailInput.trim(), updated_at: new Date().toISOString() }
+          : r
+      ));
+      setSaveMsg("Detalles guardados ✓");
+      setEditingId(null);
+      setDetailInput("");
+      setTimeout(() => setSaveMsg(null), 3000);
+    }
+    setSaving(false);
+  }, [detailInput]);
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString("es-AR", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+
+  const pendingCount = reports.filter(
+    r => r.status === "pendiente" || r.status === "en_revision"
+  ).length;
 
   return (
     <>
@@ -214,25 +298,208 @@ function ModeracionSection() {
         </Row>
       </Block>
 
-      <Block title="Reportes">
-        <div style={{ paddingTop: 8, paddingBottom: 4 }}>
-          {reportes.map((r, i) => (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 0",
-              borderBottom: i < reportes.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-            }}>
-              <div>
-                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "rgba(240,248,255,0.8)" }}>{r.usuario}</div>
-                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "rgba(180,215,240,0.35)", marginTop: 2 }}>{r.motivo}</div>
-              </div>
-              <Badge label={r.estado.toUpperCase()} color={r.color} />
+      <Block title={`Mis reportes${pendingCount > 0 ? ` · ${pendingCount} activos` : ""}`}>
+        <style>{`@keyframes modSpin { to { transform: rotate(360deg); } }`}</style>
+
+        {loading ? (
+          <div style={{ padding: "20px 0", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 14, height: 14, borderRadius: "50%",
+              border: "2px solid rgba(249,115,22,0.2)", borderTopColor: "#f97316",
+              animation: "modSpin 0.7s linear infinite", flexShrink: 0,
+            }} />
+            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "rgba(180,215,240,0.3)" }}>
+              Cargando reportes...
+            </span>
+          </div>
+        ) : reports.length === 0 ? (
+          <div style={{ padding: "24px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 30, marginBottom: 10 }}>🛡️</div>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "rgba(180,215,240,0.3)" }}>
+              No enviaste ningún reporte todavía
             </div>
-          ))}
-        </div>
-        <Row label="Historial completo de reportes" sub="Ver todos tus reportes enviados">
-          <ActionBtn label="Ver historial" accent="#f97316" />
-        </Row>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "rgba(180,215,240,0.2)", marginTop: 4 }}>
+              Podés reportar usuarios desde su perfil
+            </div>
+          </div>
+        ) : (
+          <div style={{ paddingTop: 4, paddingBottom: 4 }}>
+
+            {/* Mensaje de guardado */}
+            {saveMsg && (
+              <div style={{
+                padding: "8px 14px", borderRadius: 10, margin: "8px 0",
+                background: saveMsg.includes("Error") ? "rgba(239,68,68,0.08)" : "rgba(74,222,128,0.08)",
+                border: `1px solid ${saveMsg.includes("Error") ? "rgba(239,68,68,0.2)" : "rgba(74,222,128,0.2)"}`,
+                fontFamily: "'DM Sans', sans-serif", fontSize: 12,
+                color: saveMsg.includes("Error") ? "#f87171" : "#4ade80",
+              }}>{saveMsg}</div>
+            )}
+
+            {reports.map((r, i) => {
+              const meta   = STATUS_META[r.status] ?? STATUS_META.pendiente;
+              const isOpen = expanded === r.id;
+              const isEdit = editingId === r.id;
+
+              return (
+                <div key={r.id} style={{
+                  borderBottom: i < reports.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                }}>
+                  {/* Fila principal — clickeable para expandir */}
+                  <div
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "12px 0", cursor: "pointer", gap: 12,
+                    }}
+                    onClick={() => setExpanded(isOpen ? null : r.id)}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: "'DM Sans', sans-serif", fontSize: 13,
+                        color: "rgba(240,248,255,0.85)", fontWeight: 500,
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                        <span style={{ fontSize: 14 }}>🚩</span>
+                        {r.reported_name ?? "Usuario desconocido"}
+                      </div>
+                      <div style={{
+                        fontFamily: "'DM Sans', sans-serif", fontSize: 11,
+                        color: "rgba(180,215,240,0.35)", marginTop: 2,
+                      }}>
+                        {r.reason} · {formatDate(r.created_at)}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <Badge label={meta.label} color={meta.color} />
+                      <span style={{
+                        fontSize: 11, color: "rgba(180,215,240,0.25)",
+                        display: "inline-block",
+                        transform: isOpen ? "rotate(180deg)" : "none",
+                        transition: "transform 0.2s",
+                      }}>▾</span>
+                    </div>
+                  </div>
+
+                  {/* Panel expandido */}
+                  {isOpen && (
+                    <div style={{
+                      background: "rgba(249,115,22,0.04)",
+                      border: "1px solid rgba(249,115,22,0.12)",
+                      borderRadius: 12, padding: "14px 16px", marginBottom: 12,
+                    }}>
+
+                      {/* Barra de estados */}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+                        {(["pendiente", "en_revision", "resuelto", "descartado"] as Report["status"][]).map(s => (
+                          <span key={s} style={{
+                            padding: "3px 10px", borderRadius: 100, fontSize: 10, fontWeight: 700,
+                            fontFamily: "'DM Sans', sans-serif",
+                            background: r.status === s ? `${STATUS_META[s].color}22` : "transparent",
+                            border: `1px solid ${r.status === s ? STATUS_META[s].color + "55" : "rgba(255,255,255,0.07)"}`,
+                            color: r.status === s ? STATUS_META[s].color : "rgba(180,215,240,0.28)",
+                          }}>{STATUS_META[s].label}</span>
+                        ))}
+                      </div>
+
+                      {/* Detalles actuales (cuando no está editando) */}
+                      {r.details && !isEdit && (
+                        <div style={{
+                          fontFamily: "'DM Sans', sans-serif", fontSize: 12.5,
+                          color: "rgba(180,215,240,0.6)", lineHeight: 1.6, marginBottom: 12,
+                        }}>
+                          <span style={{
+                            color: "rgba(249,115,22,0.5)", fontSize: 10, fontWeight: 700,
+                            letterSpacing: 1, marginRight: 6,
+                          }}>DETALLES</span>
+                          {r.details}
+                        </div>
+                      )}
+
+                      {/* Nota del equipo de moderación */}
+                      {r.admin_notes && (
+                        <div style={{
+                          background: "rgba(74,222,128,0.05)",
+                          border: "1px solid rgba(74,222,128,0.15)",
+                          borderRadius: 10, padding: "10px 12px", marginBottom: 12,
+                          fontFamily: "'DM Sans', sans-serif", fontSize: 12,
+                          color: "rgba(180,240,200,0.65)", lineHeight: 1.5,
+                        }}>
+                          <span style={{
+                            color: "#4ade8088", fontSize: 10, fontWeight: 700,
+                            letterSpacing: 1, display: "block", marginBottom: 4,
+                          }}>NOTA DEL EQUIPO</span>
+                          {r.admin_notes}
+                        </div>
+                      )}
+
+                      {/* Form para agregar / editar detalles */}
+                      {isEdit ? (
+                        <div>
+                          <textarea
+                            value={detailInput}
+                            onChange={e => setDetailInput(e.target.value)}
+                            placeholder="Describí el incidente con más detalles..."
+                            maxLength={600}
+                            style={{
+                              width: "100%", minHeight: 76, resize: "vertical",
+                              background: "rgba(255,255,255,0.04)",
+                              border: "1px solid rgba(249,115,22,0.25)",
+                              borderRadius: 10, padding: "10px 13px",
+                              fontFamily: "'DM Sans', sans-serif", fontSize: 12.5,
+                              color: "rgba(220,235,255,0.8)", outline: "none",
+                              boxSizing: "border-box", marginBottom: 10,
+                              transition: "border-color 0.2s",
+                            }}
+                          />
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                              onClick={() => { setEditingId(null); setDetailInput(""); }}
+                              style={{
+                                flex: 1, padding: "8px 0", borderRadius: 9,
+                                background: "rgba(255,255,255,0.04)",
+                                border: "1px solid rgba(255,255,255,0.08)",
+                                color: "rgba(180,215,240,0.4)", fontSize: 12, fontWeight: 600,
+                                fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+                              }}
+                            >Cancelar</button>
+                            <button
+                              onClick={() => handleAddDetails(r.id)}
+                              disabled={saving || !detailInput.trim()}
+                              style={{
+                                flex: 2, padding: "8px 0", borderRadius: 9,
+                                background: "rgba(249,115,22,0.18)",
+                                border: "1px solid rgba(249,115,22,0.4)",
+                                color: "#fb923c", fontSize: 12, fontWeight: 700,
+                                fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+                                opacity: saving || !detailInput.trim() ? 0.5 : 1,
+                                transition: "opacity 0.2s",
+                              }}
+                            >{saving ? "Guardando..." : "Guardar detalles"}</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditingId(r.id); setDetailInput(r.details ?? ""); }}
+                          style={{
+                            padding: "7px 14px", borderRadius: 9, fontSize: 11.5, fontWeight: 600,
+                            background: "rgba(249,115,22,0.08)",
+                            border: "1px solid rgba(249,115,22,0.2)",
+                            color: "rgba(249,115,22,0.75)",
+                            fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+                            transition: "all 0.2s",
+                          }}
+                        >
+                          {r.details ? "✏️ Editar detalles" : "+ Agregar detalles"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <Row label="Advertencias recibidas" sub="Sin advertencias activas">
           <Badge label="0 ACTIVAS" color="#4ade80" />
         </Row>
@@ -699,7 +966,6 @@ export default function ConfiguracionPage() {
               className={`cfg-nav-item ${active === s.id ? "active" : ""}`}
               onClick={() => setActive(s.id)}
             >
-              {/* Icono: imagen real con tinte de color via CSS filter */}
               <div
                 className="cfg-nav-icon"
                 style={active === s.id ? {
@@ -738,7 +1004,6 @@ export default function ConfiguracionPage() {
         <main className="cfg-content">
           <div className="cfg-section-header">
             <h1 className="cfg-section-title">
-              {/* Icono en el header — más grande, mismo archivo */}
               <div style={{
                 width: 36, height: 36, borderRadius: 12, flexShrink: 0,
                 background: `${current.accent}15`,
@@ -756,7 +1021,6 @@ export default function ConfiguracionPage() {
                   }}
                 />
               </div>
-              {/* ── Título: texto plano con color, SIN background-clip ── */}
               <span style={{ color: current.accent }}>
                 {current.label}
               </span>

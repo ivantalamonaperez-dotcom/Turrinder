@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { MatchUserProfile } from "./UserChip";
+import { supabase } from "@/services/supabase.client";
 
 interface Props {
   user: MatchUserProfile | null;
@@ -10,26 +11,68 @@ interface Props {
   onClose: () => void;
 }
 
+const REPORT_REASONS = [
+  "Contenido inapropiado",
+  "Acoso o bullying",
+  "Spam o publicidad",
+  "Lenguaje ofensivo",
+  "Comportamiento abusivo",
+  "Suplantación de identidad",
+  "Otro",
+];
+
 export default function UserProfileModal({ user, isConnected = false, visible, onClose }: Props) {
-  const [show, setShow] = useState(false);
+  const [show, setShow]               = useState(false);
   const [activePhoto, setActivePhoto] = useState(0);
+
+  // Report state
+  const [reportOpen, setReportOpen]   = useState(false);
+  const [reason, setReason]           = useState(REPORT_REASONS[0]);
+  const [details, setDetails]         = useState("");
+  const [reporting, setReporting]     = useState(false);
+  const [reportDone, setReportDone]   = useState(false);
+  const [reportErr, setReportErr]     = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) { setTimeout(() => setShow(true), 30); }
-    else { setShow(false); setActivePhoto(0); }
+    else { setShow(false); setActivePhoto(0); setReportOpen(false); setReportDone(false); setReportErr(null); }
   }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") { if (reportOpen) setReportOpen(false); else onClose(); } };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [visible, onClose]);
+  }, [visible, onClose, reportOpen]);
 
   useEffect(() => {
     document.body.style.overflow = visible ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [visible]);
+
+  const handleReport = async () => {
+    if (!user?.id) return;
+    setReporting(true);
+    setReportErr(null);
+    try {
+      const { data: { user: me } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("reports").insert({
+        reported_user_id: user.id,
+        reporter_user_id: me?.id ?? null,
+        reported_name: user.name ?? null,
+        reason,
+        details: details.trim() || null,
+        status: "pendiente",
+      });
+      if (error) throw error;
+      setReportDone(true);
+      setDetails("");
+    } catch (e: any) {
+      setReportErr(e?.message ?? "Error al enviar reporte");
+    } finally {
+      setReporting(false);
+    }
+  };
 
   if (!visible && !show) return null;
   if (!user) return null;
@@ -193,6 +236,104 @@ export default function UserProfileModal({ user, isConnected = false, visible, o
         }
         .upm-close:hover { transform: scale(1.1) rotate(90deg); }
 
+        /* ── Report button ── */
+        .upm-report-btn {
+          position: absolute; top: 14px; right: 56px; z-index: 30;
+          height: 32px; padding: 0 12px; border-radius: 100px;
+          border: 1px solid rgba(249,115,22,0.3);
+          background: rgba(249,115,22,0.08);
+          color: rgba(249,115,22,0.75); font-size: 11px; font-weight: 600;
+          font-family: 'DM Sans', sans-serif;
+          cursor: pointer; display: flex; align-items: center; gap: 5px;
+          transition: background 0.2s, border-color 0.2s, color 0.2s;
+          white-space: nowrap;
+        }
+        .upm-report-btn:hover {
+          background: rgba(249,115,22,0.18);
+          border-color: rgba(249,115,22,0.6);
+          color: #f97316;
+        }
+
+        /* ── Report overlay (inside sheet) ── */
+        .upm-report-overlay {
+          position: absolute; inset: 0; z-index: 50;
+          background: rgba(3,8,18,0.92);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          display: flex; flex-direction: column; justify-content: flex-end;
+          padding: 28px 24px 36px;
+          opacity: 0; pointer-events: none;
+          transition: opacity 0.25s ease;
+        }
+        .upm-report-overlay.open { opacity: 1; pointer-events: all; }
+
+        .upm-report-title {
+          font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800;
+          color: #f5f8ff; margin-bottom: 4px;
+        }
+        .upm-report-sub {
+          font-size: 12px; color: rgba(180,215,240,0.38); margin-bottom: 20px;
+        }
+
+        .upm-report-reasons {
+          display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px;
+        }
+        .upm-reason-chip {
+          padding: 6px 13px; border-radius: 100px; font-size: 11.5px; font-weight: 500;
+          border: 1px solid rgba(249,115,22,0.18);
+          background: rgba(249,115,22,0.05); color: rgba(240,210,180,0.65);
+          cursor: pointer; transition: all 0.18s ease;
+          font-family: 'DM Sans', sans-serif;
+        }
+        .upm-reason-chip:hover { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.4); }
+        .upm-reason-chip.selected {
+          background: rgba(249,115,22,0.2); border-color: rgba(249,115,22,0.7);
+          color: #fb923c;
+          box-shadow: 0 0 10px rgba(249,115,22,0.18);
+        }
+
+        .upm-report-textarea {
+          width: 100%; min-height: 72px; resize: vertical;
+          background: rgba(255,255,255,0.04); border: 1px solid rgba(249,115,22,0.15);
+          border-radius: 12px; padding: 11px 14px;
+          font-family: 'DM Sans', sans-serif; font-size: 12.5px;
+          color: rgba(220,235,255,0.8); outline: none;
+          transition: border-color 0.2s; margin-bottom: 16px;
+          box-sizing: border-box;
+        }
+        .upm-report-textarea:focus { border-color: rgba(249,115,22,0.45); }
+        .upm-report-textarea::placeholder { color: rgba(180,215,240,0.22); }
+
+        .upm-report-actions { display: flex; gap: 10px; }
+
+        .upm-report-cancel {
+          flex: 1; padding: 11px 0; border-radius: 12px;
+          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+          color: rgba(180,215,240,0.5); font-size: 13px; font-weight: 600;
+          font-family: 'DM Sans', sans-serif; cursor: pointer;
+          transition: background 0.2s;
+        }
+        .upm-report-cancel:hover { background: rgba(255,255,255,0.08); }
+
+        .upm-report-submit {
+          flex: 2; padding: 11px 0; border-radius: 12px;
+          background: rgba(249,115,22,0.18); border: 1px solid rgba(249,115,22,0.5);
+          color: #fb923c; font-size: 13px; font-weight: 700;
+          font-family: 'DM Sans', sans-serif; cursor: pointer;
+          transition: all 0.2s;
+        }
+        .upm-report-submit:hover:not(:disabled) { background: rgba(249,115,22,0.3); }
+        .upm-report-submit:disabled { opacity: 0.5; cursor: default; }
+
+        .upm-report-success {
+          display: flex; flex-direction: column; align-items: center;
+          gap: 12px; text-align: center; padding: 24px 0;
+        }
+        .upm-report-success-icon {
+          width: 60px; height: 60px; border-radius: 50%;
+          background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.3);
+          display: flex; align-items: center; justify-content: center; font-size: 26px;
+        }
+
         .upm-scroll { overflow-y: auto; flex: 1; min-height: 0; padding: 0 0 44px; scrollbar-width: none; }
         .upm-scroll::-webkit-scrollbar { display: none; }
 
@@ -292,6 +433,7 @@ export default function UserProfileModal({ user, isConnected = false, visible, o
         }
         .upm-thumbs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
         .upm-thumbs::-webkit-scrollbar { display: none; }
+
         .upm-thumb {
           width: 52px; height: 52px; border-radius: 10px; object-fit: cover;
           flex-shrink: 0; cursor: pointer; border: 2px solid transparent;
@@ -353,7 +495,81 @@ export default function UserProfileModal({ user, isConnected = false, visible, o
         <div className="upm-sheet" onClick={(e) => e.stopPropagation()}>
 
           <div className="upm-handle" />
+
+          {/* Report button */}
+          <button
+            className="upm-report-btn"
+            onClick={() => { setReportOpen(true); setReportDone(false); setReportErr(null); }}
+            title="Reportar usuario"
+          >
+            🚩 Reportar
+          </button>
+
           <button className="upm-close" onClick={onClose} aria-label="Cerrar">✕</button>
+
+          {/* ── Report overlay ── */}
+          <div className={`upm-report-overlay${reportOpen ? " open" : ""}`}>
+            {!reportDone ? (
+              <>
+                <div className="upm-report-title">Reportar a {user.name}</div>
+                <div className="upm-report-sub">El reporte quedará guardado para revisión del equipo de moderación.</div>
+
+                <div className="upm-report-reasons">
+                  {REPORT_REASONS.map(r => (
+                    <button
+                      key={r}
+                      className={`upm-reason-chip${reason === r ? " selected" : ""}`}
+                      onClick={() => setReason(r)}
+                    >{r}</button>
+                  ))}
+                </div>
+
+                <textarea
+                  className="upm-report-textarea"
+                  placeholder="Detalles adicionales (opcional)..."
+                  value={details}
+                  onChange={e => setDetails(e.target.value)}
+                  maxLength={500}
+                />
+
+                {reportErr && (
+                  <div style={{
+                    padding: "8px 12px", borderRadius: 10, marginBottom: 12,
+                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                    fontSize: 12, color: "#f87171", fontFamily: "'DM Sans', sans-serif",
+                  }}>{reportErr}</div>
+                )}
+
+                <div className="upm-report-actions">
+                  <button className="upm-report-cancel" onClick={() => setReportOpen(false)}>Cancelar</button>
+                  <button
+                    className="upm-report-submit"
+                    onClick={handleReport}
+                    disabled={reporting}
+                  >
+                    {reporting ? "Enviando..." : "Enviar reporte"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="upm-report-success">
+                <div className="upm-report-success-icon">🚩</div>
+                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 800, color: "#f5f8ff" }}>
+                  Reporte enviado
+                </div>
+                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12.5, color: "rgba(180,215,240,0.45)", maxWidth: 240, lineHeight: 1.6 }}>
+                  El equipo de moderación revisará tu reporte. Podés ver el estado en Configuración → Moderación.
+                </div>
+                <button
+                  className="upm-report-submit"
+                  style={{ marginTop: 8, width: "100%" }}
+                  onClick={() => { setReportOpen(false); onClose(); }}
+                >
+                  Entendido
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="upm-scroll">
 
