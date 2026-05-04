@@ -9,7 +9,7 @@ import { useRouter, useParams } from "next/navigation";
 
 type Message = {
   id: string;
-  from_user: string;  
+  from_user: string;
   to_user: string;
   content: string;
   created_at: string;
@@ -609,7 +609,6 @@ export default function ConversationPage() {
 
   // Mini sidebar
   const [sidebarMatches, setSidebarMatches] = useState<SidebarMatch[]>([]);
-  const [sidebarOpen,    setSidebarOpen]    = useState(false);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const scrollRef   = useRef<HTMLDivElement>(null);
@@ -627,7 +626,6 @@ export default function ConversationPage() {
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") =>
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior }), 30);
 
-  // Refresh sidebar matches (llamado también por realtime)
   const refreshSidebar = useCallback(async () => {
     if (!myIdRef.current) return;
     const data = await fetchSidebarMatches(myIdRef.current, otherId);
@@ -658,7 +656,6 @@ export default function ConversationPage() {
         .maybeSingle();
       if (matchRow) { setMatchId(matchRow.id); setMatchDate(matchRow.created_at); }
 
-      // ── MARK AS READ: limpiar notis al entrar ──────────────────────────────
       await markMessagesAsRead(otherId, me.user.id);
 
       const msgs = await chatService.loadMessages(me.user.id, otherId, 0);
@@ -666,7 +663,6 @@ export default function ConversationPage() {
       setHasMore(msgs.length === 30);
       scrollToBottom("auto");
 
-      // Cargar sidebar de otras conexiones
       const sidebarData = await fetchSidebarMatches(me.user.id, otherId);
       setSidebarMatches(sidebarData);
 
@@ -681,14 +677,12 @@ export default function ConversationPage() {
             }
             return [...prev, msg];
           }
-          // Mensaje entrante: marcar como leído inmediatamente (estamos en el chat)
           markMessagesAsRead(otherId, myIdRef.current);
           setTimeout(() => scrollToBottom(), 30);
           return [...prev, msg];
         });
       });
 
-      // Realtime para mensajes de otras conversaciones (actualiza sidebar)
       const sidebarChannel = supabase
         .channel("conv-sidebar-realtime")
         .on(
@@ -696,7 +690,6 @@ export default function ConversationPage() {
           { event: "*", schema: "public", table: "messages" },
           (payload) => {
             const row = (payload.new ?? payload.old) as { from_user?: string; to_user?: string } | null;
-            // Solo nos interesa si involucra al usuario pero NO la conv actual
             if (
               row?.to_user === myIdRef.current &&
               row?.from_user !== otherId
@@ -790,7 +783,6 @@ export default function ConversationPage() {
 
   const grouped      = groupByDate(messages);
   const realMsgCount = messages.filter(m => !m.id.startsWith("temp-")).length;
-  const totalOtherUnread = sidebarMatches.reduce((acc, m) => acc + m.unread_count, 0);
 
   return (
     <>
@@ -843,7 +835,6 @@ export default function ConversationPage() {
           color:var(--mut);cursor:pointer;transition:all .18s;position:relative}
         .cv-ibtn:hover{background:rgba(84,199,248,.1);border-color:rgba(84,199,248,.3);color:var(--sky);transform:scale(1.06)}
 
-        /* Badge rojo sobre botón de chats */
         .cv-ibtn-badge{
           position:absolute;top:-5px;right:-5px;
           min-width:17px;height:17px;border-radius:9px;padding:0 4px;
@@ -874,7 +865,7 @@ export default function ConversationPage() {
         .cv-body{flex:1;display:flex;min-height:0;position:relative;z-index:1;overflow:hidden}
 
         /* ══════════════════════════════════
-           MINI SIDEBAR IZQUIERDO
+           MINI SIDEBAR — solo desktop grande
         ══════════════════════════════════ */
         .cv-minisidebar{
           width:var(--ms-w);flex-shrink:0;
@@ -883,24 +874,6 @@ export default function ConversationPage() {
           overflow:hidden;
           background:linear-gradient(180deg,var(--bg2) 0%,var(--bg) 100%);
           animation:msSlideIn .32s cubic-bezier(.16,1,.3,1) both;
-          transition:width .28s cubic-bezier(.16,1,.3,1);
-        }
-
-        /* Cuando está colapsado en desktop (botón de toggle) */
-        .cv-minisidebar.collapsed{
-          width:56px;
-        }
-        .cv-minisidebar.collapsed .cv-ms-info,
-        .cv-minisidebar.collapsed .cv-ms-time,
-        .cv-minisidebar.collapsed .cv-ms-header span,
-        .cv-minisidebar.collapsed .cv-ms-total-badge{
-          display:none;
-        }
-        .cv-minisidebar.collapsed .cv-ms-item{
-          justify-content:center;padding:8px;
-        }
-        .cv-minisidebar.collapsed .cv-ms-header{
-          justify-content:center;padding:14px 8px;
         }
 
         .cv-ms-header{
@@ -989,7 +962,7 @@ export default function ConversationPage() {
         }
 
         /* ══════════════════════════════════
-           PANEL DE PERFIL — desktop siempre visible
+           PANEL DE PERFIL
         ══════════════════════════════════ */
         .cv-profile-panel{
           width:var(--panel);flex-shrink:0;
@@ -1000,7 +973,6 @@ export default function ConversationPage() {
           animation:slideIn .38s cubic-bezier(.16,1,.3,1) both;
         }
 
-        /* Foto hero */
         .cv-profile-photo{position:relative;flex-shrink:0;height:240px;overflow:hidden;background:var(--bg3)}
         .cv-phimg{width:100%;height:100%;object-fit:cover;transition:transform .55s}
         .cv-profile-photo:hover .cv-phimg{transform:scale(1.04)}
@@ -1027,7 +999,6 @@ export default function ConversationPage() {
         .cv-sdot.on{background:var(--grn);box-shadow:0 0 8px rgba(34,197,94,.7);border-color:var(--grn)}
         .cv-phstatus span:last-child{font-size:11px;color:rgba(255,255,255,.55);font-weight:500}
 
-        /* Stats */
         .cv-pstats-row{display:flex;gap:0;flex-shrink:0;border-bottom:1px solid var(--bdr)}
         .cv-pstat{flex:1;padding:11px 8px;display:flex;flex-direction:column;align-items:center;gap:2px;border-right:1px solid var(--bdr);transition:background .2s;cursor:default}
         .cv-pstat:last-child{border-right:none}
@@ -1035,7 +1006,6 @@ export default function ConversationPage() {
         .cv-pstat-n{font-family:sans-serif;font-size:15px;font-weight:900;color:var(--sky);letter-spacing:-.35px}
         .cv-pstat-k{font-size:9px;color:var(--mut2);letter-spacing:.8px;text-transform:uppercase;font-weight:600}
 
-        /* Inner tabs */
         .cv-ptabs{display:flex;border-bottom:1px solid var(--bdr);flex-shrink:0}
         .cv-ptab{flex:1;padding:10px 6px;background:transparent;border:none;border-bottom:2px solid transparent;
           font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.4px;
@@ -1105,7 +1075,6 @@ export default function ConversationPage() {
         .cv-typing{display:flex;align-items:flex-end;gap:7px;animation:msgIn .2s ease;margin-top:8px}
         .cv-typing-b{background:var(--bg3);border:1px solid var(--bdr);border-radius:20px 20px 20px 5px}
 
-        /* Input bar */
         .cv-bar{flex-shrink:0;padding:10px 18px 15px;background:rgba(6,15,30,.97);border-top:1px solid var(--bdr);display:flex;align-items:flex-end;gap:10px;position:relative;z-index:2}
         .cv-bar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(84,199,248,.16),transparent)}
         .cv-field{flex:1;display:flex;align-items:flex-end;background:var(--bg3);border:1.5px solid var(--bdr);border-radius:22px;overflow:hidden;transition:border-color .2s,box-shadow .2s}
@@ -1150,10 +1119,11 @@ export default function ConversationPage() {
         .cv-report-ta:focus{border-color:rgba(245,158,11,.32);box-shadow:0 0 0 3px rgba(245,158,11,.06)}
 
         /* ══════════════════════════════════
-           MOBILE: ocultar minisidebar, usar tabs
+           RESPONSIVE — ≤ 1024px: ocultar mini sidebar
+           El sidebar de chats solo se ve en desktop grande
         ══════════════════════════════════ */
-        @media (max-width: 900px) {
-          .cv-minisidebar { display: none; }
+        @media (max-width: 1024px) {
+          .cv-minisidebar { display: none !important; }
           .cv-mtabs { display: flex; }
 
           .cv-profile-panel {
@@ -1176,6 +1146,11 @@ export default function ConversationPage() {
           .cv-body { position: relative; }
         }
 
+        /* Desktop mediano: sidebar más angosto */
+        @media (max-width: 1300px) and (min-width: 1025px) {
+          :root { --ms-w: 200px; }
+        }
+
         /* ── MÓVIL MUY CHICO ≤ 430px ── */
         @media (max-width: 430px) {
           .cv-hdr { padding: 0 10px; gap: 8px; }
@@ -1189,11 +1164,6 @@ export default function ConversationPage() {
           .cv-modal { padding: 20px 16px 18px; border-radius: 18px; }
           .cv-ptab { font-size: 10px; padding: 9px 4px; }
         }
-
-        /* Desktop: mini sidebar colapsable (≤ 1100px) */
-        @media (max-width: 1100px) and (min-width: 901px) {
-          :root { --ms-w: 200px; }
-        }
       `}</style>
 
       <div className="cv">
@@ -1201,16 +1171,6 @@ export default function ConversationPage() {
 
         {/* HEADER */}
         <header className="cv-hdr">
-          {/* Botón volver — en mobile/sin sidebar */}
-          <button className="cv-ibtn" onClick={() => router.push("/chat")} style={{ display: "none" }}
-            // Solo se muestra en mobile via CSS, pero lo ponemos siempre por si acaso
-          >
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-              <path d="M10 2.5L5 7.5l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-
-          {/* Botón volver (visible en mobile via CSS) */}
           <button
             className="cv-ibtn"
             onClick={() => router.push("/chat")}
@@ -1263,7 +1223,7 @@ export default function ConversationPage() {
         {/* BODY */}
         <div className="cv-body">
 
-          {/* MINI SIDEBAR — otras conexiones (solo desktop) */}
+          {/* MINI SIDEBAR — otras conexiones (solo desktop ≥ 1025px) */}
           <MiniSidebar
             matches={sidebarMatches}
             currentId={otherId}
