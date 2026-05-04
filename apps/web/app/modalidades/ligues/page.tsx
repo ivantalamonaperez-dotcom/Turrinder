@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /modalidades/ligues/page.tsx — patched: isInitiator
+ * /modalidades/ligues/page.tsx — likes limitados para viewers (10/día)
  */
 
 import { useEffect, useCallback, useState } from "react";
@@ -15,6 +15,7 @@ import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
 import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
+import { useLikeLimiter } from "@/hooks/useLikeLimiter"; // ← nuevo hook
 
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
@@ -25,6 +26,8 @@ export default function LiguesPage() {
   const { socket } = useSocket();
 
   const [myProfile, setMyProfile] = useState<{ name?: string; avatar_url?: string } | null>(null);
+  const [userId,    setUserId]    = useState("");
+  const [role,      setRole]      = useState("viewer"); // rol del usuario logueado
 
   useEffect(() => {
     const checkUser = async () => {
@@ -33,11 +36,15 @@ export default function LiguesPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("name, avatar_url")
+        .select("name, avatar_url, role")
         .eq("id", data.user.id)
         .single();
 
-      if (profile) setMyProfile(profile);
+      if (profile) {
+        setMyProfile({ name: profile.name, avatar_url: profile.avatar_url });
+        setRole(profile.role ?? "viewer");
+      }
+      setUserId(data.user.id);
     };
     checkUser();
   }, [router]);
@@ -49,8 +56,24 @@ export default function LiguesPage() {
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
-  const { adMode, skipInfo, isBlocked, adReady, reportSkip, reportAdCompleted } = useAd();
+  const { adMode, skipInfo, isBlocked, adReady, isExempt, reportSkip, reportAdCompleted } = useAd(role);
 
+  // ─── Límite diario de likes ───────────────────────────────────────────────
+  const {
+    canLike,
+    remainingLikes,
+    isUnlimited,
+    registerLike,
+  } = useLikeLimiter(userId, role);
+
+  // ─── Handler de like con control de límite ────────────────────────────────
+  const handleLike = useCallback(() => {
+    if (!canLike) return; // viewer sin likes restantes
+    likeUser();
+    registerLike();
+  }, [canLike, likeUser, registerLike]);
+
+  // ─── Handler de skip ─────────────────────────────────────────────────────
   const nextUser = useCallback(async () => {
     if (isBlocked) return;
     try {
@@ -181,6 +204,25 @@ export default function LiguesPage() {
           letter-spacing:0.5px; white-space:nowrap;
         }
 
+        /* ── Like counter badge (solo viewers) ── */
+        .lp-likes-badge {
+          display: flex; align-items: center; gap: 6px;
+          background: rgba(3,10,20,0.58); border: 1px solid rgba(255,45,107,0.25);
+          backdrop-filter: blur(16px); border-radius: 100px; padding: 5px 12px;
+          transition: border-color 0.3s ease, background 0.3s ease;
+        }
+        .lp-likes-badge.exhausted {
+          border-color: rgba(255,77,77,0.5);
+          background: rgba(255,45,107,0.10);
+          animation: lp-warn 0.45s ease;
+        }
+        .lp-likes-icon { font-size: 11px; line-height: 1; }
+        .lp-likes-label {
+          font-size: 10px; font-weight: 600; color: rgba(255,150,180,0.85);
+          letter-spacing: 0.5px; white-space: nowrap;
+        }
+        .lp-likes-badge.exhausted .lp-likes-label { color: #ff6b8a; }
+
         .lp-back {
           display:flex; align-items:center; gap:6px;
           background:rgba(3,10,20,0.58); border:1px solid var(--glass-b);
@@ -200,13 +242,16 @@ export default function LiguesPage() {
         myProfile={myProfile ?? undefined}
       />
 
-      <AdOverlay
-        visible={adMode === "AD_THANKS"}
-        onContinue={reportAdCompleted}
-        skipCount={skipInfo.count}
-        threshold={skipInfo.threshold}
-        adReady={adReady}
-      />
+      {/* AdOverlay: solo si el usuario NO es exento (vip / streamer) */}
+      {!isExempt && (
+        <AdOverlay
+          visible={adMode === "AD_THANKS"}
+          onContinue={reportAdCompleted}
+          skipCount={skipInfo.count}
+          threshold={skipInfo.threshold}
+          adReady={adReady}
+        />
+      )}
 
       <div className="lp-root">
         <div className="lp-aurora" />
@@ -219,20 +264,37 @@ export default function LiguesPage() {
           </div>
 
           <div className="lp-header-right">
-            <div className={`lp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
-              <div className="lp-pips">
-                {Array.from({ length: skipInfo.threshold }).map((_, i) => (
-                  <div key={i} className={`lp-pip ${i < skipInfo.count ? "on" : ""}`} />
-                ))}
+            {/* Skip counter: oculto para exentos, reemplazado por badge */}
+            {!isExempt ? (
+              <div className={`lp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
+                <div className="lp-pips">
+                  {Array.from({ length: skipInfo.threshold }).map((_, i) => (
+                    <div key={i} className={`lp-pip ${i < skipInfo.count ? "on" : ""}`} />
+                  ))}
+                </div>
+                {skipInfo.remaining <= 3 && (
+                  <span className="lp-skip-label">{skipInfo.remaining} restantes</span>
+                )}
               </div>
-              {skipInfo.remaining <= 3 && (
-                <span className="lp-skip-label">{skipInfo.remaining} restantes</span>
-              )}
-            </div>
+            ) : (
+              <div className="lp-skips" style={{ borderColor: "rgba(84,199,248,0.25)", background: "rgba(84,199,248,0.08)" }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(143,212,255,0.75)", letterSpacing: "0.5px" }}>
+                  ❆ Sin anuncios
+                </span>
+              </div>
+            )}
 
-            <button className="lp-back" onClick={() => window.history.back()}>
-              ← Modalidades
-            </button>
+            {/* Like counter — solo si es viewer */}
+            {!isUnlimited && (
+              <div className={`lp-likes-badge ${!canLike ? "exhausted" : ""}`}>
+                <span className="lp-likes-icon">♥</span>
+                <span className="lp-likes-label">
+                  {canLike
+                    ? `${remainingLikes} likes`
+                    : "Sin likes hoy"}
+                </span>
+              </div>
+            )}
           </div>
         </header>
 
@@ -242,10 +304,12 @@ export default function LiguesPage() {
             isInitiator={isInitiator}
             matchUser={matchUser}
             onNext={nextUser}
-            onLike={likeUser}
-            liked={liked}
+            onLike={handleLike}           // ← usa el handler con límite
+            liked={liked || !canLike}     // ← bloquea el botón si no quedan likes
             searching={searching || !room}
             skipBlocked={isBlocked}
+            likeBlocked={!canLike}        // ← prop nueva para el toast
+            remainingLikes={remainingLikes}
           />
         </div>
       </div>

@@ -26,30 +26,42 @@ type Match = {
 
 // ─── MONETAG ─────────────────────────────────────────────────────────────────
 
-const MONETAG_ZONE = "10895969";
-const MONETAG_SRC  = "https://nap5k.com/tag.min.js";
-let monetagChatInjected = false;
-
-function injectMonetagChat() {
-  if (monetagChatInjected || typeof window === "undefined") return;
-  const s = document.createElement("script");
-  s.dataset.zone = MONETAG_ZONE;
-  s.src = MONETAG_SRC;
-  s.async = true;
-  document.body.appendChild(s);
-  monetagChatInjected = true;
+declare global {
+  interface Window {
+    adsbygoogle: any[];
+  }
 }
 
 function AdSlot() {
-  useEffect(() => { injectMonetagChat(); }, []);
+  useEffect(() => {
+    try {
+      window.adsbygoogle = window.adsbygoogle || [];
+      window.adsbygoogle.push({});
+    } catch (err) {
+      console.log(err);
+    }
+  }, []);
+
   return (
     <div className="ad-wrap">
-      <div className="ad-label"><span className="ad-dot" />Patrocinado</div>
-      <div className="ad-inner" id="monetag-chat-slot">
-        <div className="ad-placeholder">
-          <span className="ad-icon">✦</span>
-          <span className="ad-text">Cargando anuncio...</span>
-        </div>
+      <div className="ad-label">
+        <span className="ad-dot" />
+        Patrocinado
+      </div>
+
+      <div className="ad-inner">
+        <ins
+          className="adsbygoogle"
+          style={{
+            display: "block",
+            width: "100%",
+            minHeight: "90px",
+          }}
+          data-ad-client="ca-pub-9125937573344053"
+          data-ad-slot="5906776874"
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+        />
       </div>
     </div>
   );
