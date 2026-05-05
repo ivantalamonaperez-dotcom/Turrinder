@@ -30,8 +30,8 @@ import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/hooks/useProfile";
 import { useSocket } from "@/hooks/useSocket";
-import logoImg from "../../../Images/logo.png";
-import debatesImg from "../../../Images/debates.png";
+import logoImg from "../../../../Images/logo.png";
+import debatesImg from "../../../../Images/debates.png";
 
 type Tag =
   | "Política" | "Tecnología" | "Ciencia" | "Deportes" | "Cultura"

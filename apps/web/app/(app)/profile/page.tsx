@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
-import imgCamara   from "../../Images/camara.png";
-import imgDiamante from "../../Images/diamante.png";
-import imgPerfil   from "../../Images/perfil.png";
-import imgVip      from "../../Images/logovip.png";
-import imgStreamer  from "../../Images/debates.png";
+import imgCamara   from "../../../Images/camara.png";
+import imgDiamante from "../../../Images/diamante.png";
+import imgPerfil   from "../../../Images/perfil.png";
+import imgVip      from "../../../Images/logovip.png";
+import imgStreamer  from "../../../Images/debates.png";
 
 /* ─────────────────────────── CONSTANTS ─────────────────────────── */
 

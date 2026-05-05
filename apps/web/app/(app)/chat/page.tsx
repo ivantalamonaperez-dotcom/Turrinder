@@ -4,8 +4,8 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import Image from "next/image";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
-import imgLogo from "../../Images/logo.png";
-import imgChat from "../../Images/chat.png";
+import imgLogo from "../../../Images/logo.png";
+import imgChat from "../../../Images/chat.png";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 

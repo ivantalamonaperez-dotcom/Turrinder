@@ -4,10 +4,13 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/components/ui/BottomNav";
-import { useVipGuard } from "@/hooks/useVipGuard"; 
+import { useVipGuard } from "@/hooks/useVipGuard";
 
-export default function Layout({ children }: { children: React.ReactNode }) {
-  const router  = useRouter();
+// Componente separado para la lógica de auth/VIP.
+// Al estar aislado, sus re-renders por cambios de estado (userId, role)
+// NO re-montan <BottomNav />, que vive fuera de este árbol.
+function AuthGuard() {
+  const router = useRouter();
   const [userId, setUserId] = useState<string | undefined>();
   const [role,   setRole]   = useState<string | undefined>();
 
@@ -30,16 +33,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   // ✅ Revoca el VIP automáticamente si vip_until ya venció
-  // No hace nada si el usuario no es VIP o si vip_until es null
   useVipGuard(userId, role);
 
+  return null;
+}
+
+export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      {/* AuthGuard tiene su propio estado — sus re-renders no afectan a BottomNav */}
+      <AuthGuard />
       <BottomNav />
       <main
         id="main-content"
         style={{
-          marginLeft: "64px", // fijo — el nav se superpone al abrirse (overlay)
+          marginLeft: "64px",
           minHeight: "100vh",
         }}
       >

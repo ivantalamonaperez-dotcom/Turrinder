@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/services/supabase.client";
 
-import imgLigues  from "../../Images/ligues.png";
-import imgDebates from "../../Images/debates.png";
-import imgIdiomas from "../../Images/idiomas.png";
+import imgLigues  from "../../../Images/ligues.png";
+import imgDebates from "../../../Images/debates.png";
+import imgIdiomas from "../../../Images/idiomas.png";
 
 const MODALIDADES = [
   {

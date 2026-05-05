@@ -11,6 +11,7 @@ import imgDiscover    from "../../Images/discover.png";
 import imgModalidades from "../../Images/modalidades.png";
 import imgPerfil         from "../../Images/perfil.png";
 import imgConfiguracion  from "../../Images/configuracion.png";
+import imgStreamer       from "../../Images/debates.png";
 
 import { supabase } from "@/services/supabase.client";
 import { initMercadoPago, Wallet } from "@mercadopago/sdk-react";
@@ -552,39 +553,13 @@ export default function SideNav() {
         }
         .snav-panel.open .snav-divider-label { opacity: 1; transition: opacity 0.25s ease 0.2s; }
 
-        /* ── Streamer Button ── */
-        .snav-streamer-wrap {
-          position: relative; z-index: 2;
-          padding: 4px 8px 2px; overflow: hidden; flex-shrink: 0;
-        }
-        .snav-streamer-btn {
-          width: 100%; display: flex; align-items: center; justify-content: center; gap: 0;
-          padding: 10px 10px; border-radius: 12px;
-          background: linear-gradient(135deg, rgba(167,139,250,0.12) 0%, rgba(124,58,237,0.08) 60%, rgba(167,139,250,0.06) 100%);
-          border: 1px solid rgba(167,139,250,0.32);
-          cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-          position: relative; overflow: hidden;
-          -webkit-tap-highlight-color: transparent; outline: none;
-          box-shadow: 0 0 24px rgba(167,139,250,0.07), inset 0 1px 0 rgba(167,139,250,0.12);
-          height: 46px;
-        }
-        .snav-panel.open .snav-streamer-btn { justify-content: flex-start; gap: 12px; }
-        .snav-streamer-btn::before {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(105deg, transparent 30%, rgba(167,139,250,0.10) 50%, transparent 70%);
-          transform: translateX(-120%); transition: transform 0.65s ease;
-        }
-        .snav-streamer-btn:hover::before { transform: translateX(120%); }
-        .snav-streamer-btn:hover {
-          background: linear-gradient(135deg, rgba(167,139,250,0.20) 0%, rgba(124,58,237,0.14) 60%, rgba(167,139,250,0.10) 100%);
-          border-color: rgba(167,139,250,0.52);
-          box-shadow: 0 0 36px rgba(167,139,250,0.16), inset 0 1px 0 rgba(167,139,250,0.20);
-        }
-        .snav-panel.open .snav-streamer-btn:hover { transform: translateX(3px); }
+        /* ── Streamer & VIP como nav items ── */
+        @keyframes micPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.15) rotate(5deg); } }
+        @keyframes crownBounce { 0%,100%{transform:translateY(0)rotate(-5deg)} 50%{transform:translateY(-4px)rotate(5deg)} }
 
-        /* Tooltip colapsado */
-        .snav-panel:not(.open) .snav-streamer-btn::after {
-          content: '🎙 Streamers';
+        /* Tooltip colapsado streamer */
+        .snav-panel:not(.open) .snav-item-streamer::after {
+          content: 'Ser Streamer';
           position: absolute; left: calc(100% + 10px); top: 50%;
           transform: translateY(-50%) translateX(-4px);
           background: rgba(3,10,20,0.95); border: 1px solid rgba(167,139,250,0.3);
@@ -592,95 +567,13 @@ export default function SideNav() {
           padding: 5px 10px; border-radius: 8px; white-space: nowrap;
           opacity: 0; pointer-events: none;
           transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100;
+          box-shadow: 4px 4px 16px rgba(0,0,0,0.5);
         }
-        .snav-panel:not(.open) .snav-streamer-btn:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
+        .snav-panel:not(.open) .snav-item-streamer:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
 
-        @keyframes micPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.15) rotate(5deg); } }
-        .snav-streamer-icon { flex-shrink: 0; font-size: 20px; animation: micPulse 2.5s ease-in-out infinite; display: inline-block; }
-
-        .snav-streamer-text {
-          flex: 1; display: flex; flex-direction: column; gap: 2px;
-          opacity: 0; transform: translateX(-6px); white-space: nowrap; overflow: hidden; max-width: 0;
-          transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .snav-panel.open .snav-streamer-text {
-          opacity: 1; transform: translateX(0); max-width: 200px;
-          transition: opacity 0.25s ease 0.22s, transform 0.25s ease 0.22s, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .snav-streamer-label {
-          font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; line-height: 1;
-          background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 50%, #7c3aed 100%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .snav-streamer-sub { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(167,139,250,0.42); line-height: 1; }
-        .snav-streamer-arrow {
-          font-size: 12px; color: rgba(167,139,250,0.45);
-          opacity: 0; max-width: 0; overflow: hidden;
-          transition: transform 0.25s ease, color 0.25s ease, opacity 0.2s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .snav-panel.open .snav-streamer-arrow { opacity: 1; max-width: 20px; }
-        .snav-streamer-btn:hover .snav-streamer-arrow { transform: translateX(3px); color: rgba(167,139,250,0.85); }
-
-        /* ── VIP ── */
-        .snav-vip-wrap {
-          position: relative; z-index: 2;
-          padding: 4px 8px 6px; overflow: hidden; flex-shrink: 0;
-        }
-        .snav-vip-btn {
-          width: 100%; display: flex; align-items: center; justify-content: center; gap: 0;
-          padding: 10px 10px; border-radius: 12px;
-          background: linear-gradient(135deg, rgba(255,195,0,0.10) 0%, rgba(255,140,0,0.07) 60%, rgba(255,195,0,0.05) 100%);
-          border: 1px solid rgba(255,195,0,0.28);
-          cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-          position: relative; overflow: hidden;
-          -webkit-tap-highlight-color: transparent; outline: none;
-          box-shadow: 0 0 24px rgba(255,195,0,0.06), inset 0 1px 0 rgba(255,195,0,0.10);
-          height: 46px;
-        }
-        .snav-panel.open .snav-vip-btn { justify-content: flex-start; gap: 12px; }
-        .snav-vip-btn::before {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(105deg, transparent 30%, rgba(255,195,0,0.08) 50%, transparent 70%);
-          transform: translateX(-120%); transition: transform 0.65s ease;
-        }
-        .snav-vip-btn:hover::before { transform: translateX(120%); }
-        .snav-vip-btn:hover {
-          background: linear-gradient(135deg, rgba(255,195,0,0.17) 0%, rgba(255,140,0,0.12) 60%, rgba(255,195,0,0.09) 100%);
-          border-color: rgba(255,195,0,0.48);
-          box-shadow: 0 0 36px rgba(255,195,0,0.14), inset 0 1px 0 rgba(255,195,0,0.18);
-        }
-        .snav-panel.open .snav-vip-btn:hover { transform: translateX(3px); }
-
-        @keyframes crownBounce { 0%,100%{transform:translateY(0)rotate(-5deg)} 50%{transform:translateY(-4px)rotate(5deg)} }
-
-        .snav-vip-icon { flex-shrink: 0; transition: none; }
-
-        .snav-vip-text {
-          flex: 1; display: flex; flex-direction: column; gap: 2px;
-          opacity: 0; transform: translateX(-6px); white-space: nowrap; overflow: hidden; max-width: 0;
-          transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .snav-panel.open .snav-vip-text {
-          opacity: 1; transform: translateX(0); max-width: 200px;
-          transition: opacity 0.25s ease 0.22s, transform 0.25s ease 0.22s, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .snav-vip-label {
-          font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; line-height: 1;
-          background: linear-gradient(135deg, #ffd700 0%, #ffb800 50%, #ff9500 100%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .snav-vip-sub { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(255,195,0,0.38); line-height: 1; }
-        .snav-vip-arrow {
-          font-size: 12px; color: rgba(255,195,0,0.45);
-          opacity: 0; max-width: 0; overflow: hidden;
-          transition: transform 0.25s ease, color 0.25s ease, opacity 0.2s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .snav-panel.open .snav-vip-arrow { opacity: 1; max-width: 20px; }
-        .snav-vip-btn:hover .snav-vip-arrow { transform: translateX(3px); color: rgba(255,195,0,0.85); }
-
-        /* Tooltip VIP colapsado */
-        .snav-panel:not(.open) .snav-vip-btn::after {
-          content: 'VIP';
+        /* Tooltip colapsado VIP */
+        .snav-panel:not(.open) .snav-item-vip::after {
+          content: 'VIP ✨';
           position: absolute; left: calc(100% + 10px); top: 50%;
           transform: translateY(-50%) translateX(-4px);
           background: rgba(3,10,20,0.95); border: 1px solid rgba(255,195,0,0.3);
@@ -688,8 +581,9 @@ export default function SideNav() {
           padding: 5px 10px; border-radius: 8px; white-space: nowrap;
           opacity: 0; pointer-events: none;
           transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100;
+          box-shadow: 4px 4px 16px rgba(0,0,0,0.5);
         }
-        .snav-panel:not(.open) .snav-vip-btn:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
+        .snav-panel:not(.open) .snav-item-vip:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
 
         .snav-footer {
           position: relative; z-index: 2;
@@ -755,10 +649,24 @@ export default function SideNav() {
             const isActive = pathname === tab.path || pathname.startsWith(tab.path + "/");
             return (
               <div key={tab.path}>
-                {tab.path === "/modalidades" && (
+                {tab.path === "/discover" && (
                   <div className="snav-divider">
                     <div className="snav-divider-line" />
                     <span className="snav-divider-label">Modos</span>
+                    <div className="snav-divider-line" />
+                  </div>
+                )}
+                {tab.path === "/chat" && (
+                  <div className="snav-divider" style={{ marginTop: "2px" }}>
+                    <div className="snav-divider-line" />
+                    <span className="snav-divider-label">Social</span>
+                    <div className="snav-divider-line" />
+                  </div>
+                )}
+                {tab.path === "/configuracion" && (
+                  <div className="snav-divider">
+                    <div className="snav-divider-line" />
+                    <span className="snav-divider-label">Config</span>
                     <div className="snav-divider-line" />
                   </div>
                 )}
@@ -783,46 +691,61 @@ export default function SideNav() {
                   </div>
                   <div className="snav-item-dot" />
                 </button>
-                {tab.path === "/modalidades" && (
-                  <div className="snav-divider" style={{ marginTop: "2px" }}>
-                    <div className="snav-divider-line" />
-                    <span className="snav-divider-label">Social</span>
-                    <div className="snav-divider-line" />
-                  </div>
-                )}
               </div>
             );
           })}
-        </div>
 
-        {/* Streamer — va ANTES del VIP */}
-        <div className="snav-streamer-wrap">
+          {/* Divider Extras */}
+          <div className="snav-divider" style={{ marginTop: "2px" }}>
+            <div className="snav-divider-line" />
+            <span className="snav-divider-label">Extras</span>
+            <div className="snav-divider-line" />
+          </div>
+
+          {/* Streamer — mismo estilo que snav-item */}
           <button
-            className="snav-streamer-btn"
+            className="snav-item snav-item-streamer"
             onClick={() => { if (isMobile) setOpen(false); router.push("/streamers"); }}
+            data-tooltip="Ser Streamer"
+            style={{
+              "--item-accent":        "#a78bfa",
+              "--item-accent-bg":     "rgba(167,139,250,0.07)",
+              "--item-accent-border": "rgba(167,139,250,0.20)",
+            } as React.CSSProperties}
           >
-            <span className="snav-streamer-icon">🎙</span>
-            <div className="snav-streamer-text">
-              <span className="snav-streamer-label">Ser Streamer</span>
-              <span className="snav-streamer-sub">¡Aplicá y crecé con nosotros!</span>
+            <div className="snav-item-icon" style={{ "--item-accent": "#a78bfa" } as React.CSSProperties}>
+              <div className="snav-item-icon-glow" />
+              <Image src={imgStreamer} alt="Ser Streamer" width={32} height={32}
+                style={{ objectFit: "contain", width: "100%", height: "100%" }} />
             </div>
-            <span className="snav-streamer-arrow">›</span>
+            <div className="snav-item-text">
+              <span className="snav-item-label" style={{ background: "linear-gradient(135deg,#c4b5fd,#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Ser Streamer</span>
+              <span className="snav-item-desc">¡Aplicá y crecé!</span>
+            </div>
+            <div className="snav-item-dot" style={{ background: "#a78bfa", boxShadow: "0 0 10px #a78bfa" }} />
           </button>
-        </div>
 
-        {/* VIP */}
-        <div className="snav-vip-wrap">
+          {/* VIP — mismo estilo que snav-item */}
           <button
-            className="snav-vip-btn"
+            className="snav-item snav-item-vip"
             onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setVipOpen(true), 200); }}
+            data-tooltip="Turrinder VIP"
+            style={{
+              "--item-accent":        "#ffd700",
+              "--item-accent-bg":     "rgba(255,195,0,0.07)",
+              "--item-accent-border": "rgba(255,195,0,0.20)",
+            } as React.CSSProperties}
           >
-            <Image src={imgLogoVip} alt="VIP" width={26} height={26} className="snav-vip-icon"
-              style={{ objectFit: "contain", filter: "drop-shadow(0 0 8px rgba(255,195,0,0.7))", animation: "crownBounce 3s ease-in-out infinite" }} />
-            <div className="snav-vip-text">
-              <span className="snav-vip-label">Turrinder VIP</span>
-              <span className="snav-vip-sub">Mensual o anual · desde $4.99</span>
+            <div className="snav-item-icon" style={{ "--item-accent": "#ffd700" } as React.CSSProperties}>
+              <div className="snav-item-icon-glow" />
+              <Image src={imgLogoVip} alt="VIP" width={28} height={28}
+                style={{ objectFit: "contain", width: "100%", height: "100%", filter: "drop-shadow(0 0 6px rgba(255,195,0,0.6))", animation: "crownBounce 3s ease-in-out infinite" }} />
             </div>
-            <span className="snav-vip-arrow">›</span>
+            <div className="snav-item-text">
+              <span className="snav-item-label" style={{ background: "linear-gradient(135deg,#ffd700,#ffb800,#ff9500)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Turrinder VIP</span>
+              <span className="snav-item-desc">Desde $4.99 · sin límites</span>
+            </div>
+            <div className="snav-item-dot" style={{ background: "#ffd700", boxShadow: "0 0 10px #ffd700" }} />
           </button>
         </div>
 

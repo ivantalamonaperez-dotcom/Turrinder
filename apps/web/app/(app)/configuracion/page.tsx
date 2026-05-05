@@ -7,11 +7,11 @@ import PrivacidadSection  from "./PrivacidadSection";
 import { supabase } from "@/services/supabase.client";
 
 // ─── Imágenes de iconos ───────────────────────────────────────────
-import imgWebcam      from "../../Images/webcam.png";
-import imgCandado     from "../../Images/candado.png";
-import imgEscudo      from "../../Images/escudo.png";
-import imgDiamante    from "../../Images/diamante.png";
-import imgEstadisticas from "../../Images/ligues.png";
+import imgWebcam      from "../../../Images/webcam.png";
+import imgCandado     from "../../../Images/candado.png";
+import imgEscudo      from "../../../Images/escudo.png";
+import imgDiamante    from "../../../Images/diamante.png";
+import imgEstadisticas from "../../../Images/ligues.png";
 
 // ─── Types ────────────────────────────────────────────────────────
 type Section =

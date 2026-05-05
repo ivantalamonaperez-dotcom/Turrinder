@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import img from "../../../Images/logo.png";
+import img from "../../../../Images/logo.png";
 import { supabase } from "@/services/supabase.client";
 
 const LOOKING_FOR = [
