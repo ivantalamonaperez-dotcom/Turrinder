@@ -321,7 +321,8 @@ export default function SideNav() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  useEffect(() => { setOpen(false); }, [pathname]);
+  // Solo cerrar en mobile al cambiar de sección (en desktop el mouse controla el estado)
+  useEffect(() => { if (isMobile) setOpen(false); }, [pathname, isMobile]);
 
   useEffect(() => {
     document.body.style.overflow = (open || vipOpen) ? "hidden" : "";
@@ -763,7 +764,7 @@ export default function SideNav() {
                 )}
                 <button
                   className={`snav-item ${isActive ? "active" : ""}`}
-                  onClick={() => { router.push(tab.path); setOpen(false); }}
+                  onClick={() => { router.push(tab.path); if (isMobile) setOpen(false); }}
                   data-tooltip={tab.label}
                   style={{
                     "--item-accent":        tab.accent,
@@ -798,7 +799,7 @@ export default function SideNav() {
         <div className="snav-streamer-wrap">
           <button
             className="snav-streamer-btn"
-            onClick={() => { setOpen(false); router.push("/streamers"); }}
+            onClick={() => { if (isMobile) setOpen(false); router.push("/streamers"); }}
           >
             <span className="snav-streamer-icon">🎙</span>
             <div className="snav-streamer-text">
@@ -813,7 +814,7 @@ export default function SideNav() {
         <div className="snav-vip-wrap">
           <button
             className="snav-vip-btn"
-            onClick={() => { setOpen(false); setTimeout(() => setVipOpen(true), 200); }}
+            onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setVipOpen(true), 200); }}
           >
             <Image src={imgLogoVip} alt="VIP" width={26} height={26} className="snav-vip-icon"
               style={{ objectFit: "contain", filter: "drop-shadow(0 0 8px rgba(255,195,0,0.7))", animation: "crownBounce 3s ease-in-out infinite" }} />
