@@ -1,51 +1,65 @@
 /**
- * matchmaking.handler.ts — v2 · SALAS DINÁMICAS
+ * matchmaking.handler.ts — v3 · FILTRO DE GÉNERO
  *
  * NUEVO en esta versión:
- *  - Tipo de modo "debate-room:<roomId>" para salas creadas por hosts.
- *  - Las salas de debate son colas de espera únicas creadas al vuelo por el host.
- *  - Se auto-destruyen cuando no quedan usuarios después de EMPTY_ROOM_TTL_MS.
- *  - Se pueden cerrar manualmente con closeDebateRoom().
- *  - Máximo de participantes configurable por sala (hasta MAX_DEBATE_PARTICIPANTS).
+ *  - find-match acepta un campo opcional `genderFilter`: "all" | "male" | "female"
+ *  - La cola almacena el perfil de género del usuario buscador.
+ *  - Al hacer match, se valida compatibilidad bidireccional:
+ *      A quiere ver género X  AND  B quiere ver género Y
+ *      → solo hacen match si el género de A satisface el filtro de B y viceversa.
+ *  - Si el filtro es "all", ese usuario acepta cualquier género.
+ *  - El servidor consulta el género del usuario desde `userGender` (mapa en memoria),
+ *    que se puebla cuando el cliente emite "find-match" junto con su propio género.
  *
- * Modos predeterminados intactos: "discover" y "ligues".
+ * NOTA: Para que el filtro funcione, el cliente debe enviar también su propio género
+ * en el payload de "find-match":
+ *   socket.emit("find-match", { mode, genderFilter, myGender })
+ *
+ * `myGender` puede ser "male" | "female" | "other" | undefined.
+ * Si es undefined, ese usuario no será filtrado por nadie (equivale a "other").
  */
 
 import { Socket, Server } from "socket.io";
 import { userSocketMap } from "../../webrtc/webrtc.events";
 
-export type MatchMode = "discover" | "ligues" | string;
+export type MatchMode    = "discover" | "ligues" | string;
+export type GenderFilter = "all" | "male" | "female";
+export type UserGender   = "male" | "female" | "other" | undefined;
 
 /** Prefijo para identificar salas de debate dinámicas */
 export const DEBATE_ROOM_PREFIX = "debate-room:";
 
-/** Tiempo de gracia antes de destruir una sala vacía (ms) */
-const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000; // 5 minutos
-
-/** Cap absoluto de participantes en salas de debate */
-const MAX_DEBATE_PARTICIPANTS = 20;
+const EMPTY_ROOM_TTL_MS        = 5 * 60 * 1000;
+const MAX_DEBATE_PARTICIPANTS  = 20;
 
 // ─── Estado global ────────────────────────────────────────────────────────────
 
 /** Cola de espera por modo. Clave: mode string. Valor: array de userIds. */
 const queues = new Map<MatchMode, string[]>();
 
-/** Match activos: userId → partnerId (para 1-a-1 discover/ligues). */
+/** Match activos: userId → partnerId */
 const activeMatches = new Map<string, string>();
 
-/** Modo actual de búsqueda por usuario. */
+/** Modo actual de búsqueda por usuario */
 const userMode = new Map<string, MatchMode>();
 
 /**
- * Registro de salas de debate dinámicas.
- * Clave: roomId (sin prefijo). Valor: metadata de la sala.
+ * Filtro de género preferido por cada usuario (lo que QUIERE ver).
+ * "all" = sin preferencia. "male" = solo hombres. "female" = solo mujeres.
  */
+const userGenderFilter = new Map<string, GenderFilter>();
+
+/**
+ * Género propio de cada usuario (lo que ES).
+ * Se usa para que el partner pueda filtrarlo.
+ */
+const userGender = new Map<string, UserGender>();
+
+// ─── Salas de debate ──────────────────────────────────────────────────────────
 interface DebateRoomMeta {
-  hostId: string;
+  hostId:    string;
   maxPeople: number;
-  /** Set de userIds actualmente dentro de la sala */
-  members: Set<string>;
-  /** Timer de auto-limpieza cuando la sala queda vacía */
+  members:   Set<string>;
   emptyTimer: ReturnType<typeof setTimeout> | null;
 }
 const debateRooms = new Map<string, DebateRoomMeta>();
@@ -65,7 +79,7 @@ const isSocketAlive = (io: Server, userId: string): boolean => {
 
 const removeFromAllQueues = (userId: string) => {
   queues.forEach((queue, mode) => {
-    queues.set(mode, queue.filter(id => id !== userId));
+    queues.set(mode, queue.filter((id) => id !== userId));
   });
   userMode.delete(userId);
 };
@@ -80,11 +94,41 @@ const breakActiveMatch = (io: Server, userId: string) => {
   }
 };
 
-// ─── Helpers de salas de debate dinámicas ─────────────────────────────────────
+// ─── Lógica de compatibilidad de género ──────────────────────────────────────
 
 /**
- * Cancela el timer de vacío de una sala (si existe).
+ * Devuelve true si el filtro de A es compatible con el género de B, Y viceversa.
+ *
+ * Reglas:
+ *   - Si el filtro es "all" → acepta cualquier género.
+ *   - Si el género del candidato es undefined/"other" → pasa cualquier filtro.
+ *   - En caso contrario → el género debe coincidir exactamente con el filtro.
  */
+function gendersCompatible(userA: string, userB: string): boolean {
+  const filterA = userGenderFilter.get(userA) ?? "all"; // lo que A quiere ver
+  const filterB = userGenderFilter.get(userB) ?? "all"; // lo que B quiere ver
+  const genderA = userGender.get(userA);                // lo que A es
+  const genderB = userGender.get(userB);                // lo que B es
+
+  // A ve a B → ¿el género de B satisface el filtro de A?
+  const aSatisfied =
+    filterA === "all" ||
+    genderB === undefined ||
+    genderB === "other" ||
+    genderB === filterA;
+
+  // B ve a A → ¿el género de A satisface el filtro de B?
+  const bSatisfied =
+    filterB === "all" ||
+    genderA === undefined ||
+    genderA === "other" ||
+    genderA === filterB;
+
+  return aSatisfied && bSatisfied;
+}
+
+// ─── Helpers de salas de debate ───────────────────────────────────────────────
+
 function cancelEmptyTimer(roomId: string) {
   const meta = debateRooms.get(roomId);
   if (meta?.emptyTimer) {
@@ -93,20 +137,14 @@ function cancelEmptyTimer(roomId: string) {
   }
 }
 
-/**
- * Programa la auto-destrucción de una sala si queda vacía.
- * Si vuelve a llenarse antes del TTL, se cancela.
- */
 function scheduleEmptyCleanup(io: Server, roomId: string) {
   cancelEmptyTimer(roomId);
   const meta = debateRooms.get(roomId);
   if (!meta) return;
-
   if (meta.members.size === 0) {
     meta.emptyTimer = setTimeout(() => {
-      console.log(`[DebateRooms] 🗑️  Sala "${roomId}" vacía por ${EMPTY_ROOM_TTL_MS / 60000} min. Auto-destruida.`);
+      console.log(`[DebateRooms] 🗑️  Sala "${roomId}" vacía. Auto-destruida.`);
       debateRooms.delete(roomId);
-      // Limpiar la cola asociada a este roomId si quedó gente esperando
       queues.delete(`${DEBATE_ROOM_PREFIX}${roomId}`);
     }, EMPTY_ROOM_TTL_MS);
   }
@@ -116,13 +154,23 @@ function scheduleEmptyCleanup(io: Server, roomId: string) {
 
 export const matchmakingHandler = {
 
-  // ── find-match (discover / ligues) ─────────────────────────────────────────
+  // ── find-match ─────────────────────────────────────────────────────────────
 
-  handleFindMatch: (io: Server, socket: Socket, mode: MatchMode = "discover") => {
+  handleFindMatch: (
+    io:           Server,
+    socket:       Socket,
+    mode:         MatchMode    = "discover",
+    genderFilter: GenderFilter = "all",
+    myGender:     UserGender   = undefined,
+  ) => {
     const supabaseId = socket.handshake.query.userId as string;
     if (!supabaseId) return;
 
     userSocketMap.set(supabaseId, socket.id);
+
+    // Guardar preferencias de género del usuario
+    userGenderFilter.set(supabaseId, genderFilter);
+    userGender.set(supabaseId, myGender);
 
     // Si ya tiene match activo en el mismo modo, no interrumpir
     if (activeMatches.has(supabaseId)) {
@@ -137,129 +185,94 @@ export const matchmakingHandler = {
     setTimeout(() => {
       const latestMode = userMode.get(supabaseId);
       if (latestMode !== mode) {
-        console.log(`[Matchmaking] ⏭️  ${supabaseId.slice(0,8)} cambió de modo antes del delay, abortando "${mode}"`);
+        console.log(`[Matchmaking] ⏭️  ${supabaseId.slice(0,8)} cambió de modo antes del delay`);
         return;
       }
 
-      console.log(`[Matchmaking] 👤 ${supabaseId.slice(0,8)} buscando en "${mode}"`);
+      console.log(
+        `[Matchmaking] 👤 ${supabaseId.slice(0,8)} buscando en "${mode}" | filtro: "${genderFilter}" | género: "${myGender ?? "?"}"`
+      );
 
       let queue = getQueue(mode);
-      queue = queue.filter(uid => uid !== supabaseId && isSocketAlive(io, uid));
+      // Limpiar sockets muertos y al propio usuario
+      queue = queue.filter((uid) => uid !== supabaseId && isSocketAlive(io, uid));
       queues.set(mode, queue);
 
-      if (queue.length > 0) {
-        const partnerUUID = queue.shift()!;
+      // Buscar el primer candidato compatible en la cola
+      let matchedIndex = -1;
+      for (let i = 0; i < queue.length; i++) {
+        const candidate = queue[i];
 
         if (
-          partnerUUID === supabaseId ||
-          !isSocketAlive(io, partnerUUID) ||
-          userMode.get(partnerUUID) !== mode
-        ) {
-          queue.push(supabaseId);
-          socket.emit("waiting", { mode });
-          return;
+          candidate === supabaseId ||
+          !isSocketAlive(io, candidate) ||
+          userMode.get(candidate) !== mode
+        ) continue;
+
+        if (gendersCompatible(supabaseId, candidate)) {
+          matchedIndex = i;
+          break;
         }
+      }
+
+      if (matchedIndex !== -1) {
+        const partnerUUID = queue.splice(matchedIndex, 1)[0];
+        queues.set(mode, queue);
 
         const partnerSocketId = userSocketMap.get(partnerUUID)!;
         activeMatches.set(supabaseId, partnerUUID);
         activeMatches.set(partnerUUID, supabaseId);
 
-        socket.emit("match-found", { partnerId: partnerUUID, isInitiator: true, mode });
-        io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId, isInitiator: false, mode });
+        socket.emit("match-found", { partnerId: partnerUUID, isInitiator: true,  mode });
+        io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId,   isInitiator: false, mode });
 
-        console.log(`[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId.slice(0,8)} <-> ${partnerUUID.slice(0,8)}`);
+        console.log(
+          `[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId.slice(0,8)} <-> ${partnerUUID.slice(0,8)}`
+        );
         return;
       }
 
+      // Sin candidato compatible → cola de espera
       queue.push(supabaseId);
+      queues.set(mode, queue);
       socket.emit("waiting", { mode });
     }, 100);
   },
 
-  // ── Crear sala de debate dinámica ───────────────────────────────────────────
+  // ── Salas de debate (sin cambios) ─────────────────────────────────────────
 
-  /**
-   * Llamado por el host al abrir una sala de debate.
-   * Registra la sala en memoria y la sala queda lista para recibir participantes.
-   */
   createDebateRoom: (io: Server, socket: Socket, roomId: string, maxPeople: number, hostId: string) => {
     const capped = Math.min(maxPeople, MAX_DEBATE_PARTICIPANTS);
-
     if (debateRooms.has(roomId)) {
-      console.log(`[DebateRooms] ℹ️  Sala "${roomId}" ya existe, actualizando host.`);
       const meta = debateRooms.get(roomId)!;
-      meta.hostId = hostId;
+      meta.hostId    = hostId;
       meta.maxPeople = capped;
       cancelEmptyTimer(roomId);
     } else {
-      debateRooms.set(roomId, {
-        hostId,
-        maxPeople: capped,
-        members: new Set(),
-        emptyTimer: null,
-      });
-      console.log(`[DebateRooms] 🏠 Sala "${roomId}" creada | cap: ${capped} | host: ${hostId.slice(0,8)}`);
+      debateRooms.set(roomId, { hostId, maxPeople: capped, members: new Set(), emptyTimer: null });
+      console.log(`[DebateRooms] 🏠 Sala "${roomId}" creada | cap: ${capped}`);
     }
-
-    // El host entra automáticamente
     const meta = debateRooms.get(roomId)!;
     meta.members.add(hostId);
     userSocketMap.set(hostId, socket.id);
   },
 
-  // ── Unirse a sala de debate dinámica ────────────────────────────────────────
-
-  /**
-   * Un usuario quiere unirse a una sala de debate específica.
-   * Se usa el sistema de cola interna con modo "debate-room:<roomId>".
-   * La lógica de WebRTC (offer/answer) ocurre por Supabase Broadcast,
-   * así que aquí solo validamos capacidad y emitimos "debate-join-ok" o "debate-full".
-   */
   joinDebateRoom: (io: Server, socket: Socket, roomId: string, userId: string) => {
     const meta = debateRooms.get(roomId);
-
-    if (!meta) {
-      socket.emit("debate-room-not-found", { roomId });
-      console.warn(`[DebateRooms] ⚠️  ${userId.slice(0,8)} intentó unirse a sala inexistente: ${roomId}`);
-      return;
-    }
-
-    if (meta.members.size >= meta.maxPeople) {
-      socket.emit("debate-room-full", { roomId, max: meta.maxPeople });
-      console.log(`[DebateRooms] 🚫 Sala "${roomId}" llena (${meta.members.size}/${meta.maxPeople})`);
-      return;
-    }
-
-    // Cancelar timer de vacío si estaba corriendo
+    if (!meta) { socket.emit("debate-room-not-found", { roomId }); return; }
+    if (meta.members.size >= meta.maxPeople) { socket.emit("debate-room-full", { roomId, max: meta.maxPeople }); return; }
     cancelEmptyTimer(roomId);
-
     meta.members.add(userId);
     userSocketMap.set(userId, socket.id);
-
-    socket.emit("debate-join-ok", {
-      roomId,
-      hostId: meta.hostId,
-      memberCount: meta.members.size,
-      maxPeople: meta.maxPeople,
-    });
-
-    console.log(`[DebateRooms] ✅ ${userId.slice(0,8)} entró a sala "${roomId}" (${meta.members.size}/${meta.maxPeople})`);
+    socket.emit("debate-join-ok", { roomId, hostId: meta.hostId, memberCount: meta.members.size, maxPeople: meta.maxPeople });
   },
-
-  // ── Salir de sala de debate ─────────────────────────────────────────────────
 
   leaveDebateRoom: (io: Server, socket: Socket, roomId: string, userId: string) => {
     const meta = debateRooms.get(roomId);
     if (!meta) return;
-
     meta.members.delete(userId);
-    console.log(`[DebateRooms] 👋 ${userId.slice(0,8)} salió de sala "${roomId}" (${meta.members.size}/${meta.maxPeople})`);
-
-    // Si es el host quien se fue, notificar a todos y cerrar
     if (meta.hostId === userId) {
-      console.log(`[DebateRooms] 🔴 Host abandonó la sala "${roomId}". Cerrando.`);
-      // Notificar a todos los miembros
-      meta.members.forEach(memberId => {
+      meta.members.forEach((memberId) => {
         const sid = userSocketMap.get(memberId);
         if (sid) io.to(sid).emit("debate-room-closed", { roomId, reason: "host-left" });
       });
@@ -267,32 +280,22 @@ export const matchmakingHandler = {
       queues.delete(`${DEBATE_ROOM_PREFIX}${roomId}`);
       return;
     }
-
-    // Programar auto-destrucción si queda vacía
     scheduleEmptyCleanup(io, roomId);
   },
-
-  // ── Cerrar sala manualmente (host o admin) ─────────────────────────────────
 
   closeDebateRoom: (io: Server, socket: Socket, roomId: string) => {
     const meta = debateRooms.get(roomId);
     if (!meta) return;
-
     cancelEmptyTimer(roomId);
-
-    // Notificar a todos los miembros restantes
-    meta.members.forEach(memberId => {
+    meta.members.forEach((memberId) => {
       const sid = userSocketMap.get(memberId);
       if (sid) io.to(sid).emit("debate-room-closed", { roomId, reason: "host-closed" });
     });
-
     debateRooms.delete(roomId);
     queues.delete(`${DEBATE_ROOM_PREFIX}${roomId}`);
-
-    console.log(`[DebateRooms] 🗑️  Sala "${roomId}" cerrada manualmente.`);
   },
 
-  // ── leave-matchmaking (discover/ligues) ────────────────────────────────────
+  // ── leave / disconnect ─────────────────────────────────────────────────────
 
   handleLeave: (socket: Socket, io: Server) => {
     const supabaseId = socket.handshake.query.userId as string;
@@ -301,32 +304,25 @@ export const matchmakingHandler = {
     breakActiveMatch(io, supabaseId);
   },
 
-  // ── disconnect ─────────────────────────────────────────────────────────────
-
   handleDisconnect: (socket: Socket, io: Server) => {
     const supabaseId = socket.handshake.query.userId as string;
     if (!supabaseId) return;
-
     removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
-
-    // Salir de cualquier sala de debate en la que estuviera
     debateRooms.forEach((meta, roomId) => {
       if (meta.members.has(supabaseId)) {
         matchmakingHandler.leaveDebateRoom(io, socket, roomId, supabaseId);
       }
     });
-
     userSocketMap.delete(supabaseId);
+    userGenderFilter.delete(supabaseId);
+    userGender.delete(supabaseId);
   },
 
-  // ── Utilidades de inspección ───────────────────────────────────────────────
+  // ── Utilidades ─────────────────────────────────────────────────────────────
 
-  getDebateRoomInfo: (roomId: string): DebateRoomMeta | undefined => {
-    return debateRooms.get(roomId);
-  },
-
-  getActiveDebateRooms: (): Array<{ roomId: string; memberCount: number; maxPeople: number; hostId: string }> => {
+  getDebateRoomInfo:    (roomId: string) => debateRooms.get(roomId),
+  getActiveDebateRooms: () => {
     const result: Array<{ roomId: string; memberCount: number; maxPeople: number; hostId: string }> = [];
     debateRooms.forEach((meta, roomId) => {
       result.push({ roomId, memberCount: meta.members.size, maxPeople: meta.maxPeople, hostId: meta.hostId });

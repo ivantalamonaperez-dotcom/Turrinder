@@ -15,8 +15,10 @@ import { useMatchUser } from "@/hooks/useMatchUser";
 import { useLike } from "@/hooks/Uselike";
 import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
-import { useLikeLimiter } from "@/hooks/useLikeLimiter"; // ← nuevo hook
+import { useLikeLimiter } from "@/hooks/useLikeLimiter";
+import { useGenderFilter } from "@/hooks/Usegenderfilter";
 
+import GenderFilterButton from "@/components/ui/GenderFilterButton";
 import VideoPlayer from "@/components/video/VideoPlayer";
 import MatchModal from "@/components/match/MatchModal";
 import AdOverlay from "@/components/ads/AdOverlay";
@@ -27,7 +29,7 @@ export default function LiguesPage() {
 
   const [myProfile, setMyProfile] = useState<{ name?: string; avatar_url?: string } | null>(null);
   const [userId,    setUserId]    = useState("");
-  const [role,      setRole]      = useState("viewer"); // rol del usuario logueado
+  const [role,      setRole]      = useState("viewer");
 
   useEffect(() => {
     const checkUser = async () => {
@@ -52,7 +54,8 @@ export default function LiguesPage() {
   useProfile();
   usePresence();
 
-  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("ligues");
+  const { genderFilter, setGenderFilter } = useGenderFilter();
+  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("ligues", genderFilter);
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
@@ -68,7 +71,7 @@ export default function LiguesPage() {
 
   // ─── Handler de like con control de límite ────────────────────────────────
   const handleLike = useCallback(() => {
-    if (!canLike) return; // viewer sin likes restantes
+    if (!canLike) return;
     likeUser();
     registerLike();
   }, [canLike, likeUser, registerLike]);
@@ -204,7 +207,6 @@ export default function LiguesPage() {
           letter-spacing:0.5px; white-space:nowrap;
         }
 
-        /* ── Like counter badge (solo viewers) ── */
         .lp-likes-badge {
           display: flex; align-items: center; gap: 6px;
           background: rgba(3,10,20,0.58); border: 1px solid rgba(255,45,107,0.25);
@@ -242,7 +244,6 @@ export default function LiguesPage() {
         myProfile={myProfile ?? undefined}
       />
 
-      {/* AdOverlay: solo si el usuario NO es exento (vip / streamer) */}
       {!isExempt && (
         <AdOverlay
           visible={adMode === "AD_THANKS"}
@@ -264,7 +265,7 @@ export default function LiguesPage() {
           </div>
 
           <div className="lp-header-right">
-            {/* Skip counter: oculto para exentos, reemplazado por badge */}
+            {/* Skip counter */}
             {!isExempt ? (
               <div className={`lp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
                 <div className="lp-pips">
@@ -295,6 +296,12 @@ export default function LiguesPage() {
                 </span>
               </div>
             )}
+
+            {/* Filtro de género */}
+            <GenderFilterButton
+              value={genderFilter}
+              onChange={setGenderFilter}
+            />
           </div>
         </header>
 
@@ -304,11 +311,11 @@ export default function LiguesPage() {
             isInitiator={isInitiator}
             matchUser={matchUser}
             onNext={nextUser}
-            onLike={handleLike}           // ← usa el handler con límite
-            liked={liked || !canLike}     // ← bloquea el botón si no quedan likes
+            onLike={handleLike}
+            liked={liked || !canLike}
             searching={searching || !room}
             skipBlocked={isBlocked}
-            likeBlocked={!canLike}        // ← prop nueva para el toast
+            likeBlocked={!canLike}
             remainingLikes={remainingLikes}
           />
         </div>

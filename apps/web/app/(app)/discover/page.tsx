@@ -10,7 +10,9 @@ import { useMatchmaking } from "@/features/matching/useMatchmaking";
 import { useMatchUser } from "@/hooks/useMatchUser";
 import { useAd } from "@/features/ads/useAd";
 import { useSocket } from "@/hooks/useSocket";
+import { useGenderFilter } from "@/hooks/Usegenderfilter";
 
+import GenderFilterButton from "@/components/ui/GenderFilterButton";
 import VideoPlayer from "@/components/video/VideoPlayer";
 import AdOverlay from "@/components/ads/AdOverlay";
 import VideoControls from "@/components/video/Videocontrols";
@@ -41,7 +43,8 @@ export default function DiscoverPage() {
   useProfile();
   usePresence();
 
-  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("discover");
+  const { genderFilter, setGenderFilter } = useGenderFilter();
+  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("discover", genderFilter);
   const { matchUser } = useMatchUser(room);
 
   // Pasamos el rol al hook — streamer y vip quedan exentos automáticamente
@@ -52,17 +55,10 @@ export default function DiscoverPage() {
   // ─── nextUser: notifica skip al hook de ads + busca nueva pareja ─────────
   const nextUser = useCallback(async () => {
     if (isBlocked) return;
-
-    // 1. Registrar el skip (incrementa contador → dispara anuncio al llegar a 8)
-    //    reportSkip es no-op si el usuario es streamer/vip
     reportSkip();
-
-    // 2. Notificar al servidor para que el OTRO usuario reciba 'partner-left'
     if (socket?.connected) {
       socket.emit("leave-matchmaking");
     }
-
-    // 3. Buscar nueva pareja tras 1 segundo
     findNewMatch(1000);
   }, [isBlocked, reportSkip, socket, findNewMatch]);
 
@@ -225,7 +221,6 @@ export default function DiscoverPage() {
           white-space: nowrap;
         }
 
-        /* Badge "Sin anuncios" para streamer/vip */
         .dp-exempt-badge {
           display: flex;
           align-items: center;
@@ -244,7 +239,6 @@ export default function DiscoverPage() {
         }
       `}</style>
 
-      {/* AdOverlay: solo se muestra si el usuario NO es exento */}
       {!isExempt && (
         <AdOverlay
           visible={adMode === "AD_THANKS"}
@@ -283,6 +277,12 @@ export default function DiscoverPage() {
                 ✦ Sin anuncios
               </div>
             )}
+
+            {/* Filtro de género */}
+            <GenderFilterButton
+              value={genderFilter}
+              onChange={setGenderFilter}
+            />
           </div>
         </header>
 
