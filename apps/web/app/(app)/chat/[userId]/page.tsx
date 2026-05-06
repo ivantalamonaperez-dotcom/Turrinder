@@ -815,8 +815,9 @@ export default function ConversationPage() {
 
         /* ── ROOT ── */
         .cv{position:fixed;inset:0;display:flex;flex-direction:column;
-          background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--txt);
-          overflow:hidden;-webkit-font-smoothing:antialiased}
+  background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--txt);
+  overflow:hidden;-webkit-font-smoothing:antialiased;
+  left:64px;}
         .cv-mesh{position:fixed;inset:0;pointer-events:none;z-index:0;
           background:
             radial-gradient(ellipse 65% 40% at 0 0,rgba(84,199,248,.07) 0%,transparent 55%),

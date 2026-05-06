@@ -134,6 +134,7 @@ export default function StreamersPage() {
         /* Section label */
         .sp-section-label { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
         .sp-section-label-text {
+          
           font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
           color: rgba(180,215,240,0.2); white-space: nowrap;
         }

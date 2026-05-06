@@ -12,6 +12,8 @@ import imgModalidades from "../../Images/modalidades.png";
 import imgPerfil         from "../../Images/perfil.png";
 import imgConfiguracion  from "../../Images/configuracion.png";
 import imgStreamer       from "../../Images/debates.png";
+// 👇 Agregá este ícono a tu carpeta Images (o usá cualquier PNG de bug/feedback)
+import imgFeedback       from "../../Images/feedback.png";
 
 import { supabase } from "@/services/supabase.client";
 import { initMercadoPago, Wallet } from "@mercadopago/sdk-react";
@@ -20,12 +22,351 @@ initMercadoPago(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY!, {
   locale: "es-AR",
 });
 
+// ─────────────────────────────────────────────────────────
+// HACER ESTO Y CARGAR EN LA WEB PA QUE ANDE
+// ─────────────────────────────────────────────────────────
+const EMAILJS_SERVICE_ID  = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID  ?? "YOUR_SERVICE_ID";
+const EMAILJS_TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? "YOUR_TEMPLATE_ID";
+const EMAILJS_PUBLIC_KEY  = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY  ?? "YOUR_PUBLIC_KEY";
+
+async function sendFeedbackEmail(payload: {
+  type: string;
+  message: string;
+  email: string;
+  userName: string;
+}) {
+  // Carga el SDK solo cuando se necesita
+  if (!(window as any).emailjs) {
+    await new Promise<void>((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
+      s.onload = () => {
+        (window as any).emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+        resolve();
+      };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  return (window as any).emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+    to_email:   "bicodeservices.info@gmail.com",
+    from_name:  payload.userName || "Usuario anónimo",
+    from_email: payload.email    || "sin-email@turrinder.com",
+    type:       payload.type,
+    message:    payload.message,
+    sent_at:    new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// FEEDBACK MODAL
+// ─────────────────────────────────────────────────────────
+type FeedbackType = "bug" | "idea" | "consulta" | "otro";
+
+const FEEDBACK_TYPES: { value: FeedbackType; label: string; emoji: string; color: string }[] = [
+  { value: "bug",     label: "Bug",       emoji: "🐛", color: "#f87171" },
+  { value: "idea",    label: "Idea",      emoji: "💡", color: "#fbbf24" },
+  { value: "consulta",label: "Consulta",  emoji: "💬", color: "#60a5fa" },
+  { value: "otro",    label: "Otro",      emoji: "📝", color: "#a78bfa" },
+];
+
+function FeedbackModal({ onClose }: { onClose: () => void }) {
+  const [visible,  setVisible]  = useState(false);
+  const [type,     setType]     = useState<FeedbackType>("bug");
+  const [message,  setMessage]  = useState("");
+  const [email,    setEmail]    = useState("");
+  const [status,   setStatus]   = useState<"idle" | "sending" | "success" | "error">("idle");
+  const [errMsg,   setErrMsg]   = useState("");
+
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+    // Pre-fill email if logged in
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) setEmail(data.user.email);
+    });
+  }, []);
+
+  const handleClose = () => { setVisible(false); setTimeout(onClose, 380); };
+
+  const handleSubmit = async () => {
+    if (!message.trim()) { setErrMsg("Por favor escribí tu mensaje."); return; }
+    setStatus("sending"); setErrMsg("");
+    try {
+      const { data } = await supabase.auth.getUser();
+      const userName = data.user?.user_metadata?.full_name ?? data.user?.email ?? "Anónimo";
+      await sendFeedbackEmail({ type, message: message.trim(), email, userName });
+      setStatus("success");
+    } catch (e) {
+      console.error(e);
+      setErrMsg("No se pudo enviar. Intentá de nuevo.");
+      setStatus("error");
+    }
+  };
+
+  const chosen = FEEDBACK_TYPES.find(f => f.value === type)!;
+
+  return (
+    <>
+      <style>{`
+        /* ── Feedback Backdrop ── */
+        .fb-backdrop {
+          position: fixed; inset: 0; z-index: 200;
+          background: rgba(0,0,0,0);
+          backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px);
+          transition: background 0.38s ease, backdrop-filter 0.38s ease;
+          display: flex; align-items: center; justify-content: center;
+          padding: 20px;
+        }
+        .fb-backdrop.in {
+          background: rgba(0,0,10,0.80);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+
+        /* ── Card ── */
+        .fb-modal {
+          position: relative; z-index: 201;
+          width: 100%; max-width: 460px;
+          background: linear-gradient(160deg, #05101e 0%, #020a16 70%);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 24px;
+          box-shadow: 0 40px 100px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,255,255,0.06);
+          overflow: hidden;
+          opacity: 0; transform: translateY(28px) scale(0.96);
+          transition: opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1);
+        }
+        .fb-modal.in { opacity: 1; transform: translateY(0) scale(1); }
+        .fb-modal::before {
+          content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+        }
+
+        /* Aurora tint that changes with type */
+        .fb-aurora {
+          position: absolute; top: 0; left: 0; right: 0; height: 180px;
+          pointer-events: none; z-index: 0;
+          transition: background 0.4s ease;
+        }
+
+        /* Close */
+        .fb-close {
+          position: absolute; top: 14px; right: 14px; z-index: 10;
+          width: 30px; height: 30px; border-radius: 50%;
+          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+          color: rgba(255,255,255,0.35); font-size: 14px;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all 0.2s ease;
+        }
+        .fb-close:hover { background: rgba(255,255,255,0.09); color: #fff; }
+
+        /* Header */
+        .fb-header { position: relative; z-index: 1; padding: 32px 28px 18px; text-align: center; }
+        .fb-emoji { font-size: 38px; display: block; margin-bottom: 10px; transition: all 0.25s ease; line-height: 1; }
+        .fb-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #f5f8ff; letter-spacing: -0.5px; margin-bottom: 4px; }
+        .fb-subtitle { font-family: 'DM Sans', sans-serif; font-size: 12.5px; color: rgba(180,215,240,0.38); }
+
+        /* Type chips */
+        .fb-types { position: relative; z-index: 1; display: flex; gap: 8px; padding: 0 22px 16px; }
+        .fb-type-chip {
+          flex: 1; padding: 9px 6px; border-radius: 12px; cursor: pointer;
+          border: 1.5px solid rgba(255,255,255,0.07);
+          background: rgba(255,255,255,0.02);
+          display: flex; flex-direction: column; align-items: center; gap: 4px;
+          transition: all 0.22s cubic-bezier(0.16,1,0.3,1);
+          font-family: 'DM Sans', sans-serif;
+        }
+        .fb-type-chip:hover { background: rgba(255,255,255,0.05); }
+        .fb-type-chip.sel {
+          background: var(--chip-bg);
+          border-color: var(--chip-border);
+          box-shadow: 0 0 14px var(--chip-glow);
+        }
+        .fb-type-emoji { font-size: 16px; line-height: 1; }
+        .fb-type-label { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: rgba(180,215,240,0.35); transition: color 0.2s; }
+        .fb-type-chip.sel .fb-type-label { color: #f5f8ff; }
+
+        /* Body */
+        .fb-body { position: relative; z-index: 1; padding: 0 22px 8px; display: flex; flex-direction: column; gap: 12px; }
+
+        .fb-label { font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(180,215,240,0.3); margin-bottom: 5px; display: block; }
+
+        .fb-input, .fb-textarea {
+          width: 100%; background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 12px; color: #f0f8ff;
+          font-family: 'DM Sans', sans-serif; font-size: 13.5px;
+          outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease;
+          resize: none; box-sizing: border-box;
+        }
+        .fb-input { padding: 11px 14px; }
+        .fb-textarea { padding: 12px 14px; min-height: 110px; line-height: 1.55; }
+        .fb-input::placeholder, .fb-textarea::placeholder { color: rgba(180,215,240,0.18); }
+        .fb-input:focus, .fb-textarea:focus { border-color: rgba(255,255,255,0.18); box-shadow: 0 0 0 3px rgba(255,255,255,0.04); }
+
+        .fb-char { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.2); text-align: right; margin-top: 3px; }
+
+        /* Error */
+        .fb-err { padding: 9px 14px; background: rgba(248,113,113,0.07); border: 1px solid rgba(248,113,113,0.22); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 12px; color: #fca5a5; }
+
+        /* CTA */
+        .fb-cta { position: relative; z-index: 1; padding: 8px 22px 26px; display: flex; flex-direction: column; gap: 8px; }
+        .fb-btn-send {
+          width: 100%; padding: 14px;
+          background: var(--btn-bg, rgba(255,255,255,0.06));
+          border: 1.5px solid var(--btn-border, rgba(255,255,255,0.1));
+          border-radius: 14px;
+          font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+          color: #f5f8ff; cursor: pointer;
+          transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          box-shadow: var(--btn-shadow, none);
+          letter-spacing: -0.2px;
+        }
+        .fb-btn-send:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+        .fb-btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
+        .fb-btn-cancel { width: 100%; padding: 12px; background: transparent; border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: rgba(180,215,240,0.3); cursor: pointer; transition: all 0.2s ease; }
+        .fb-btn-cancel:hover { background: rgba(255,255,255,0.03); color: rgba(180,215,240,0.55); }
+
+        /* Spinner */
+        .fb-spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Success */
+        .fb-success { text-align: center; padding: 28px 22px 36px; position: relative; z-index: 1; }
+        @keyframes successPop { 0%{transform:scale(0.5);opacity:0} 70%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
+        .fb-success-icon { font-size: 52px; animation: successPop 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; margin-bottom: 14px; display: block; }
+        .fb-success-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #f5f8ff; margin-bottom: 6px; }
+        .fb-success-sub { font-family: 'DM Sans', sans-serif; font-size: 13px; color: rgba(180,215,240,0.42); }
+      `}</style>
+
+      <div className={`fb-backdrop ${visible ? "in" : ""}`} onClick={handleClose}>
+        <div className={`fb-modal ${visible ? "in" : ""}`} onClick={e => e.stopPropagation()}>
+          {/* Aurora */}
+          <div className="fb-aurora" style={{
+            background: `radial-gradient(ellipse 70% 50% at 50% -5%, ${chosen.color}22 0%, transparent 65%)`
+          }} />
+
+          <button className="fb-close" onClick={handleClose}>✕</button>
+
+          {status === "success" ? (
+            <div className="fb-success">
+              <span className="fb-success-icon">🚀</span>
+              <div className="fb-success-title">¡Gracias por tu feedback!</div>
+              <div className="fb-success-sub">Lo revisamos cuanto antes y mejoramos Turrinder para vos.</div>
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="fb-header">
+                <span className="fb-emoji" style={{ filter: `drop-shadow(0 0 12px ${chosen.color}88)` }}>
+                  {chosen.emoji}
+                </span>
+                <div className="fb-title">Feedback & Soporte</div>
+                <div className="fb-subtitle">Tu opinión nos ayuda a mejorar la plataforma.</div>
+              </div>
+
+              {/* Type selector */}
+              <div className="fb-types">
+                {FEEDBACK_TYPES.map(f => (
+                  <button
+                    key={f.value}
+                    className={`fb-type-chip ${type === f.value ? "sel" : ""}`}
+                    onClick={() => setType(f.value)}
+                    style={{
+                      "--chip-bg":     `${f.color}14`,
+                      "--chip-border": `${f.color}44`,
+                      "--chip-glow":   `${f.color}22`,
+                    } as React.CSSProperties}
+                  >
+                    <span className="fb-type-emoji">{f.emoji}</span>
+                    <span className="fb-type-label">{f.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Fields */}
+              <div className="fb-body">
+                <div>
+                  <label className="fb-label">Tu email (opcional)</label>
+                  <input
+                    className="fb-input"
+                    type="email"
+                    placeholder="para que podamos responderte"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="fb-label">Mensaje</label>
+                  <textarea
+                    className="fb-textarea"
+                    placeholder={
+                      type === "bug"      ? "Describí el bug: ¿qué pasó? ¿en qué pantalla?" :
+                      type === "idea"     ? "¿Qué feature o mejora te gustaría ver?" :
+                      type === "consulta" ? "¿En qué te podemos ayudar?" :
+                                           "Contanos lo que querés..."
+                    }
+                    value={message}
+                    maxLength={1000}
+                    onChange={e => setMessage(e.target.value)}
+                  />
+                  <div className="fb-char">{message.length}/1000</div>
+                </div>
+
+                {errMsg && <div className="fb-err">⚠️ {errMsg}</div>}
+              </div>
+
+              {/* CTA */}
+              <div className="fb-cta">
+                <button
+                  className="fb-btn-send"
+                  onClick={handleSubmit}
+                  disabled={status === "sending"}
+                  style={{
+                    "--btn-bg":     `${chosen.color}18`,
+                    "--btn-border": `${chosen.color}44`,
+                    "--btn-shadow": `0 0 20px ${chosen.color}22`,
+                  } as React.CSSProperties}
+                >
+                  {status === "sending" ? (
+                    <><span className="fb-spinner" /> Enviando...</>
+                  ) : (
+                    <>{chosen.emoji} Enviar {chosen.label}</>
+                  )}
+                </button>
+                <button className="fb-btn-cancel" onClick={handleClose}>
+                  Cancelar
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// TYPES & CONSTANTS (VIP)
+// ─────────────────────────────────────────────────────────
 type VipPlan    = "monthly" | "annual";
 type VipCountry = "AR" | "OTHER";
+type PayMethod  = "mp" | "paypal";
 
 const VIP_PRICES = {
-  AR:    { monthly: { display: "$4.999", sub: "ARS / mes", save: null },    annual: { display: "$39.999", sub: "ARS / año", save: "Ahorrás $20k" } },
-  OTHER: { monthly: { display: "$4.99",  sub: "USD / mes", save: null },    annual: { display: "$39.99",  sub: "USD / año", save: "Ahorrás $19.89" } },
+  AR: {
+    monthly: { display: "$4.999", sub: "ARS / mes", save: null },
+    annual:  { display: "$39.999", sub: "ARS / año", save: "Ahorrás $20.000" }
+  },
+  OTHER: {
+    monthly: { display: "$3.99", sub: "USD / mes", save: null },
+    annual:  { display: "$29.99", sub: "USD / año", save: "Save $19.89" }
+  }
+};
+
+const PAYPAL_PLAN_IDS: Record<VipPlan, string> = {
+  monthly: process.env.NEXT_PUBLIC_PAYPAL_PLAN_MONTHLY ?? "P-MONTHLY_PLAN_ID",
+  annual:  process.env.NEXT_PUBLIC_PAYPAL_PLAN_ANNUAL  ?? "P-ANNUAL_PLAN_ID",
 };
 
 const FREE_FEATURES = [
@@ -55,26 +396,77 @@ async function detectCountry(): Promise<VipCountry> {
 }
 
 // ─────────────────────────────────────────────────────────
+// PAYPAL BUTTON
+// ─────────────────────────────────────────────────────────
+function PayPalSubscribeButton({
+  planId,
+  onError,
+  onApprove,
+}: {
+  planId: string;
+  onError: (msg: string) => void;
+  onApprove: (subscriptionId: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rendered     = useRef(false);
+
+  useEffect(() => {
+    if (rendered.current) return;
+    const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+    if (!clientId) { onError("PayPal client ID no configurado."); return; }
+    const existingScript = document.getElementById("paypal-sdk");
+    const renderButton = () => {
+      if (!containerRef.current) return;
+      const pp = (window as any).paypal;
+      if (!pp) { onError("No se pudo cargar PayPal."); return; }
+      pp.Buttons({
+        style: { shape: "rect", color: "gold", layout: "horizontal", label: "subscribe", height: 48 },
+        createSubscription: (_data: any, actions: any) => actions.subscription.create({ plan_id: planId }),
+        onApprove: (data: any) => onApprove(data.subscriptionID),
+        onError:   (err: any) => { console.error(err); onError("Error al procesar el pago con PayPal."); },
+      }).render(containerRef.current);
+      rendered.current = true;
+    };
+    if (existingScript) { renderButton(); return; }
+    const script = document.createElement("script");
+    script.id  = "paypal-sdk";
+    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&vault=true&intent=subscription&currency=USD`;
+    script.addEventListener("load", renderButton);
+    script.addEventListener("error", () => onError("No se pudo cargar PayPal SDK."));
+    document.head.appendChild(script);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planId]);
+
+  return <div ref={containerRef} style={{ width: "100%", minHeight: 48, borderRadius: 14, overflow: "hidden" }} />;
+}
+
+// ─────────────────────────────────────────────────────────
 // VIP MODAL
 // ─────────────────────────────────────────────────────────
 function VIPModal({ onClose }: { onClose: () => void }) {
   const [visible,      setVisible]      = useState(false);
   const [plan,         setPlan]         = useState<VipPlan>("monthly");
   const [country,      setCountry]      = useState<VipCountry>("OTHER");
+  const [payMethod,    setPayMethod]    = useState<PayMethod>("mp");
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string | null>(null);
   const [countryReady, setCountryReady] = useState(false);
+  const [ppSuccess,    setPpSuccess]    = useState(false);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
     detectCountry().then(c => { setCountry(c); setCountryReady(true); });
   }, []);
 
+  useEffect(() => {
+    if (countryReady) setPayMethod(country === "AR" ? "mp" : "paypal");
+  }, [country, countryReady]);
+
   const handleClose = () => { setVisible(false); setTimeout(onClose, 380); };
 
   useEffect(() => {
-    if (!countryReady) return;
+    if (!countryReady || payMethod !== "mp") return;
     let cancelled = false;
     const createPreference = async () => {
       setPreferenceId(null); setError(null); setLoading(true);
@@ -96,9 +488,23 @@ function VIPModal({ onClose }: { onClose: () => void }) {
     createPreference();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, countryReady]);
+  }, [plan, countryReady, payMethod]);
 
   const prices = VIP_PRICES[country];
+
+  const handlePayPalApprove = async (subscriptionId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      await fetch("/api/paypal/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId, plan, userId: user?.id }),
+      });
+      setPpSuccess(true);
+    } catch {
+      setError("Pago aprobado pero error al activar. Contactá soporte.");
+    }
+  };
 
   return (
     <>
@@ -131,19 +537,8 @@ function VIPModal({ onClose }: { onClose: () => void }) {
         .vip-modal::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,195,0,0.55), transparent); border-radius: 24px 24px 0 0; }
         .vip-modal::-webkit-scrollbar { width: 3px; }
         .vip-modal::-webkit-scrollbar-thumb { background: rgba(255,195,0,0.18); border-radius: 4px; }
-        .vip-modal-aurora {
-          position: absolute; top: 0; left: 0; right: 0; height: 200px;
-          background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,195,0,0.13) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 20% 0%, rgba(84,199,248,0.07) 0%, transparent 55%);
-          pointer-events: none; z-index: 0;
-        }
-        .vip-modal-close {
-          position: absolute; top: 16px; right: 16px; z-index: 10;
-          width: 32px; height: 32px; border-radius: 50%;
-          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
-          color: rgba(255,255,255,0.45); font-size: 16px; line-height: 1;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; transition: all 0.2s ease; font-family: sans-serif;
-        }
+        .vip-modal-aurora { position: absolute; top: 0; left: 0; right: 0; height: 200px; background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,195,0,0.13) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 20% 0%, rgba(84,199,248,0.07) 0%, transparent 55%); pointer-events: none; z-index: 0; }
+        .vip-modal-close { position: absolute; top: 16px; right: 16px; z-index: 10; width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.45); font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease; font-family: sans-serif; }
         .vip-modal-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .vip-modal-header { position: relative; z-index: 1; text-align: center; padding: 40px 32px 20px; }
         @keyframes crownFloat { 0%,100%{ transform: translateY(0) rotate(-4deg); } 50%{ transform: translateY(-7px) rotate(4deg); } }
@@ -190,16 +585,32 @@ function VIPModal({ onClose }: { onClose: () => void }) {
         .vip-plan-free .vip-feature-row.has-no .vip-feature-label { text-decoration: line-through; color: rgba(180,215,240,0.2); }
         .vip-plan-shimmer { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, rgba(255,195,0,0.06) 50%, transparent 60%); animation: shimmerMove 4s ease-in-out infinite; pointer-events: none; }
         @keyframes shimmerMove { 0%{ transform: translateX(-100%); } 60%,100%{ transform: translateX(200%); } }
+        .vip-pay-method { position: relative; z-index: 1; padding: 0 22px 14px; }
+        .vip-pay-method-label { font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(180,215,240,0.3); margin-bottom: 10px; text-align: center; }
+        .vip-pay-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .vip-pay-tab { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 10px; border-radius: 12px; cursor: pointer; border: 1.5px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.02); transition: all 0.22s cubic-bezier(0.16,1,0.3,1); font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600; color: rgba(180,215,240,0.35); }
+        .vip-pay-tab:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.14); color: rgba(180,215,240,0.6); }
+        .vip-pay-tab.sel-mp { background: rgba(0,158,227,0.10); border-color: rgba(0,158,227,0.45); color: #009ee3; box-shadow: 0 0 16px rgba(0,158,227,0.12), inset 0 1px 0 rgba(0,158,227,0.15); }
+        .vip-pay-tab.sel-pp { background: rgba(0,112,192,0.10); border-color: rgba(0,48,135,0.55); color: #0070c0; box-shadow: 0 0 16px rgba(0,112,192,0.12), inset 0 1px 0 rgba(255,196,57,0.15); }
+        .vip-pay-tab-icon { font-size: 16px; }
+        .vip-pp-pay  { color: #003087; font-weight: 800; }
+        .vip-pp-pal  { color: #009cde; font-weight: 800; }
+        .vip-pp-disclaimer { margin-top: 8px; padding: 8px 12px; background: rgba(255,196,57,0.06); border: 1px solid rgba(255,196,57,0.18); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 11px; color: rgba(255,196,57,0.7); line-height: 1.5; text-align: center; }
         .vip-error-banner { margin: 0 22px 8px; padding: 10px 14px; position: relative; z-index: 1; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25); border-radius: 10px; font-size: 12px; color: #fca5a5; font-family: 'DM Sans', sans-serif; }
         .vip-cta-wrap { position: relative; z-index: 1; padding: 0 22px 14px; display: flex; flex-direction: column; gap: 9px; }
         .vip-btn-secondary { width: 100%; padding: 13px; background: transparent; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; color: rgba(180,215,240,0.35); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: all 0.2s ease; }
         .vip-btn-secondary:hover { background: rgba(255,255,255,0.04); color: rgba(180,215,240,0.6); border-color: rgba(255,255,255,0.12); }
         .vip-spinner { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; display: inline-block; flex-shrink: 0; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .vip-wallet-skeleton { width: 100%; height: 52px; border-radius: 14px; background: rgba(0,158,227,0.08); border: 1px solid rgba(0,158,227,0.2); display: flex; align-items: center; justify-content: center; gap: 10px; font-family: "DM Sans", sans-serif; font-size: 13px; color: rgba(0,158,227,0.6); }
         .vip-wallet-wrap { width: 100%; }
         .vip-wallet-wrap > div { border-radius: 14px !important; overflow: hidden; }
         .vip-wallet-wrap iframe { border-radius: 14px !important; }
-        .vip-wallet-skeleton { width: 100%; height: 52px; border-radius: 14px; background: rgba(0,158,227,0.08); border: 1px solid rgba(0,158,227,0.2); display: flex; align-items: center; justify-content: center; gap: 10px; font-family: "DM Sans", sans-serif; font-size: 13px; color: rgba(0,158,227,0.6); }
+        .vip-paypal-wrap { width: 100%; border-radius: 14px; overflow: hidden; }
+        .vip-success { text-align: center; padding: 24px 22px; position: relative; z-index: 1; }
+        @keyframes successPop { 0%{transform:scale(0.6);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+        .vip-success-icon { font-size: 48px; animation: successPop 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+        .vip-success-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #f5f8ff; margin: 12px 0 6px; }
+        .vip-success-sub { font-family: 'DM Sans', sans-serif; font-size: 13px; color: rgba(180,215,240,0.45); }
         .vip-disclaimer { position: relative; z-index: 1; text-align: center; font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.18); padding: 4px 22px 28px; line-height: 1.8; }
         .vip-secure { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 5px; font-size: 11px; color: rgba(180,215,240,0.24); }
       `}</style>
@@ -263,36 +674,68 @@ function VIPModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {error && <div className="vip-error-banner">⚠️ {error}</div>}
-
-          <div className="vip-cta-wrap">
-            {loading && (
-              <div className="vip-wallet-skeleton">
-                <span className="vip-spinner" />
-                <span>Preparando pago seguro...</span>
-              </div>
+          <div className="vip-pay-method">
+            <div className="vip-pay-method-label">Método de pago</div>
+            <div className="vip-pay-tabs">
+              <button className={`vip-pay-tab ${payMethod === "mp" ? "sel-mp" : ""}`} onClick={() => setPayMethod("mp")}>
+                <span className="vip-pay-tab-icon">💳</span>
+                Mercado Pago
+              </button>
+              <button className={`vip-pay-tab ${payMethod === "paypal" ? "sel-pp" : ""}`} onClick={() => setPayMethod("paypal")}>
+                <span className="vip-pay-tab-icon">🅿️</span>
+                <span><span className="vip-pp-pay">Pay</span><span className="vip-pp-pal">Pal</span></span>
+              </button>
+            </div>
+            {payMethod === "paypal" && country === "AR" && (
+              <div className="vip-pp-disclaimer">⚠️ PayPal cobra en USD. Verificá si tu cuenta acepta pagos internacionales.</div>
             )}
-            {!loading && preferenceId && (
-              <div className="vip-wallet-wrap">
-                <Wallet
-                  initialization={{ preferenceId, redirectMode: "self" }}
-                  onReady={() => {}}
-                  onError={(err: any) => {
-                    console.error("Wallet Brick error:", err);
-                    setError("Error al cargar el botón de pago. Recargá la página.");
-                  }}
-                />
-              </div>
-            )}
-            <button className="vip-btn-secondary" onClick={handleClose}>
-              Quedarme con el plan gratis
-            </button>
           </div>
 
+          {error && <div className="vip-error-banner">⚠️ {error}</div>}
+
+          {ppSuccess ? (
+            <div className="vip-success">
+              <div className="vip-success-icon">🎉</div>
+              <div className="vip-success-title">¡Bienvenido/a al VIP!</div>
+              <div className="vip-success-sub">Tu suscripción fue activada correctamente.</div>
+            </div>
+          ) : (
+            <div className="vip-cta-wrap">
+              {payMethod === "mp" && (
+                <>
+                  {loading && (
+                    <div className="vip-wallet-skeleton">
+                      <span className="vip-spinner" />
+                      <span>Preparando pago seguro...</span>
+                    </div>
+                  )}
+                  {!loading && preferenceId && (
+                    <div className="vip-wallet-wrap">
+                      <Wallet
+                        initialization={{ preferenceId, redirectMode: "self" }}
+                        onReady={() => {}}
+                        onError={(err: any) => {
+                          console.error("Wallet Brick error:", err);
+                          setError("Error al cargar el botón de pago. Recargá la página.");
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+              {payMethod === "paypal" && (
+                <div className="vip-paypal-wrap">
+                  <PayPalSubscribeButton planId={PAYPAL_PLAN_IDS[plan]} onError={(msg) => setError(msg)} onApprove={handlePayPalApprove} />
+                </div>
+              )}
+              <button className="vip-btn-secondary" onClick={handleClose}>Quedarme con el plan gratis</button>
+            </div>
+          )}
+
           <div className="vip-disclaimer">
-            <div className="vip-secure">🔒 Pago 100% seguro con Mercado Pago</div>
+            <div className="vip-secure">🔒 Pago 100% seguro · Mercado Pago · PayPal</div>
             Renovación automática mensual o anual según el plan elegido.<br />
-            Podés cancelar cuando quieras desde tu cuenta de Mercado Pago.<br />
+            Podés cancelar cuando quieras desde tu cuenta de Mercado Pago o PayPal.<br />
             Al suscribirte aceptás los Términos de Uso y la Política de Privacidad.
           </div>
         </div>
@@ -307,8 +750,9 @@ function VIPModal({ onClose }: { onClose: () => void }) {
 export default function SideNav() {
   const router   = useRouter();
   const pathname = usePathname();
-  const [open,    setOpen]    = useState(false);
-  const [vipOpen, setVipOpen] = useState(false);
+  const [open,         setOpen]         = useState(false);
+  const [vipOpen,      setVipOpen]      = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   const openTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -322,13 +766,12 @@ export default function SideNav() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  // Solo cerrar en mobile al cambiar de sección (en desktop el mouse controla el estado)
   useEffect(() => { if (isMobile) setOpen(false); }, [pathname, isMobile]);
 
   useEffect(() => {
-    document.body.style.overflow = (open || vipOpen) ? "hidden" : "";
+    document.body.style.overflow = (open || vipOpen || feedbackOpen) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [open, vipOpen]);
+  }, [open, vipOpen, feedbackOpen]);
 
   const handleMouseEnter = () => {
     if (isMobile) return;
@@ -354,7 +797,6 @@ export default function SideNav() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
 
-        /* ── Sidebar ── */
         .snav-panel {
           position: fixed; top: 0; left: 0; bottom: 0; z-index: 58;
           width: 64px;
@@ -378,7 +820,6 @@ export default function SideNav() {
           background: linear-gradient(to bottom, transparent 0%, rgba(84,199,248,0.3) 30%, rgba(59,158,218,0.2) 60%, transparent 100%);
         }
 
-        /* ── Backdrop ── */
         .snav-backdrop {
           position: fixed; inset: 0; z-index: 55;
           background: rgba(0,0,0,0); pointer-events: none;
@@ -389,7 +830,6 @@ export default function SideNav() {
           backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
         }
 
-        /* ── Header ── */
         .snav-header {
           position: relative; z-index: 2;
           display: flex; align-items: center; gap: 12px;
@@ -397,207 +837,71 @@ export default function SideNav() {
           border-bottom: 1px solid rgba(84,199,248,0.12);
           min-height: 72px; overflow: hidden; flex-shrink: 0;
         }
-        .snav-logo-icon {
-          width: 40px; height: 40px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-          border-radius: 12px; overflow: hidden;
-        }
-        .snav-logo-text {
-          font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800;
-          letter-spacing: -0.5px; color: #f5f8ff; line-height: 1;
-          white-space: nowrap;
-          opacity: 0; transform: translateX(-8px);
-          transition: opacity 0.25s ease 0.15s, transform 0.25s ease 0.15s;
-        }
+        .snav-logo-icon { width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 12px; overflow: hidden; }
+        .snav-logo-text { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: #f5f8ff; line-height: 1; white-space: nowrap; opacity: 0; transform: translateX(-8px); transition: opacity 0.25s ease 0.15s, transform 0.25s ease 0.15s; }
         .snav-panel.open .snav-logo-text { opacity: 1; transform: translateX(0); }
-        .snav-logo-text span {
-          background: linear-gradient(135deg, #54c7f8, #3b9eda, #1a6fa8);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
+        .snav-logo-text span { background: linear-gradient(135deg, #54c7f8, #3b9eda, #1a6fa8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
-        /* ── Botón mobile-only ── */
-        .snav-mobile-toggle {
-          display: none;
-          position: relative; z-index: 2;
-          flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-          width: 40px; height: 40px; margin: 10px auto 4px;
-          background: rgba(84,199,248,0.05);
-          border: 1px solid rgba(84,199,248,0.14);
-          border-radius: 12px;
-          cursor: pointer; flex-shrink: 0;
-          transition: background 0.2s ease, box-shadow 0.2s ease;
-          padding: 0; outline: none; -webkit-tap-highlight-color: transparent;
-        }
-        .snav-mobile-toggle:hover {
-          background: rgba(84,199,248,0.12);
-          box-shadow: 0 0 16px rgba(84,199,248,0.18);
-        }
-        .snav-toggle-bar {
-          width: 14px; height: 2px; border-radius: 2px;
-          background: rgba(255,255,255,0.55);
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: center;
-        }
-        .snav-mobile-toggle.is-open .snav-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg);  background: #54c7f8; }
+        .snav-mobile-toggle { display: none; position: relative; z-index: 2; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 40px; height: 40px; margin: 10px auto 4px; background: rgba(84,199,248,0.05); border: 1px solid rgba(84,199,248,0.14); border-radius: 12px; cursor: pointer; flex-shrink: 0; transition: background 0.2s ease, box-shadow 0.2s ease; padding: 0; outline: none; -webkit-tap-highlight-color: transparent; }
+        .snav-mobile-toggle:hover { background: rgba(84,199,248,0.12); box-shadow: 0 0 16px rgba(84,199,248,0.18); }
+        .snav-toggle-bar { width: 14px; height: 2px; border-radius: 2px; background: rgba(255,255,255,0.55); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: center; }
+        .snav-mobile-toggle.is-open .snav-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg); background: #54c7f8; }
         .snav-mobile-toggle.is-open .snav-toggle-bar:nth-child(2) { opacity: 0; transform: scaleX(0); }
         .snav-mobile-toggle.is-open .snav-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); background: #54c7f8; }
         @keyframes pipPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
-        .snav-toggle-pip {
-          position: absolute; top: 7px; right: 7px;
-          width: 5px; height: 5px; border-radius: 50%;
-          background: #54c7f8; box-shadow: 0 0 6px #54c7f8;
-          animation: pipPulse 2s ease-in-out infinite;
-        }
+        .snav-toggle-pip { position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: #54c7f8; box-shadow: 0 0 6px #54c7f8; animation: pipPulse 2s ease-in-out infinite; }
 
-        /* ── Hint hover (desktop) ── */
-        .snav-hover-hint {
-          position: relative; z-index: 2;
-          display: flex; align-items: center; justify-content: center;
-          height: 28px; margin: 8px 8px 2px; flex-shrink: 0;
-          opacity: 0.0; transition: opacity 0.3s ease;
-        }
+        .snav-hover-hint { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; height: 28px; margin: 8px 8px 2px; flex-shrink: 0; opacity: 0.0; transition: opacity 0.3s ease; }
         .snav-panel:not(.open):hover .snav-hover-hint { opacity: 1; }
-        .snav-hover-hint-line {
-          width: 20px; height: 2px; border-radius: 2px;
-          background: linear-gradient(90deg, rgba(84,199,248,0.0), rgba(84,199,248,0.35), rgba(84,199,248,0.0));
-          animation: hintBlink 2s ease-in-out infinite;
-        }
+        .snav-hover-hint-line { width: 20px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(84,199,248,0.0), rgba(84,199,248,0.35), rgba(84,199,248,0.0)); animation: hintBlink 2s ease-in-out infinite; }
         @keyframes hintBlink { 0%,100%{opacity:0.4} 50%{opacity:1} }
 
-        /* ── Items ── */
-        .snav-items {
-          position: relative; z-index: 2; flex: 1;
-          display: flex; flex-direction: column; gap: 4px;
-          padding: 12px 8px; overflow: hidden;
-        }
-        .snav-item {
-          display: flex; align-items: center; justify-content: center; gap: 0;
-          padding: 0 10px; border-radius: 12px; border: 1px solid transparent;
-          background: transparent; cursor: pointer;
-          transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-          text-align: left; width: 100%; position: relative; overflow: hidden;
-          -webkit-tap-highlight-color: transparent; outline: none; height: 46px;
-        }
+        .snav-items { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 12px 8px; overflow: hidden; }
+        .snav-item { display: flex; align-items: center; justify-content: center; gap: 0; padding: 0 10px; border-radius: 12px; border: 1px solid transparent; background: transparent; cursor: pointer; transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; width: 100%; position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; outline: none; height: 46px; }
         .snav-panel.open .snav-item { justify-content: flex-start; gap: 14px; }
-        .snav-item::before {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.035), transparent);
-          transform: translateX(-120%); transition: transform 0.55s ease;
-        }
+        .snav-item::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.035), transparent); transform: translateX(-120%); transition: transform 0.55s ease; }
         .snav-item:hover::before { transform: translateX(120%); }
         .snav-item:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); }
         .snav-panel.open .snav-item:hover { transform: translateX(3px); }
         .snav-item.active { background: var(--item-accent-bg); border-color: var(--item-accent-border); }
 
-        .snav-panel:not(.open) .snav-item::after {
-          content: attr(data-tooltip);
-          position: absolute; left: calc(100% + 10px); top: 50%;
-          transform: translateY(-50%) translateX(-4px);
-          background: rgba(3,10,20,0.95); border: 1px solid rgba(84,199,248,0.2);
-          color: #f5f8ff; font-family: 'DM Sans', sans-serif; font-size: 12px;
-          padding: 5px 10px; border-radius: 8px; white-space: nowrap;
-          opacity: 0; pointer-events: none;
-          transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100;
-          box-shadow: 4px 4px 16px rgba(0,0,0,0.5);
-        }
+        .snav-panel:not(.open) .snav-item::after { content: attr(data-tooltip); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px); background: rgba(3,10,20,0.95); border: 1px solid rgba(84,199,248,0.2); color: #f5f8ff; font-family: 'DM Sans', sans-serif; font-size: 12px; padding: 5px 10px; border-radius: 8px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100; box-shadow: 4px 4px 16px rgba(0,0,0,0.5); }
         .snav-panel:not(.open) .snav-item:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
 
-        .snav-item-icon {
-          width: 32px; height: 32px; flex-shrink: 0; position: relative;
-          transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
-          filter: brightness(0.45) saturate(0.2);
-        }
+        /* Override tooltip for special items */
+        .snav-panel:not(.open) .snav-item-streamer::after { content: 'Ser Streamer'; border-color: rgba(167,139,250,0.3); color: #a78bfa; }
+        .snav-panel:not(.open) .snav-item-vip::after { content: 'VIP ✨'; border-color: rgba(255,195,0,0.3); color: #ffd700; }
+        .snav-panel:not(.open) .snav-item-feedback::after { content: 'Feedback & Bugs'; border-color: rgba(52,211,153,0.3); color: #34d399; }
+
+        .snav-item-icon { width: 32px; height: 32px; flex-shrink: 0; position: relative; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease; filter: brightness(0.45) saturate(0.2); }
         .snav-item.active .snav-item-icon { filter: brightness(1) saturate(1.1) drop-shadow(0 0 7px var(--item-accent)); }
         .snav-item:hover .snav-item-icon { transform: scale(1.12) rotate(-4deg); filter: brightness(0.75) saturate(0.5); }
         .snav-item.active:hover .snav-item-icon { transform: scale(1.12) rotate(-4deg); filter: brightness(1.1) saturate(1.3) drop-shadow(0 0 10px var(--item-accent)); }
-        .snav-item-icon-glow {
-          position: absolute; inset: -8px; border-radius: 50%;
-          background: radial-gradient(circle, var(--item-accent) 0%, transparent 70%);
-          opacity: 0; transition: opacity 0.3s ease; z-index: -1; filter: blur(7px);
-        }
+        .snav-item-icon-glow { position: absolute; inset: -8px; border-radius: 50%; background: radial-gradient(circle, var(--item-accent) 0%, transparent 70%); opacity: 0; transition: opacity 0.3s ease; z-index: -1; filter: blur(7px); }
         .snav-item.active .snav-item-icon-glow { opacity: 0.3; }
 
-        .snav-item-text {
-          display: flex; flex-direction: column; gap: 2px; flex: 1;
-          opacity: 0; transform: translateX(-6px);
-          transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-          white-space: nowrap; overflow: hidden; max-width: 0;
-        }
-        .snav-panel.open .snav-item-text {
-          opacity: 1; transform: translateX(0); max-width: 200px;
-          transition: opacity 0.25s ease 0.18s, transform 0.25s ease 0.18s, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-        }
+        .snav-item-text { display: flex; flex-direction: column; gap: 2px; flex: 1; opacity: 0; transform: translateX(-6px); transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1); white-space: nowrap; overflow: hidden; max-width: 0; }
+        .snav-panel.open .snav-item-text { opacity: 1; transform: translateX(0); max-width: 200px; transition: opacity 0.25s ease 0.18s, transform 0.25s ease 0.18s, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1); }
         .snav-item-label { font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 700; color: rgba(255,255,255,0.45); transition: color 0.2s ease; line-height: 1; letter-spacing: -0.2px; }
         .snav-item.active .snav-item-label { color: #f5f8ff; }
         .snav-item-desc { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.25); line-height: 1; }
         .snav-item.active .snav-item-desc { color: rgba(180,215,240,0.5); }
 
-        .snav-item-dot {
-          width: 3px; height: 16px; border-radius: 3px; flex-shrink: 0;
-          background: var(--item-accent, #54c7f8); box-shadow: 0 0 10px var(--item-accent, #54c7f8);
-          opacity: 0; transform: scaleY(0);
-          transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-          max-width: 0; overflow: hidden;
-        }
+        .snav-item-dot { width: 3px; height: 16px; border-radius: 3px; flex-shrink: 0; background: var(--item-accent, #54c7f8); box-shadow: 0 0 10px var(--item-accent, #54c7f8); opacity: 0; transform: scaleY(0); transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); max-width: 0; overflow: hidden; }
         .snav-panel.open .snav-item-dot { max-width: 3px; }
         .snav-item.active .snav-item-dot { opacity: 1; transform: scaleY(1); }
 
-        .snav-divider {
-          position: relative; z-index: 2;
-          display: flex; align-items: center; gap: 10px; padding: 6px 10px 3px; overflow: hidden;
-        }
+        .snav-divider { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 6px 10px 3px; overflow: hidden; }
         .snav-divider-line { flex: 1; height: 1px; background: rgba(84,199,248,0.07); }
-        .snav-divider-label {
-          font-family: 'DM Sans', sans-serif; font-size: 9px; font-weight: 500;
-          letter-spacing: 2px; text-transform: uppercase; color: rgba(180,215,240,0.18); white-space: nowrap;
-          opacity: 0; transition: opacity 0.2s ease;
-        }
+        .snav-divider-label { font-family: 'DM Sans', sans-serif; font-size: 9px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: rgba(180,215,240,0.18); white-space: nowrap; opacity: 0; transition: opacity 0.2s ease; }
         .snav-panel.open .snav-divider-label { opacity: 1; transition: opacity 0.25s ease 0.2s; }
 
-        /* ── Streamer & VIP como nav items ── */
-        @keyframes micPulse { 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.15) rotate(5deg); } }
         @keyframes crownBounce { 0%,100%{transform:translateY(0)rotate(-5deg)} 50%{transform:translateY(-4px)rotate(5deg)} }
 
-        /* Tooltip colapsado streamer */
-        .snav-panel:not(.open) .snav-item-streamer::after {
-          content: 'Ser Streamer';
-          position: absolute; left: calc(100% + 10px); top: 50%;
-          transform: translateY(-50%) translateX(-4px);
-          background: rgba(3,10,20,0.95); border: 1px solid rgba(167,139,250,0.3);
-          color: #a78bfa; font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800;
-          padding: 5px 10px; border-radius: 8px; white-space: nowrap;
-          opacity: 0; pointer-events: none;
-          transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100;
-          box-shadow: 4px 4px 16px rgba(0,0,0,0.5);
-        }
-        .snav-panel:not(.open) .snav-item-streamer:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
-
-        /* Tooltip colapsado VIP */
-        .snav-panel:not(.open) .snav-item-vip::after {
-          content: 'VIP ✨';
-          position: absolute; left: calc(100% + 10px); top: 50%;
-          transform: translateY(-50%) translateX(-4px);
-          background: rgba(3,10,20,0.95); border: 1px solid rgba(255,195,0,0.3);
-          color: #ffd700; font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800;
-          padding: 5px 10px; border-radius: 8px; white-space: nowrap;
-          opacity: 0; pointer-events: none;
-          transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100;
-          box-shadow: 4px 4px 16px rgba(0,0,0,0.5);
-        }
-        .snav-panel:not(.open) .snav-item-vip:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
-
-        .snav-footer {
-          position: relative; z-index: 2;
-          padding: 12px 12px 20px;
-          border-top: 1px solid rgba(84,199,248,0.07); overflow: hidden; flex-shrink: 0;
-        }
-        .snav-footer-line {
-          font-family: 'DM Sans', sans-serif; font-size: 10px;
-          color: rgba(180,215,240,0.16); text-align: center; white-space: nowrap;
-          opacity: 0; transition: opacity 0.2s ease;
-        }
+        .snav-footer { position: relative; z-index: 2; padding: 12px 12px 20px; border-top: 1px solid rgba(84,199,248,0.07); overflow: hidden; flex-shrink: 0; }
+        .snav-footer-line { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.16); text-align: center; white-space: nowrap; opacity: 0; transition: opacity 0.2s ease; }
         .snav-panel.open .snav-footer-line { opacity: 1; transition: opacity 0.25s ease 0.25s; }
 
-        /* ── Mobile ── */
         @media (max-width: 768px) {
           .snav-mobile-toggle { display: flex !important; }
           .snav-hover-hint { display: none; }
@@ -606,10 +910,8 @@ export default function SideNav() {
         }
       `}</style>
 
-      {/* Backdrop */}
       <div className={`snav-backdrop ${open ? "visible" : ""}`} onClick={() => setOpen(false)} />
 
-      {/* Sidebar */}
       <nav
         className={`snav-panel ${open ? "open" : ""}`}
         onMouseEnter={handleMouseEnter}
@@ -617,7 +919,6 @@ export default function SideNav() {
       >
         <div className="snav-panel-aurora" />
 
-        {/* Logo */}
         <div className="snav-header">
           <div className="snav-logo-icon">
             <Image src={imgLogo} alt="Turrinder logo" width={40} height={40}
@@ -626,7 +927,6 @@ export default function SideNav() {
           <div className="snav-logo-text">Turr<span>inder</span></div>
         </div>
 
-        {/* Botón mobile */}
         <button
           className={`snav-mobile-toggle ${open ? "is-open" : ""}`}
           onClick={() => setOpen((v) => !v)}
@@ -638,12 +938,10 @@ export default function SideNav() {
           {!open && <div className="snav-toggle-pip" />}
         </button>
 
-        {/* Hint desktop */}
         <div className="snav-hover-hint">
           <div className="snav-hover-hint-line" />
         </div>
 
-        {/* Nav items */}
         <div className="snav-items">
           {tabs.map((tab) => {
             const isActive = pathname === tab.path || pathname.startsWith(tab.path + "/");
@@ -695,14 +993,14 @@ export default function SideNav() {
             );
           })}
 
-          {/* Divider Extras */}
+          {/* ── Extras ── */}
           <div className="snav-divider" style={{ marginTop: "2px" }}>
             <div className="snav-divider-line" />
             <span className="snav-divider-label">Extras</span>
             <div className="snav-divider-line" />
           </div>
 
-          {/* Streamer — mismo estilo que snav-item */}
+          {/* Streamer */}
           <button
             className="snav-item snav-item-streamer"
             onClick={() => { if (isMobile) setOpen(false); router.push("/streamers"); }}
@@ -725,7 +1023,30 @@ export default function SideNav() {
             <div className="snav-item-dot" style={{ background: "#a78bfa", boxShadow: "0 0 10px #a78bfa" }} />
           </button>
 
-          {/* VIP — mismo estilo que snav-item */}
+          {/* ── FEEDBACK / BUG ── NEW ── */}
+          <button
+            className="snav-item snav-item-feedback"
+            onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setFeedbackOpen(true), 200); }}
+            data-tooltip="Feedback & Bugs"
+            style={{
+              "--item-accent":        "#34d399",
+              "--item-accent-bg":     "rgba(52,211,153,0.06)",
+              "--item-accent-border": "rgba(52,211,153,0.18)",
+            } as React.CSSProperties}
+          >
+            <div className="snav-item-icon" style={{ "--item-accent": "#34d399" } as React.CSSProperties}>
+              <div className="snav-item-icon-glow" />
+              {/* Si tenés el PNG de feedback usá Image, si no, este emoji fallback */}
+              <span style={{ fontSize: 24, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>🐛</span>
+            </div>
+            <div className="snav-item-text">
+              <span className="snav-item-label" style={{ background: "linear-gradient(135deg,#6ee7b7,#34d399)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Feedback</span>
+              <span className="snav-item-desc">Bug, idea o consulta</span>
+            </div>
+            <div className="snav-item-dot" style={{ background: "#34d399", boxShadow: "0 0 10px #34d399" }} />
+          </button>
+
+          {/* VIP */}
           <button
             className="snav-item snav-item-vip"
             onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setVipOpen(true), 200); }}
@@ -754,8 +1075,8 @@ export default function SideNav() {
         </div>
       </nav>
 
-      {/* VIP Modal */}
-      {vipOpen && <VIPModal onClose={() => setVipOpen(false)} />}
+      {vipOpen      && <VIPModal      onClose={() => setVipOpen(false)}      />}
+      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
     </>
   );
 }
