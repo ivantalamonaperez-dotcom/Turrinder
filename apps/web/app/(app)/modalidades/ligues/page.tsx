@@ -51,17 +51,23 @@ export default function LiguesPage() {
     checkUser();
   }, [router]);
 
-  useProfile();
+  // useProfile ahora expone gender normalizado ("male" | "female" | "other" | undefined)
+  const profile = useProfile();
   usePresence();
 
   const { genderFilter, setGenderFilter } = useGenderFilter();
-  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("ligues", genderFilter);
+
+  const { room, searching, isInitiator, findNewMatch } = useMatchmaking(
+    "ligues",
+    genderFilter,
+    profile?.gender,  // ← viene de Supabase: "Hombre"→"male", "Mujer"→"female", resto→"other"
+  );
+
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
 
   const { adMode, skipInfo, isBlocked, adReady, isExempt, reportSkip, reportAdCompleted } = useAd(role);
 
-  // ─── Límite diario de likes ───────────────────────────────────────────────
   const {
     canLike,
     remainingLikes,
@@ -69,14 +75,12 @@ export default function LiguesPage() {
     registerLike,
   } = useLikeLimiter(userId, role);
 
-  // ─── Handler de like con control de límite ────────────────────────────────
   const handleLike = useCallback(() => {
     if (!canLike) return;
     likeUser();
     registerLike();
   }, [canLike, likeUser, registerLike]);
 
-  // ─── Handler de skip ─────────────────────────────────────────────────────
   const nextUser = useCallback(async () => {
     if (isBlocked) return;
     try {
@@ -265,7 +269,6 @@ export default function LiguesPage() {
           </div>
 
           <div className="lp-header-right">
-            {/* Skip counter */}
             {!isExempt ? (
               <div className={`lp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
                 <div className="lp-pips">
@@ -285,7 +288,6 @@ export default function LiguesPage() {
               </div>
             )}
 
-            {/* Like counter — solo si es viewer */}
             {!isUnlimited && (
               <div className={`lp-likes-badge ${!canLike ? "exhausted" : ""}`}>
                 <span className="lp-likes-icon">♥</span>
@@ -297,7 +299,6 @@ export default function LiguesPage() {
               </div>
             )}
 
-            {/* Filtro de género */}
             <GenderFilterButton
               value={genderFilter}
               onChange={setGenderFilter}

@@ -21,7 +21,6 @@ export default function DiscoverPage() {
   const router = useRouter();
   const { socket } = useSocket();
 
-  // ─── Rol del usuario (para eximir de anuncios) ───────────────────────────
   const [userRole, setUserRole] = useState<string>("viewer");
 
   useEffect(() => {
@@ -40,19 +39,23 @@ export default function DiscoverPage() {
     init();
   }, [router]);
 
-  useProfile();
+  // useProfile ahora expone gender normalizado ("male" | "female" | "other" | undefined)
+  const profile = useProfile();
   usePresence();
 
   const { genderFilter, setGenderFilter } = useGenderFilter();
-  const { room, searching, isInitiator, findNewMatch } = useMatchmaking("discover", genderFilter);
-  const { matchUser } = useMatchUser(room);
 
-  // Pasamos el rol al hook — streamer y vip quedan exentos automáticamente
+  const { room, searching, isInitiator, findNewMatch } = useMatchmaking(
+    "discover",
+    genderFilter,
+    profile?.gender,  // ← viene de Supabase: "Hombre"→"male", "Mujer"→"female", resto→"other"
+  );
+
+  const { matchUser } = useMatchUser(room);
   const { adMode, skipInfo, isBlocked, adReady, isExempt, reportSkip, reportAdCompleted } = useAd(userRole);
 
   const [streamerMode, setStreamerMode] = useState(false);
 
-  // ─── nextUser: notifica skip al hook de ads + busca nueva pareja ─────────
   const nextUser = useCallback(async () => {
     if (isBlocked) return;
     reportSkip();
@@ -260,7 +263,6 @@ export default function DiscoverPage() {
           </div>
 
           <div className="dp-header-right">
-            {/* Contador de skips — oculto para exentos */}
             {!isExempt ? (
               <div className={`dp-skips ${skipInfo.remaining <= 2 ? "warn" : ""}`}>
                 <div className="dp-pips">
@@ -278,7 +280,6 @@ export default function DiscoverPage() {
               </div>
             )}
 
-            {/* Filtro de género */}
             <GenderFilterButton
               value={genderFilter}
               onChange={setGenderFilter}

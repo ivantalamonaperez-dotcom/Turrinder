@@ -3,36 +3,40 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import type { GenderFilter } from "@/hooks/Usegenderfilter";
+import type { UserGender } from "@/hooks/useProfile";
 
 export type MatchMode = "discover" | "ligues" | string;
 
-// room e isInitiator en un solo objeto para actualizarse atómicamente
-// y evitar renders intermedios con combinaciones inválidas.
 type MatchState = {
-  room: { id: string } | null;
+  room:        { id: string } | null;
   isInitiator: boolean;
 };
 
-export const useMatchmaking = (mode: MatchMode, genderFilter: GenderFilter = "all") => {
+export const useMatchmaking = (
+  mode:         MatchMode,
+  genderFilter: GenderFilter = "all",
+  myGender:     UserGender   = undefined,
+) => {
   const { socket, connectCount } = useSocket();
 
   const [matchState, setMatchState] = useState<MatchState>({
-    room: null,
+    room:        null,
     isInitiator: false,
   });
   const [searching, setSearching] = useState(false);
 
-  const isFindingMatch = useRef(false);
-  const searchTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const committedMode  = useRef<MatchMode | null>(null);
-  const socketRef      = useRef(socket);
-  const prevModeRef    = useRef<MatchMode | null>(null);
-  // Ref para el filtro de género — permite leerlo en closures sin re-disparar efectos
+  const isFindingMatch  = useRef(false);
+  const searchTimeout   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedMode   = useRef<MatchMode | null>(null);
+  const socketRef       = useRef(socket);
+  const prevModeRef     = useRef<MatchMode | null>(null);
   const genderFilterRef = useRef<GenderFilter>(genderFilter);
+  const myGenderRef     = useRef<UserGender>(myGender);
   const prevGenderRef   = useRef<GenderFilter>(genderFilter);
 
-  useEffect(() => { socketRef.current = socket; }, [socket]);
+  useEffect(() => { socketRef.current       = socket;       }, [socket]);
   useEffect(() => { genderFilterRef.current = genderFilter; }, [genderFilter]);
+  useEffect(() => { myGenderRef.current     = myGender;     }, [myGender]);
 
   const clearSearchTimeout = useCallback(() => {
     if (searchTimeout.current) {
@@ -55,14 +59,20 @@ export const useMatchmaking = (mode: MatchMode, genderFilter: GenderFilter = "al
 
     const doSearch = () => {
       if (!socketRef.current?.connected) return;
-      const filter = genderFilterRef.current;
-      console.log(`[Matchmaking] 🔍 find-match → modo: "${targetMode}" | género: "${filter}"`);
+      const filter   = genderFilterRef.current;
+      const myGender = myGenderRef.current;
+      console.log(
+        `[Matchmaking] 🔍 find-match → modo: "${targetMode}" | filtro: "${filter}" | miGénero: "${myGender ?? "?"}"`
+      );
       isFindingMatch.current = true;
       committedMode.current  = targetMode;
       setSearching(true);
-      // Reset atómico: room=null, isInitiator=false en un solo setState
       setMatchState({ room: null, isInitiator: false });
-      socketRef.current!.emit("find-match", { mode: targetMode, genderFilter: filter });
+      socketRef.current!.emit("find-match", {
+        mode:         targetMode,
+        genderFilter: filter,
+        myGender,
+      });
     };
 
     if (delayMs > 0) {
@@ -79,15 +89,14 @@ export const useMatchmaking = (mode: MatchMode, genderFilter: GenderFilter = "al
   }, [findNewMatch, mode]);
 
   // ── Reaccionar al cambio de filtro de género ─────────────────────────────
-  // Si el filtro cambia mientras hay búsqueda o match activo, reiniciamos.
   useEffect(() => {
     const prevGender = prevGenderRef.current;
     prevGenderRef.current = genderFilter;
 
-    if (prevGender === genderFilter) return; // primera ejecución o sin cambio real
+    if (prevGender === genderFilter) return;
     if (!socket?.connected) return;
 
-    console.log(`[Matchmaking] 🚻 Filtro género "${genderFilter}". Leave + re-search`);
+    console.log(`[Matchmaking] 🚻 Filtro género cambió a "${genderFilter}". Reiniciando búsqueda...`);
     emitLeave();
     isFindingMatch.current = false;
     setMatchState({ room: null, isInitiator: false });
@@ -100,9 +109,9 @@ export const useMatchmaking = (mode: MatchMode, genderFilter: GenderFilter = "al
     if (!socket) return;
 
     const handleMatchFound = (data: {
-      partnerId: string;
+      partnerId:   string;
       isInitiator: boolean;
-      mode?: MatchMode;
+      mode?:       MatchMode;
     }) => {
       if (data.mode && data.mode !== committedMode.current) {
         console.warn(
@@ -113,7 +122,6 @@ export const useMatchmaking = (mode: MatchMode, genderFilter: GenderFilter = "al
         return;
       }
       clearSearchTimeout();
-      // UN SOLO setState: room e isInitiator se actualizan juntos.
       setMatchState({ room: { id: data.partnerId }, isInitiator: data.isInitiator });
       setSearching(false);
       isFindingMatch.current = false;
@@ -161,7 +169,7 @@ export const useMatchmaking = (mode: MatchMode, genderFilter: GenderFilter = "al
     }
 
     if (!matchState.room && !searching && !isFindingMatch.current) {
-      console.log(`[Matchmaking] 🚀 Auto-búsqueda en modo: "${mode}" | género: "${genderFilter}"`);
+      console.log(`[Matchmaking] 🚀 Auto-búsqueda en modo: "${mode}"`);
       findNewMatch(mode);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
