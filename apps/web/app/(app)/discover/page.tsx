@@ -28,19 +28,19 @@ export default function DiscoverPage() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) { router.push("/"); return; }
 
-      const { data: profile } = await supabase
+      const { data: p } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", data.user.id)
         .single();
 
-      if (profile?.role) setUserRole(profile.role);
+      if (p?.role) setUserRole(p.role);
     };
     init();
   }, [router]);
 
-  // useProfile ahora expone gender normalizado ("male" | "female" | "other" | undefined)
-  const profile = useProfile();
+  // profileReady = true cuando Supabase terminó de devolver el perfil con el género
+  const { profile, profileReady } = useProfile();
   usePresence();
 
   const { genderFilter, setGenderFilter } = useGenderFilter();
@@ -48,7 +48,8 @@ export default function DiscoverPage() {
   const { room, searching, isInitiator, findNewMatch } = useMatchmaking(
     "discover",
     genderFilter,
-    profile?.gender,  // ← viene de Supabase: "Hombre"→"male", "Mujer"→"female", resto→"other"
+    profile?.gender,  // "male" | "female" | "other" | undefined
+    profileReady,     // bloquea el find-match hasta que el género esté disponible
   );
 
   const { matchUser } = useMatchUser(room);

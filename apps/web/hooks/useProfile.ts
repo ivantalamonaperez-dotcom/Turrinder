@@ -18,11 +18,19 @@ function normalizeGender(raw?: string | null): UserGender {
 
 export const useProfile = () => {
   const router = useRouter();
+
   const [profile, setProfile] = useState<{
     id:     string;
     role:   string;
     gender: UserGender;
   } | null>(null);
+
+  /**
+   * profileReady: true en cuanto el fetch de Supabase terminó (con o sin gender).
+   * Mientras sea false, useMatchmaking NO emite find-match para evitar que el
+   * usuario entre a la cola con myGender=undefined y rompa el filtro de género.
+   */
+  const [profileReady, setProfileReady] = useState(false);
 
   useEffect(() => {
     const checkProfile = async () => {
@@ -45,11 +53,15 @@ export const useProfile = () => {
         role:   p.role,
         gender: normalizeGender(p.gender),
       });
+
+      // Marcar como listo DESPUÉS de setProfile para que ambos estados
+      // se vean juntos en el siguiente render
+      setProfileReady(true);
     };
 
     checkProfile();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return profile;
+  return { profile, profileReady };
 };

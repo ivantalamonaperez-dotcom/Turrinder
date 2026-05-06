@@ -36,23 +36,23 @@ export default function LiguesPage() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) { router.push("/"); return; }
 
-      const { data: profile } = await supabase
+      const { data: p } = await supabase
         .from("profiles")
         .select("name, avatar_url, role")
         .eq("id", data.user.id)
         .single();
 
-      if (profile) {
-        setMyProfile({ name: profile.name, avatar_url: profile.avatar_url });
-        setRole(profile.role ?? "viewer");
+      if (p) {
+        setMyProfile({ name: p.name, avatar_url: p.avatar_url });
+        setRole(p.role ?? "viewer");
       }
       setUserId(data.user.id);
     };
     checkUser();
   }, [router]);
 
-  // useProfile ahora expone gender normalizado ("male" | "female" | "other" | undefined)
-  const profile = useProfile();
+  // profileReady = true cuando Supabase terminó de devolver el perfil con el género
+  const { profile, profileReady } = useProfile();
   usePresence();
 
   const { genderFilter, setGenderFilter } = useGenderFilter();
@@ -60,12 +60,12 @@ export default function LiguesPage() {
   const { room, searching, isInitiator, findNewMatch } = useMatchmaking(
     "ligues",
     genderFilter,
-    profile?.gender,  // ← viene de Supabase: "Hombre"→"male", "Mujer"→"female", resto→"other"
+    profile?.gender,  // "male" | "female" | "other" | undefined
+    profileReady,     // bloquea el find-match hasta que el género esté disponible
   );
 
   const { matchUser } = useMatchUser(room);
   const { likeUser, liked, isMatch, setIsMatch } = useLike(room);
-
   const { adMode, skipInfo, isBlocked, adReady, isExempt, reportSkip, reportAdCompleted } = useAd(role);
 
   const {

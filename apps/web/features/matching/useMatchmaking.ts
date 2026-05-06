@@ -16,6 +16,12 @@ export const useMatchmaking = (
   mode:         MatchMode,
   genderFilter: GenderFilter = "all",
   myGender:     UserGender   = undefined,
+  /**
+   * profileReady: true cuando useProfile ya terminó su fetch de Supabase.
+   * Mientras sea false, el hook NO emite find-match aunque el socket esté listo.
+   * Esto evita el race condition donde myGender llega undefined en el primer emit.
+   */
+  profileReady: boolean = false,
 ) => {
   const { socket, connectCount } = useSocket();
 
@@ -33,10 +39,12 @@ export const useMatchmaking = (
   const genderFilterRef = useRef<GenderFilter>(genderFilter);
   const myGenderRef     = useRef<UserGender>(myGender);
   const prevGenderRef   = useRef<GenderFilter>(genderFilter);
+  const profileReadyRef = useRef<boolean>(profileReady);
 
   useEffect(() => { socketRef.current       = socket;       }, [socket]);
   useEffect(() => { genderFilterRef.current = genderFilter; }, [genderFilter]);
   useEffect(() => { myGenderRef.current     = myGender;     }, [myGender]);
+  useEffect(() => { profileReadyRef.current = profileReady; }, [profileReady]);
 
   const clearSearchTimeout = useCallback(() => {
     if (searchTimeout.current) {
@@ -59,6 +67,16 @@ export const useMatchmaking = (
 
     const doSearch = () => {
       if (!socketRef.current?.connected) return;
+
+      // Bloquear si el perfil aún no cargó — el género sería undefined
+      // y el filtro funcionaría mal (el usuario entraría a la cola sin género)
+      if (!profileReadyRef.current) {
+        console.log("[Matchmaking] ⏳ Esperando perfil antes de buscar...");
+        // Reintentar en 300ms
+        searchTimeout.current = setTimeout(() => doSearch(), 300);
+        return;
+      }
+
       const filter   = genderFilterRef.current;
       const myGender = myGenderRef.current;
       console.log(
@@ -104,6 +122,18 @@ export const useMatchmaking = (
     findNewMatch(mode, 300);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genderFilter]);
+
+  // ── Arrancar búsqueda cuando el perfil esté listo (si ya había socket) ───
+  // Cubre el caso: socket conectó primero, profileReady llegó después.
+  useEffect(() => {
+    if (!profileReady) return;
+    if (!socket?.connected) return;
+    if (matchState.room || searching || isFindingMatch.current) return;
+
+    console.log("[Matchmaking] ✅ Perfil listo. Iniciando búsqueda automática...");
+    findNewMatch(mode);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileReady]);
 
   useEffect(() => {
     if (!socket) return;
@@ -168,7 +198,8 @@ export const useMatchmaking = (
       return;
     }
 
-    if (!matchState.room && !searching && !isFindingMatch.current) {
+    // Solo auto-buscar si el perfil ya está listo
+    if (!matchState.room && !searching && !isFindingMatch.current && profileReadyRef.current) {
       console.log(`[Matchmaking] 🚀 Auto-búsqueda en modo: "${mode}"`);
       findNewMatch(mode);
     }
