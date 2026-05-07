@@ -11,7 +11,10 @@ import registerAdEvents from "../../ad/ad.events";
 import { matchmakingHandler } from "../../realtime/handlers/matchmaking.handler";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  credentials: true,
+}));
 app.use(express.json());
 
 app.use("/api", routes);
@@ -19,8 +22,9 @@ app.use("/api", routes);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 

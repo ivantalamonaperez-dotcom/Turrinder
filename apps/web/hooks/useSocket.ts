@@ -44,7 +44,7 @@ async function getOrCreateSocket(): Promise<Socket | null> {
 
     const s = io(SOCKET_URL, {
       autoConnect: true,
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
       query: { userId: user.id },
       reconnection: true,
       reconnectionAttempts: 10,
