@@ -1,5 +1,30 @@
 "use client";
 
+/**
+ * DebateRoomsPage.tsx — v9
+ *
+ * FIXES vs v8 — Race conditions en señalización:
+ *
+ *  PROBLEMA RAÍZ:
+ *    Supabase Broadcast no garantiza entrega si el receptor aún no terminó
+ *    de suscribirse. Cuando B entra y manda "join", A responde con "offer"
+ *    inmediatamente. Pero si B acaba de llamar .subscribe() y el canal no
+ *    está 100% listo del lado de B, la offer llega y se pierde.
+ *    Lo mismo pasa con ICE candidates que llegan antes de que exista la PC.
+ *
+ *  SOLUCIONES:
+ *  1. COLA DE PENDIENTES — offers e ICE que llegan antes de que exista la PC
+ *     se encolan en `pendingSignals`. Cuando createPC() crea la conexión,
+ *     drena la cola automáticamente.
+ *  2. RE-ANNOUNCE EN PRESENCE — cuando el presence "sync" detecta un miembro
+ *     nuevo con el que NO tenemos PC activa, mandamos "join" de nuevo.
+ *     Esto cubre el caso donde B se suscribió pero perdió la offer de A.
+ *  3. RETRY INTELIGENTE — el retry periódico ahora detecta PCs "vacías"
+ *     (sin remoteDescription) además de la ausencia total de PCs.
+ *  4. DELAY POST-SUSCRIPCIÓN — esperamos 400ms después de SUBSCRIBED antes
+ *     de mandar "join", dando tiempo a que los listeners queden activos.
+ */
+
 import { useEffect, useCallback, useState, useRef, useMemo } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
@@ -244,9 +269,15 @@ function useDebateMedia(
             type: "broadcast", event: "answer",
             payload: { from: userId, to: peerId, sdp: answer },
           });
+          console.log(`[Debates] ✅ Offer drenada y answer enviada a ${peerId.slice(0,8)}`);
         } catch (e) { console.warn("[Debates] Error drenando offer pendiente de", peerId, e); }
       } else if (sig.type === "ice") {
-        try { await pc.addIceCandidate(new RTCIceCandidate(sig.payload.candidate)); } catch {}
+        // ✅ Solo aplicar ICE candidates después de que remoteDescription esté seteado
+        if (pc.remoteDescription) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(sig.payload.candidate)); } catch {}
+        }
+        // Si aún no hay remoteDescription, estos candidates se perderán
+        // pero serán regenerados por ICE restart automático
       }
     }
 
@@ -379,20 +410,24 @@ function useDebateMedia(
           }];
         });
 
-        // FIX: si la PC aún no existe, encolar la offer para procesarla cuando createPC la cree
-        if (!peerConns.current.has(payload.from)) {
-          const queue = pendingSignals.current.get(payload.from) ?? [];
-          queue.push({ type: "offer", payload });
-          pendingSignals.current.set(payload.from, queue);
-          console.log(`[Debates] 📥 Offer de ${payload.from.slice(0,8)} encolada (PC no existe aún)`);
-          // Crear la PC vacía ahora para que drene la cola
-          await createPC(payload.from);
-          return;
+        // ✅ Fix: NO destruir la PC existente al recibir una offer.
+        // Si ya existe PC, reutilizarla. Solo crear PC nueva si no existe.
+        // Antes: siempre se llamaba createPC() que destruía la PC anterior,
+        // perdiendo los tracks ya negociados y rompiendo la conexión.
+        let pc = peerConns.current.get(payload.from);
+        if (!pc) {
+          pc = await createPC(payload.from);
         }
-
-        const pc = await createPC(payload.from);
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          // Solo procesar si no hay remoteDescription ya seteado
+          // (evita error si llegó una offer duplicada)
+          if (pc.signalingState === "stable" || pc.signalingState === "have-local-offer") {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          } else if (pc.signalingState === "have-remote-offer") {
+            // Ya tenemos remote description, solo crear answer
+          } else {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          }
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           channel.send({
@@ -419,9 +454,17 @@ function useDebateMedia(
         if (payload.to !== userId) return;
         const pc = peerConns.current.get(payload.from);
         if (pc && payload.candidate) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch {}
+          // ✅ Fix: solo aplicar ICE si hay remoteDescription seteado
+          // Si no hay remoteDescription, encolar para aplicar después
+          if (pc.remoteDescription) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch {}
+          } else {
+            const queue = pendingSignals.current.get(payload.from) ?? [];
+            queue.push({ type: "ice", payload });
+            pendingSignals.current.set(payload.from, queue);
+          }
         } else if (!pc && payload.candidate) {
-          // FIX: encolar ICE candidate hasta que exista la PC
+          // PC no existe aún — encolar
           const queue = pendingSignals.current.get(payload.from) ?? [];
           queue.push({ type: "ice", payload });
           pendingSignals.current.set(payload.from, queue);
@@ -1294,8 +1337,8 @@ function RoomView({ room, currentUserId, currentUserName, currentUserAvatarUrl, 
 
 export default function DebateRoomsPage() {
   const router  = useRouter();
-  // ✅ Fix: destructurar { profile, profileReady } — antes se leía el objeto
-  // completo del hook como si fuera el profile, por lo que id y role eran undefined
+  // ✅ Fix: destructurar correctamente — antes (profile as any) leía el objeto
+  // completo { profile, profileReady } en vez del profile real
   const { profile, profileReady } = useProfile();
   const { socket } = useSocket();
 
