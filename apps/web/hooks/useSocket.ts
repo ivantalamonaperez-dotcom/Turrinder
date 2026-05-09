@@ -1,18 +1,14 @@
 "use client";
 
 /**
- * useSocket — SINGLETON + CONTADOR DE CONEXIONES
+ * useSocket — SINGLETON + CONTADOR DE CONEXIONES + AUTH SEGURA
  *
- * PROBLEMA RAÍZ (esta iteración):
- *   El disparador automático de useMatchmaking dependía de `socket?.connected`.
- *   Cuando el socket reconectaba, ese valor ya era `true` desde antes,
- *   React no detectaba cambio → el useEffect no se re-ejecutaba → nunca
- *   se emitía "find-match".
- *
- * SOLUCIÓN:
- *   Exportamos `connectCount`: un número que incrementa cada vez que el
- *   socket emite "connect". React sí detecta el cambio de número, y
- *   useMatchmaking puede usarlo como dependencia para disparar find-match.
+ * CAMBIOS DE SEGURIDAD:
+ *   - El userId ya NO se manda en el query (era fácil de suplantar).
+ *   - Ahora se manda el access_token de Supabase en socket.auth.token.
+ *   - El servidor verifica el token con Supabase y extrae el userId real.
+ *   - Si el token expira, el socket se reconecta automáticamente con el
+ *     token nuevo gracias al evento onTokenRefreshed de Supabase.
  */
 
 import { useEffect, useState } from "react";
@@ -31,9 +27,11 @@ async function getOrCreateSocket(): Promise<Socket | null> {
   if (_initPromise) return _initPromise;
 
   _initPromise = (async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      console.warn("⚠️ Sin usuario autenticado.");
+    // Obtener sesión completa (necesitamos el access_token, no solo el user)
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      console.warn("⚠️ Sin sesión autenticada.");
       _initPromise = null;
       return null;
     }
@@ -45,18 +43,26 @@ async function getOrCreateSocket(): Promise<Socket | null> {
     const s = io(SOCKET_URL, {
       autoConnect: true,
       transports: ["websocket", "polling"],
-      query: { userId: user.id },
+      // ✅ Token en auth (no en query) — el servidor lo verifica con Supabase
+      auth: { token: session.access_token },
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
     });
 
     s.on("connect", () =>
-      console.log("🟢 Socket conectado:", s.id, "| UUID:", user.id)
+      console.log("🟢 Socket conectado:", s.id)
     );
-    s.on("connect_error", (err) =>
-      console.error("❌ Error socket:", err.message)
-    );
+
+    s.on("connect_error", (err) => {
+      console.error("❌ Error socket:", err.message);
+      // Si el error es de auth, limpiar para forzar re-init con token nuevo
+      if (err.message.includes("AUTH_")) {
+        _socket = null;
+        _initPromise = null;
+      }
+    });
+
     s.on("disconnect", (reason) => {
       console.log("🔴 Socket desconectado:", reason);
       if (["io server disconnect", "io client disconnect"].includes(reason)) {
@@ -71,6 +77,27 @@ async function getOrCreateSocket(): Promise<Socket | null> {
   })();
 
   return _initPromise;
+}
+
+// ─── Reconexión automática cuando Supabase refresca el token ─────────────────
+// Cuando el JWT expira, Supabase emite onAuthStateChange con el token nuevo.
+// Reconectamos el socket con el token fresco para que el servidor lo revalide.
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "TOKEN_REFRESHED" && session?.access_token && _socket) {
+      console.log("[useSocket] 🔄 Token refrescado, reconectando socket...");
+      _socket.auth = { token: session.access_token };
+      _socket.disconnect();
+      _socket = null;
+      _initPromise = null;
+      // El hook se encargará de reconectar en el próximo render
+    }
+    if (event === "SIGNED_OUT") {
+      _socket?.disconnect();
+      _socket = null;
+      _initPromise = null;
+    }
+  });
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -99,14 +126,13 @@ export const useSocket = (): UseSocketResult => {
       // Si ya estaba conectado al momento de resolver, actualizar estado
       if (s.connected) {
         setSocket(s);
-        setConnectCount((c) => (c === 0 ? 1 : c)); // solo si aún era 0
+        setConnectCount((c) => (c === 0 ? 1 : c));
       }
 
       const onConnect = () => {
         if (!active) return;
         console.log("[useSocket] onConnect →", s.id);
         setSocket(s);
-        // ← CLAVE: incrementar siempre en cada connect, no solo la primera vez
         setConnectCount((c) => c + 1);
       };
 

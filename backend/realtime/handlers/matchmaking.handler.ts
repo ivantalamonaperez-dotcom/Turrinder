@@ -1,22 +1,12 @@
 /**
- * matchmaking.handler.ts — v3 · FILTRO DE GÉNERO
+ * matchmaking.handler.ts — v4 · SEGURIDAD
  *
- * NUEVO en esta versión:
- *  - find-match acepta un campo opcional `genderFilter`: "all" | "male" | "female"
- *  - La cola almacena el perfil de género del usuario buscador.
- *  - Al hacer match, se valida compatibilidad bidireccional:
- *      A quiere ver género X  AND  B quiere ver género Y
- *      → solo hacen match si el género de A satisface el filtro de B y viceversa.
- *  - Si el filtro es "all", ese usuario acepta cualquier género.
- *  - El servidor consulta el género del usuario desde `userGender` (mapa en memoria),
- *    que se puebla cuando el cliente emite "find-match" junto con su propio género.
- *
- * NOTA: Para que el filtro funcione, el cliente debe enviar también su propio género
- * en el payload de "find-match":
- *   socket.emit("find-match", { mode, genderFilter, myGender })
- *
- * `myGender` puede ser "male" | "female" | "other" | undefined.
- * Si es undefined, ese usuario no será filtrado por nadie (equivale a "other").
+ * Cambios respecto a v3:
+ *  - El userId ya NO se lee de socket.handshake.query (era falsificable).
+ *    Ahora se lee de socket.data.userId, que fue verificado por el middleware
+ *    JWT en server.ts — es el ID real confirmado por Supabase.
+ *  - handleLeave y handleDisconnect también usan socket.data.userId.
+ *  - El resto de la lógica de matchmaking y género no cambia.
  */
 
 import { Socket, Server } from "socket.io";
@@ -26,45 +16,39 @@ export type MatchMode    = "discover" | "ligues" | string;
 export type GenderFilter = "all" | "male" | "female";
 export type UserGender   = "male" | "female" | "other" | undefined;
 
-/** Prefijo para identificar salas de debate dinámicas */
 export const DEBATE_ROOM_PREFIX = "debate-room:";
 
-const EMPTY_ROOM_TTL_MS        = 5 * 60 * 1000;
+const EMPTY_ROOM_TTL_MS       = 5 * 60 * 1000;
 const MAX_DEBATE_PARTICIPANTS  = 20;
 
 // ─── Estado global ────────────────────────────────────────────────────────────
-
-/** Cola de espera por modo. Clave: mode string. Valor: array de userIds. */
-const queues = new Map<MatchMode, string[]>();
-
-/** Match activos: userId → partnerId */
-const activeMatches = new Map<string, string>();
-
-/** Modo actual de búsqueda por usuario */
-const userMode = new Map<string, MatchMode>();
-
-/**
- * Filtro de género preferido por cada usuario (lo que QUIERE ver).
- * "all" = sin preferencia. "male" = solo hombres. "female" = solo mujeres.
- */
+const queues         = new Map<MatchMode, string[]>();
+const activeMatches  = new Map<string, string>();
+const userMode       = new Map<string, MatchMode>();
 const userGenderFilter = new Map<string, GenderFilter>();
-
-/**
- * Género propio de cada usuario (lo que ES).
- * Se usa para que el partner pueda filtrarlo.
- */
-const userGender = new Map<string, UserGender>();
+const userGender     = new Map<string, UserGender>();
 
 // ─── Salas de debate ──────────────────────────────────────────────────────────
 interface DebateRoomMeta {
-  hostId:    string;
-  maxPeople: number;
-  members:   Set<string>;
+  hostId:     string;
+  maxPeople:  number;
+  members:    Set<string>;
   emptyTimer: ReturnType<typeof setTimeout> | null;
 }
 const debateRooms = new Map<string, DebateRoomMeta>();
 
 // ─── Helpers generales ────────────────────────────────────────────────────────
+
+/**
+ * Lee el userId verificado desde socket.data.
+ * Este valor fue establecido por el middleware JWT en server.ts,
+ * por lo que es confiable — no puede ser falsificado por el cliente.
+ */
+function getVerifiedUserId(socket: Socket): string | null {
+  const id = socket.data?.userId;
+  if (typeof id !== "string" || !id) return null;
+  return id;
+}
 
 const getQueue = (mode: MatchMode): string[] => {
   if (!queues.has(mode)) queues.set(mode, []);
@@ -94,30 +78,19 @@ const breakActiveMatch = (io: Server, userId: string) => {
   }
 };
 
-// ─── Lógica de compatibilidad de género ──────────────────────────────────────
-
-/**
- * Devuelve true si el filtro de A es compatible con el género de B, Y viceversa.
- *
- * Reglas:
- *   - Si el filtro es "all" → acepta cualquier género.
- *   - Si el género del candidato es undefined/"other" → pasa cualquier filtro.
- *   - En caso contrario → el género debe coincidir exactamente con el filtro.
- */
+// ─── Compatibilidad de género ─────────────────────────────────────────────────
 function gendersCompatible(userA: string, userB: string): boolean {
-  const filterA = userGenderFilter.get(userA) ?? "all"; // lo que A quiere ver
-  const filterB = userGenderFilter.get(userB) ?? "all"; // lo que B quiere ver
-  const genderA = userGender.get(userA);                // lo que A es
-  const genderB = userGender.get(userB);                // lo que B es
+  const filterA = userGenderFilter.get(userA) ?? "all";
+  const filterB = userGenderFilter.get(userB) ?? "all";
+  const genderA = userGender.get(userA);
+  const genderB = userGender.get(userB);
 
-  // A ve a B → ¿el género de B satisface el filtro de A?
   const aSatisfied =
     filterA === "all" ||
     genderB === undefined ||
     genderB === "other" ||
     genderB === filterA;
 
-  // B ve a A → ¿el género de A satisface el filtro de B?
   const bSatisfied =
     filterB === "all" ||
     genderA === undefined ||
@@ -128,7 +101,6 @@ function gendersCompatible(userA: string, userB: string): boolean {
 }
 
 // ─── Helpers de salas de debate ───────────────────────────────────────────────
-
 function cancelEmptyTimer(roomId: string) {
   const meta = debateRooms.get(roomId);
   if (meta?.emptyTimer) {
@@ -151,11 +123,9 @@ function scheduleEmptyCleanup(io: Server, roomId: string) {
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
-
 export const matchmakingHandler = {
 
   // ── find-match ─────────────────────────────────────────────────────────────
-
   handleFindMatch: (
     io:           Server,
     socket:       Socket,
@@ -163,16 +133,18 @@ export const matchmakingHandler = {
     genderFilter: GenderFilter = "all",
     myGender:     UserGender   = undefined,
   ) => {
-    const supabaseId = socket.handshake.query.userId as string;
-    if (!supabaseId) return;
+    // ✅ userId verificado por JWT — no puede ser falsificado
+    const supabaseId = getVerifiedUserId(socket);
+    if (!supabaseId) {
+      console.warn("[Matchmaking] ⚠️ Intento de find-match sin userId verificado");
+      socket.disconnect(true);
+      return;
+    }
 
     userSocketMap.set(supabaseId, socket.id);
-
-    // Guardar preferencias de género del usuario
     userGenderFilter.set(supabaseId, genderFilter);
     userGender.set(supabaseId, myGender);
 
-    // Si ya tiene match activo en el mismo modo, no interrumpir
     if (activeMatches.has(supabaseId)) {
       const currentMode = userMode.get(supabaseId);
       if (currentMode === mode) return;
@@ -194,11 +166,9 @@ export const matchmakingHandler = {
       );
 
       let queue = getQueue(mode);
-      // Limpiar sockets muertos y al propio usuario
       queue = queue.filter((uid) => uid !== supabaseId && isSocketAlive(io, uid));
       queues.set(mode, queue);
 
-      // Buscar el primer candidato compatible en la cola
       let matchedIndex = -1;
       for (let i = 0; i < queue.length; i++) {
         const candidate = queue[i];
@@ -216,7 +186,7 @@ export const matchmakingHandler = {
       }
 
       if (matchedIndex !== -1) {
-        const partnerUUID = queue.splice(matchedIndex, 1)[0];
+        const partnerUUID     = queue.splice(matchedIndex, 1)[0];
         queues.set(mode, queue);
 
         const partnerSocketId = userSocketMap.get(partnerUUID)!;
@@ -224,7 +194,7 @@ export const matchmakingHandler = {
         activeMatches.set(partnerUUID, supabaseId);
 
         socket.emit("match-found", { partnerId: partnerUUID, isInitiator: true,  mode });
-        io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId,   isInitiator: false, mode });
+        io.to(partnerSocketId).emit("match-found", { partnerId: supabaseId, isInitiator: false, mode });
 
         console.log(
           `[Matchmaking] ❤️  MATCH [${mode}]: ${supabaseId.slice(0,8)} <-> ${partnerUUID.slice(0,8)}`
@@ -232,15 +202,13 @@ export const matchmakingHandler = {
         return;
       }
 
-      // Sin candidato compatible → cola de espera
       queue.push(supabaseId);
       queues.set(mode, queue);
       socket.emit("waiting", { mode });
     }, 100);
   },
 
-  // ── Salas de debate (sin cambios) ─────────────────────────────────────────
-
+  // ── Salas de debate ────────────────────────────────────────────────────────
   createDebateRoom: (io: Server, socket: Socket, roomId: string, maxPeople: number, hostId: string) => {
     const capped = Math.min(maxPeople, MAX_DEBATE_PARTICIPANTS);
     if (debateRooms.has(roomId)) {
@@ -296,16 +264,17 @@ export const matchmakingHandler = {
   },
 
   // ── leave / disconnect ─────────────────────────────────────────────────────
-
   handleLeave: (socket: Socket, io: Server) => {
-    const supabaseId = socket.handshake.query.userId as string;
+    // ✅ Usar userId verificado desde socket.data
+    const supabaseId = getVerifiedUserId(socket);
     if (!supabaseId) return;
     removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
   },
 
   handleDisconnect: (socket: Socket, io: Server) => {
-    const supabaseId = socket.handshake.query.userId as string;
+    // ✅ Usar userId verificado desde socket.data
+    const supabaseId = getVerifiedUserId(socket);
     if (!supabaseId) return;
     removeFromAllQueues(supabaseId);
     breakActiveMatch(io, supabaseId);
@@ -320,7 +289,6 @@ export const matchmakingHandler = {
   },
 
   // ── Utilidades ─────────────────────────────────────────────────────────────
-
   getDebateRoomInfo:    (roomId: string) => debateRooms.get(roomId),
   getActiveDebateRooms: () => {
     const result: Array<{ roomId: string; memberCount: number; maxPeople: number; hostId: string }> = [];
