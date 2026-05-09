@@ -1,30 +1,5 @@
 "use client";
 
-/**
- * DebateRoomsPage.tsx — v9
- *
- * FIXES vs v8 — Race conditions en señalización:
- *
- *  PROBLEMA RAÍZ:
- *    Supabase Broadcast no garantiza entrega si el receptor aún no terminó
- *    de suscribirse. Cuando B entra y manda "join", A responde con "offer"
- *    inmediatamente. Pero si B acaba de llamar .subscribe() y el canal no
- *    está 100% listo del lado de B, la offer llega y se pierde.
- *    Lo mismo pasa con ICE candidates que llegan antes de que exista la PC.
- *
- *  SOLUCIONES:
- *  1. COLA DE PENDIENTES — offers e ICE que llegan antes de que exista la PC
- *     se encolan en `pendingSignals`. Cuando createPC() crea la conexión,
- *     drena la cola automáticamente.
- *  2. RE-ANNOUNCE EN PRESENCE — cuando el presence "sync" detecta un miembro
- *     nuevo con el que NO tenemos PC activa, mandamos "join" de nuevo.
- *     Esto cubre el caso donde B se suscribió pero perdió la offer de A.
- *  3. RETRY INTELIGENTE — el retry periódico ahora detecta PCs "vacías"
- *     (sin remoteDescription) además de la ausencia total de PCs.
- *  4. DELAY POST-SUSCRIPCIÓN — esperamos 400ms después de SUBSCRIBED antes
- *     de mandar "join", dando tiempo a que los listeners queden activos.
- */
-
 import { useEffect, useCallback, useState, useRef, useMemo } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
@@ -1319,11 +1294,13 @@ function RoomView({ room, currentUserId, currentUserName, currentUserAvatarUrl, 
 
 export default function DebateRoomsPage() {
   const router  = useRouter();
-  const profile = useProfile();
+  // ✅ Fix: destructurar { profile, profileReady } — antes se leía el objeto
+  // completo del hook como si fuera el profile, por lo que id y role eran undefined
+  const { profile, profileReady } = useProfile();
   const { socket } = useSocket();
 
-  const userId:   string = (profile as any)?.id ?? "";
-  const userRole: string = (profile as any)?.role ?? "viewer";
+  const userId:   string = profile?.id   ?? "";
+  const userRole: string = profile?.role ?? "viewer";
   const canCreate = CAN_CREATE_ROLES.includes(userRole);
   const mediaRole: "streamer"|"viewer" = userRole === "streamer" ? "streamer" : "viewer";
 
