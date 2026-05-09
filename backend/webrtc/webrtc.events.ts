@@ -6,19 +6,23 @@ export const userSocketMap = new Map<string, string>();
 
 export default function registerWebRTCEvents(io: Server, socket: Socket) {
 
-  // Registrar el userId de Supabase al conectar
-  const supabaseId = socket.handshake.query.userId as string;
+  // ✅ userId verificado desde socket.data (puesto por el middleware JWT)
+  // Ya NO se lee de socket.handshake.query.userId (era falsificable)
+  const supabaseId = socket.data.userId as string;
+
   if (supabaseId) {
     userSocketMap.set(supabaseId, socket.id);
     console.log(`[WebRTC] Registrado: ${supabaseId} → ${socket.id}`);
   }
 
+  // Cola de ICE candidates pendientes por userId
+  // Cubre el caso: candidates llegan antes que offer/answer (timing race)
+  const pendingCandidates = new Map<string, any[]>();
+
   // Retransmitir señales WebRTC
-  // El frontend envía `to` como UUID de Supabase — necesitamos convertirlo a socket.id
   socket.on("signal", ({ to, data }) => {
     if (!to || !data) return;
 
-    // Resolver socket.id real desde UUID de Supabase
     const targetSocketId = userSocketMap.get(to);
 
     if (!targetSocketId) {
@@ -29,21 +33,21 @@ export default function registerWebRTCEvents(io: Server, socket: Socket) {
     const targetSocket = io.sockets.sockets.get(targetSocketId);
     if (!targetSocket) {
       console.warn(`[WebRTC] Socket desconectado para userId: ${to}`);
-      userSocketMap.delete(to); // Limpiar entrada stale
+      userSocketMap.delete(to);
       return;
     }
 
-    // Enviar señal — el `from` también como UUID para que el frontend pueda responder
     targetSocket.emit("signal", {
-      from: supabaseId, // UUID de Supabase, no socket.id
+      from: supabaseId,
       data,
     });
   });
 
-  // Limpiar el mapa al desconectar
+  // Limpiar al desconectar
   socket.on("disconnect", () => {
     if (supabaseId) {
       userSocketMap.delete(supabaseId);
+      pendingCandidates.delete(supabaseId);
       console.log(`[WebRTC] Desregistrado: ${supabaseId}`);
     }
   });

@@ -1,38 +1,21 @@
 "use client";
 
 /**
- * useWebRTC v4 — SOURCE OF TRUTH ÚNICO + ISINITIATOR VÍA REF
+ * useWebRTC v5 — FIX TIMING ICE CANDIDATES
  *
- * BUGS CORREGIDOS:
+ * PROBLEMA RAÍZ (esta iteración):
+ *   Los ICE candidates llegaban ANTES que el offer/answer estableciera el
+ *   remoteDescription. addIceCandidate() fallaba con:
+ *   "InvalidStateError: The remote description was null"
  *
- * BUG A — isInitiator en deps causaba doble peer:
- *   En useMatchmaking, setIsInitiator() y setRoom() son dos setState separados.
- *   Aunque React 18 los batchea dentro del mismo handler, el efecto
- *   [currentRoomId, isInitiator] podía dispararse en un render intermedio con
- *   currentRoomId=nuevoId pero isInitiator=false (valor "viejo"), creando un peer
- *   como non-initiator. Luego isInitiator llegaba al valor correcto (true), el
- *   efecto se disparaba DE NUEVO, createPeer() destruía el peer anterior y creaba
- *   uno nuevo. Resultado: peer destruido justo cuando ICE llegaba a "connected".
+ * SOLUCIÓN:
+ *   Cola de ICE candidates pendientes (iceCandidateQueue).
+ *   Cuando llega un candidate y remoteDescription es null, se encola.
+ *   Cuando se establece remoteDescription (setRemoteDescription), se drena
+ *   la cola aplicando todos los candidates pendientes.
  *
- *   FIX: isInitiator se recibe como prop pero NO está en las deps del efecto.
- *   Se lee via ref (isInitiatorRef) dentro del async connect(), garantizando
- *   siempre el valor más reciente sin re-disparar el efecto.
- *
- * BUG B — NotReadableError: Device in use:
- *   Al reintentar getUserMedia mientras el stream anterior seguía vivo en
- *   localStream.current, el navegador rechazaba el acceso. cameraInitiated se
- *   reseteaba a false, se pedía la cámara de nuevo y fallaba en loop.
- *
- *   FIX: la cámara se pide UNA SOLA VEZ al montar el hook y nunca se vuelve a
- *   pedir entre matches. El stream vive toda la vida del componente y solo se
- *   detiene en el cleanup de desmontaje. Si el primer intento falla, se reintenta
- *   solo cuando aún no hay stream (guarda contra Device in use persistente).
- *
- * ARQUITECTURA:
- *   - useMatchmaking escucha "match-found" → expone { room, isInitiator }
- *   - useWebRTC NO escucha "match-found"; solo observa currentRoomId (un string)
- *   - Un único efecto [currentRoomId] crea/destruye el peer
- *   - isInitiator se pasa como prop y se lee via ref dentro del efecto
+ * El resto de la arquitectura (isInitiator via ref, cámara única, etc.) 
+ * se mantiene igual que v4.
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
@@ -50,6 +33,10 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
   const peer            = useRef<RTCPeerConnection | null>(null);
   const remoteVideoRef  = useRef<HTMLVideoElement | null>(null);
   const localVideoRef   = useRef<HTMLVideoElement | null>(null);
+
+  // ── Cola de ICE candidates pendientes ─────────────────────────────────────
+  // Se encolan cuando llegan antes de que remoteDescription esté seteado
+  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
 
   // isInitiator como ref: el efecto lo lee sin tenerlo como dependencia
   const isInitiatorRef    = useRef(isInitiator);
@@ -72,11 +59,9 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
   const [matchConfirmed, setMatchConfirmed] = useState(false);
 
   // ── initCamera ─────────────────────────────────────────────────────────────
-  // Se llama UNA sola vez. El stream vive toda la vida del componente.
-  // Si ya hay stream activo, es no-op garantizado.
   const initCamera = useCallback(async () => {
-    if (localStream.current) return; // stream ya disponible, no hacer nada
-    if (cameraInitiated.current) return cameraReadyRef.current; // en progreso
+    if (localStream.current) return;
+    if (cameraInitiated.current) return cameraReadyRef.current;
 
     cameraInitiated.current = true;
     const camPromise = (async () => {
@@ -92,8 +77,6 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
       } catch (e) {
         console.warn("[WebRTC] ⚠️ Sin cámara:", e);
         setCameraError(true);
-        // Reseteamos solo cameraInitiated para permitir un reintento puntual,
-        // pero NO destruimos nada — el stream simplemente no existe.
         cameraInitiated.current = false;
       }
     })();
@@ -110,14 +93,36 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
     peer.current.oniceconnectionstatechange = null;
     peer.current.close();
     peer.current = null;
+    iceCandidateQueue.current = []; // limpiar cola al cerrar
     setRemoteStream(null);
     setIsConnected(false);
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     console.log("[WebRTC] 🧹 PeerConnection destruida.");
   }, []);
 
+  // ── drainIceCandidateQueue ─────────────────────────────────────────────────
+  // Se llama justo después de setRemoteDescription para aplicar
+  // todos los candidates que llegaron antes del remote description
+  const drainIceCandidateQueue = useCallback(async () => {
+    const activePeer = peer.current;
+    if (!activePeer || !activePeer.remoteDescription) return;
+
+    const queue = iceCandidateQueue.current;
+    if (queue.length === 0) return;
+
+    console.log(`[WebRTC] 🧊 Drenando ${queue.length} ICE candidates en cola`);
+    iceCandidateQueue.current = [];
+
+    for (const candidate of queue) {
+      try {
+        await activePeer.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn("[WebRTC] Error aplicando ICE candidate en cola:", e);
+      }
+    }
+  }, []);
+
   // ── createPeer ─────────────────────────────────────────────────────────────
-  // Recibe targetId y usa socketRef para no tener socket en sus deps.
   const createPeer = useCallback((targetId: string) => {
     closePeerConnection();
     console.log("[WebRTC] 🔗 Creando PeerConnection para:", targetId);
@@ -165,12 +170,11 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
     };
 
     return newPeer;
-  }, [closePeerConnection]); // sin socket — usa socketRef
+  }, [closePeerConnection]);
 
   // ── Efecto 1: pedir cámara al montar (una sola vez) ────────────────────────
   useEffect(() => {
     initCamera();
-    // Cleanup: detener tracks solo al DESMONTAR el componente completo
     return () => {
       localStream.current?.getTracks().forEach((t) => t.stop());
       localStream.current = null;
@@ -178,10 +182,9 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
       closePeerConnection();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // sin deps — solo mount/unmount
+  }, []);
 
-  // ── Efecto 2: reaccionar a currentRoomId — ÚNICO creador/destructor de peer ─
-  // isInitiator NO está en las deps. Se lee via isInitiatorRef en connect().
+  // ── Efecto 2: reaccionar a currentRoomId ───────────────────────────────────
   useEffect(() => {
     if (currentRoomId === null) {
       closePeerConnection();
@@ -194,12 +197,7 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
     const connect = async (roomId: string) => {
       setMatchConfirmed(true);
 
-      // Esperar cámara. Si no hay stream todavía, reintentar initCamera.
-      // Esto cubre el caso en que el primer intento falló por "Device in use".
-      if (!localStream.current) {
-        await initCamera();
-      }
-      // Esperar siempre la promise para asegurarnos de que terminó
+      if (!localStream.current) await initCamera();
       await cameraReadyRef.current;
 
       if (cancelled) {
@@ -207,7 +205,6 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
         return;
       }
 
-      // Leer isInitiator del ref en este momento — valor actual garantizado
       const initiator = isInitiatorRef.current;
       console.log(`[WebRTC] Conectando con ${roomId} | initiator: ${initiator}`);
 
@@ -233,21 +230,16 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
     connect(currentRoomId);
     return () => { cancelled = true; };
 
-  // Solo currentRoomId como dep. isInitiator se lee via ref.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRoomId]);
 
-  // ── Efecto 3: señalización — solo "signal" ─────────────────────────────────
+  // ── Efecto 3: señalización ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
     const handleSignal = async ({ from, data }: { from: string; data: any }) => {
-      // Si la offer llega antes de que el efecto 2 haya creado el peer,
-      // esperamos la cámara y creamos un peer de emergencia.
       if (!peer.current) {
-        if (!localStream.current) {
-          await initCamera();
-        }
+        if (!localStream.current) await initCamera();
         await cameraReadyRef.current;
         if (!peer.current && currentRoomIdRef.current) {
           createPeer(from);
@@ -260,21 +252,27 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
 
       try {
         if (data.type === "offer") {
-          await activePeer.setRemoteDescription(
-            new RTCSessionDescription(data)
-          );
+          await activePeer.setRemoteDescription(new RTCSessionDescription(data));
+          // ✅ Drenar cola de ICE candidates que llegaron antes del offer
+          await drainIceCandidateQueue();
           const answer = await activePeer.createAnswer();
           await activePeer.setLocalDescription(answer);
           socket.emit("signal", { to: from, data: answer });
           console.log("[WebRTC] 📤 Answer enviada.");
+
         } else if (data.type === "answer") {
-          await activePeer.setRemoteDescription(
-            new RTCSessionDescription(data)
-          );
+          await activePeer.setRemoteDescription(new RTCSessionDescription(data));
+          // ✅ Drenar cola de ICE candidates que llegaron antes del answer
+          await drainIceCandidateQueue();
+
         } else if (data.type === "candidate" && data.candidate) {
-          await activePeer.addIceCandidate(
-            new RTCIceCandidate(data.candidate)
-          );
+          if (!activePeer.remoteDescription) {
+            // ✅ Encolar si remoteDescription todavía no está seteado
+            console.log("[WebRTC] 🧊 ICE candidate encolado (remoteDescription null)");
+            iceCandidateQueue.current.push(data.candidate);
+          } else {
+            await activePeer.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
         }
       } catch (e) {
         console.warn("[WebRTC] Señal ignorada:", e);
@@ -283,7 +281,7 @@ export const useWebRTC = ({ currentRoomId, isInitiator }: UseWebRTCProps) => {
 
     socket.on("signal", handleSignal);
     return () => { socket.off("signal", handleSignal); };
-  }, [socket, initCamera, createPeer]);
+  }, [socket, initCamera, createPeer, drainIceCandidateQueue]);
 
   return {
     localVideoRef,
