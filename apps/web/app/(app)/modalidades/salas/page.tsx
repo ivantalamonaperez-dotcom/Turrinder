@@ -187,6 +187,15 @@ function useDebateMedia(
   // FIX RACE CONDITION 2: set de peers ya conocidos vía presence (re-announce cuando hay nuevo)
   const knownPresence  = useRef<Set<string>>(new Set());
 
+  // ✅ FIX 3: refs estables para los datos de perfil — evitan que setupSignaling
+  // capture valores stale si el perfil carga después de que se crea el canal.
+  const userNameRef      = useRef(userName);
+  const userAvatarUrlRef = useRef(userAvatarUrl);
+  const userRoleRef      = useRef(userRole);
+  useEffect(() => { userNameRef.current      = userName;      }, [userName]);
+  useEffect(() => { userAvatarUrlRef.current = userAvatarUrl; }, [userAvatarUrl]);
+  useEffect(() => { userRoleRef.current      = userRole;      }, [userRole]);
+
   // ── Obtener perfil con caché ──────────────────────────────────────
   const getProfile = useCallback(async (uid: string) => {
     if (profileCache.current.has(uid)) return profileCache.current.get(uid)!;
@@ -278,12 +287,17 @@ function useDebateMedia(
           console.log(`[Debates] ✅ Offer drenada y answer enviada a ${peerId.slice(0,8)}`);
         } catch (e) { console.warn("[Debates] Error drenando offer pendiente de", peerId, e); }
       } else if (sig.type === "ice") {
-        // ✅ Solo aplicar ICE candidates después de que remoteDescription esté seteado
+        // ✅ FIX 2a: re-encolar ICE candidates si remoteDescription aún no existe.
+        // Antes se descartaban silenciosamente → WebRTC nunca establecía la conexión
+        // aunque offer/answer hubieran funcionado correctamente.
         if (pc.remoteDescription) {
           try { await pc.addIceCandidate(new RTCIceCandidate(sig.payload.candidate)); } catch {}
+        } else {
+          const requeue = pendingSignals.current.get(peerId) ?? [];
+          requeue.push(sig);
+          pendingSignals.current.set(peerId, requeue);
+          console.log(`[Debates] 🧊 ICE re-encolado para ${peerId.slice(0,8)} (sin remoteDesc aún)`);
         }
-        // Si aún no hay remoteDescription, estos candidates se perderán
-        // pero serán regenerados por ICE restart automático
       }
     }
 
@@ -291,12 +305,13 @@ function useDebateMedia(
   }, [userId, getProfile]);
 
   // ── Broadcast "join" con datos de perfil reales ───────────────────
+  // ✅ FIX 3: lee de refs estables para evitar closures stale
   const sendJoin = useCallback((channel: ReturnType<typeof supabase.channel>) => {
     channel.send({
       type: "broadcast", event: "join",
-      payload: { from: userId, name: userName, avatarUrl: userAvatarUrl, role: userRole },
+      payload: { from: userId, name: userNameRef.current, avatarUrl: userAvatarUrlRef.current, role: userRoleRef.current },
     });
-  }, [userId, userName, userAvatarUrl, userRole]);
+  }, [userId]);
 
   // ── setupSignaling — MESH P2P ─────────────────────────────────────
   const setupSignaling = useCallback(() => {
@@ -388,7 +403,7 @@ function useDebateMedia(
           await pc.setLocalDescription(offer);
           channel.send({
             type: "broadcast", event: "offer",
-            payload: { from: userId, to: payload.from, sdp: offer, name: userName, avatarUrl: userAvatarUrl, role: userRole },
+            payload: { from: userId, to: payload.from, sdp: offer, name: userNameRef.current, avatarUrl: userAvatarUrlRef.current, role: userRoleRef.current },
           });
         } catch (e) {
           console.error("[Debates] Error creando offer para", payload.from, e);
@@ -450,8 +465,21 @@ function useDebateMedia(
         if (payload.to !== userId) return;
         const pc = peerConns.current.get(payload.from);
         if (pc) {
-          try { await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp)); }
-          catch (e) { console.warn("[Debates] Error procesando answer de", payload.from, e); }
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            // ✅ FIX 2b: drenar ICE candidates que llegaron antes que este answer.
+            // Son los que quedaron en cola en el handler de "ice" y en createPC.
+            const pending = pendingSignals.current.get(payload.from) ?? [];
+            pendingSignals.current.delete(payload.from);
+            if (pending.length > 0) {
+              console.log(`[Debates] 🧊 Drenando ${pending.length} ICE pendientes para ${payload.from.slice(0,8)}`);
+              for (const sig of pending) {
+                if (sig.type === "ice" && sig.payload?.candidate) {
+                  try { await pc.addIceCandidate(new RTCIceCandidate(sig.payload.candidate)); } catch {}
+                }
+              }
+            }
+          } catch (e) { console.warn("[Debates] Error procesando answer de", payload.from, e); }
         }
       })
 
@@ -545,7 +573,7 @@ function useDebateMedia(
         if (status !== "SUBSCRIBED") return;
 
         // Track presence con datos de perfil
-        await channel.track({ userId, name: userName, avatarUrl: userAvatarUrl, role: userRole });
+        await channel.track({ userId, name: userNameRef.current, avatarUrl: userAvatarUrlRef.current, role: userRoleRef.current });
 
         if (isHost) {
           // Host anuncia que está listo → viewers que ya estaban mandan join
@@ -629,7 +657,7 @@ function useDebateMedia(
       (sigCh.current as any)._watchdog = watchdogCh;
       (sigCh.current as any)._polling  = pollingInterval;
     }
-  }, [roomId, isHost, userId, userName, userAvatarUrl, userRole, createPC, sendJoin, onToast]);
+  }, [roomId, isHost, userId, createPC, sendJoin, onToast]);
 
   // ── Media ─────────────────────────────────────────────────────────
 
@@ -719,7 +747,41 @@ function useDebateMedia(
     // Log de entrada (cliente)
     console.log(`[Debates] 🏠 Entrando a sala "${roomId}" como ${isHost ? "HOST" : "viewer"}`);
 
-    startMedia().then(() => setupSignaling());
+    // ✅ FIX 1: setupSignaling arranca INMEDIATAMENTE — no espera la cámara.
+    // Si setupSignaling esperaba a startMedia, el canal de Supabase no existía
+    // cuando llegaba el primer "join" del otro participante → se perdía para siempre.
+    setupSignaling();
+
+    // La cámara se pide en paralelo. Cuando esté lista, añadimos los tracks
+    // a cualquier PeerConnection que ya se haya creado durante la negociación.
+    startMedia().then(() => {
+      if (!localRef.current) return;
+      peerConns.current.forEach(async (pc, peerId) => {
+        // Solo renegociar si la conexión ya está lista y la cámara no fue añadida aún
+        const senders = pc.getSenders();
+        const alreadyHasTracks = senders.some(s => s.track !== null);
+        if (alreadyHasTracks) return;
+
+        localRef.current!.getTracks().forEach(t => {
+          pc.addTrack(t, localRef.current!);
+        });
+
+        // Si el signaling state es stable, podemos renegociar
+        if (pc.signalingState === "stable" && sigCh.current) {
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            sigCh.current.send({
+              type: "broadcast", event: "offer",
+              payload: { from: userId, to: peerId, sdp: offer, name: userNameRef.current, avatarUrl: userAvatarUrlRef.current, role: userRoleRef.current },
+            });
+            console.log(`[Debates] 📷 Tracks añadidos post-cámara y offer reenviada a ${peerId.slice(0, 8)}`);
+          } catch (e) {
+            console.warn("[Debates] Error renegociando post-cámara con", peerId, e);
+          }
+        }
+      });
+    });
 
     if (isHost) {
       heartbeat.current = setInterval(async () => {
