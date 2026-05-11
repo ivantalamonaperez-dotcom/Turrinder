@@ -216,10 +216,16 @@ function useDebateMedia(
       });
     };
 
-    // Track remoto recibido → asignar stream al participante
+    // ✅ Fix ontrack: algunos browsers no incluyen e.streams[0]
+    // Acumulamos los tracks en un MediaStream propio para garantizar que funcione
+    const remoteStream = new MediaStream();
     pc.ontrack = async (e) => {
-      const stream = e.streams[0];
-      // Buscar nombre/avatar si no los tenemos aún
+      // Agregar el track al stream acumulado
+      remoteStream.addTrack(e.track);
+
+      // También intentar usar e.streams[0] si existe (más completo)
+      const stream = e.streams[0] ?? remoteStream;
+
       const prof = await getProfile(peerId);
       setParticipants(prev => {
         const ex = prev.find(p => p.id === peerId);
@@ -842,7 +848,22 @@ function VideoTile({
     if (videoRef.current && participant.stream) {
       if (videoRef.current.srcObject !== participant.stream) {
         videoRef.current.srcObject = participant.stream;
+        // ✅ Forzar play después de asignar el stream
+        // El browser puede bloquear autoplay — intentamos con muted primero
+        videoRef.current.muted = true;
+        videoRef.current.play().catch(() => {});
       }
+    }
+  }, [participant.stream]);
+
+  // ✅ Fix: también asignar cuando el ref monta (cubre el caso donde
+  // el stream ya existe cuando el componente se monta por primera vez)
+  const setVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    (videoRef as any).current = el;
+    if (el && participant.stream) {
+      el.srcObject = participant.stream;
+      el.muted = true;
+      el.play().catch(() => {});
     }
   }, [participant.stream]);
 
@@ -852,8 +873,11 @@ function VideoTile({
 
   return (
     <div className={`dr-tile ${isPinned ? "dr-tile-pinned" : ""} ${isLocalSelf ? "dr-tile-self" : ""}`}>
-      <video ref={videoRef} autoPlay playsInline muted={isLocalSelf}
-        className="dr-tile-video" style={{ display: camOff ? "none" : "block" }} />
+      {/* ✅ Fix: usar ref callback para asignar stream al montar */}
+      <video ref={setVideoRef} autoPlay playsInline muted
+        className="dr-tile-video"
+        data-self={isLocalSelf ? "true" : undefined}
+        style={{ display: camOff ? "none" : "block" }} />
 
       {camOff && (
         <div className="dr-tile-avatar">
@@ -1252,7 +1276,12 @@ function RoomView({ room, currentUserId, currentUserName, currentUserAvatarUrl, 
         </div>
       </div>
 
-      <div className="dr-room-body">
+      {/* ✅ Fix audio: click en cualquier parte desbloquea audio de videos remotos (excluye el propio) */}
+      <div className="dr-room-body" onClick={() => {
+        document.querySelectorAll<HTMLVideoElement>('.dr-tile-video:not([data-self])').forEach(v => {
+          if (v.muted) { v.muted = false; v.play().catch(() => {}); }
+        });
+      }}>
         {pinnedParticipant ? (
           <div className="dr-pinned-layout">
             <div className="dr-pinned-stage">
@@ -1504,7 +1533,7 @@ function GlobalStyles() {
         --glass: rgba(84,199,248,0.04); --glass-b: rgba(84,199,248,0.11);
         --muted: rgba(180,215,240,0.45); --danger: #f87171;
         --warn: #fbbf24; --violet: #a78bfa; --green: #4ade80;
-        min-height: 100dvh; display: flex; flex-direction: column;
+        min-height: 100dvh; height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
         background: var(--bg); font-family: 'DM Sans', sans-serif;
         -webkit-font-smoothing: antialiased; color: var(--white); position: relative;
       }
@@ -1663,7 +1692,7 @@ function GlobalStyles() {
       .dr-banned-msg { font-size:12px; color:var(--danger); text-align:center; padding:8px 0; }
 
       /* ── ROOM VIEW ── */
-      .dr-room-view { flex:1; display:flex; flex-direction:column; position:relative; z-index:2; overflow:hidden; }
+      .dr-room-view { flex:1; display:flex; flex-direction:column; position:relative; z-index:2; overflow:hidden; min-height:0; max-height:100vh; }
       .dr-toasts-stack { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
       .dr-toast { padding:12px 18px; border-radius:12px; font-size:13px; backdrop-filter:blur(20px); animation:dr-fadein 0.3s ease; border:1px solid rgba(84,199,248,0.15); background:rgba(3,10,20,0.9); color:#e8f2ff; }
       .dr-toast-warn { border-color:rgba(251,191,36,0.35); color:#fde68a; }
@@ -1683,15 +1712,16 @@ function GlobalStyles() {
       .dr-leave-btn { padding:8px 16px; border-radius:10px; cursor:pointer; border:1px solid rgba(248,113,113,0.25); background:rgba(248,113,113,0.07); color:#fca5a5; font-size:13px; font-weight:500; transition:all 0.18s; }
       .dr-leave-btn:hover { border-color:rgba(248,113,113,0.5); background:rgba(248,113,113,0.14); }
 
-      .dr-room-body { flex:1; display:flex; overflow:hidden; position:relative; }
-      .dr-meet-grid { flex:1; display:grid; grid-template-columns:repeat(var(--grid-cols,2),1fr); gap:8px; padding:12px; overflow-y:auto; align-content:start; }
-      .dr-meet-grid.scrollable { overflow-y:auto; }
-      .dr-pinned-layout { display:flex; flex:1; gap:8px; padding:12px; overflow:hidden; }
-      .dr-pinned-stage { flex:1; min-width:0; }
+      .dr-room-body { flex:1; display:flex; overflow:hidden; position:relative; min-height:0; max-height:100%; }
+      .dr-meet-grid { flex:1; display:grid; grid-template-columns:repeat(var(--grid-cols,2),1fr); gap:8px; padding:12px; overflow-y:auto; align-content:center; max-height:100%; }
+      .dr-meet-grid.scrollable { overflow-y:auto; align-content:start; }
+      .dr-pinned-layout { display:flex; flex:1; gap:8px; padding:12px; overflow:hidden; min-height:0; max-height:100%; }
+      .dr-pinned-stage { flex:1; min-width:0; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+      .dr-pinned-stage .dr-tile { width:100%; max-width:100%; max-height:100%; aspect-ratio:16/9; }
       .dr-pinned-rail { width:180px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
 
       /* ── TILES ── */
-      .dr-tile { position:relative; border-radius:14px; overflow:hidden; background:rgba(5,15,30,0.8); border:1px solid rgba(84,199,248,0.08); aspect-ratio:16/9; }
+      .dr-tile { position:relative; border-radius:14px; overflow:hidden; background:rgba(5,15,30,0.8); border:1px solid rgba(84,199,248,0.08); aspect-ratio:16/9; max-height:calc(100vh - 120px); }
       .dr-tile-pinned { border-color:rgba(84,199,248,0.3); box-shadow:0 0 20px rgba(84,199,248,0.12); }
       .dr-tile-self { border-color:rgba(74,222,128,0.25); }
       .dr-tile-video { width:100%; height:100%; object-fit:cover; }
