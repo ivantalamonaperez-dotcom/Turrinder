@@ -557,7 +557,14 @@ export default function ProfilePage() {
           color: var(--w); letter-spacing: -0.8px; line-height: 1.1;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .pf-hero-email { font-size: 12px; color: var(--muted); letter-spacing: 0.3px; }
+        .pf-hero-uid {
+  font-size: 10px;
+  color: rgba(84,199,248,0.35);
+  letter-spacing: 0.8px;
+  font-family: 'DM Sans', monospace;
+  user-select: all;
+  cursor: text;
+}
 
         .pf-hero-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
         .pf-badge {
@@ -906,6 +913,10 @@ export default function ProfilePage() {
               <div className="pf-hero-info">
                 <div className="pf-hero-name">{name || "Tu perfil"}</div>
                 <div className="pf-hero-email">{email}</div>
+                {/* ← NUEVO */}
+{userId && (
+  <div className="pf-hero-uid" title="Tu ID único">ID: {userId}</div>
+)}
 
                 {/* Role tier pill */}
                 {!loading && (

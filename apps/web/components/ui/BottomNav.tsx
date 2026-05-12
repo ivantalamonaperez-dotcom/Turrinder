@@ -12,52 +12,14 @@ import imgModalidades from "../../Images/modalidades.png";
 import imgPerfil         from "../../Images/perfil.png";
 import imgConfiguracion  from "../../Images/configuracion.png";
 import imgStreamer       from "../../Images/debates.png";
-// 👇 Agregá este ícono a tu carpeta Images (o usá cualquier PNG de bug/feedback)
 import imgFeedback       from "../../Images/feedback.png";
-
+import { enviarFeedback } from '@/services/discordService';
 import { supabase } from "@/services/supabase.client";
 import { initMercadoPago, Wallet } from "@mercadopago/sdk-react";
 
 initMercadoPago(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY!, {
   locale: "es-AR",
 });
-
-// ─────────────────────────────────────────────────────────
-// HACER ESTO Y CARGAR EN LA WEB PA QUE ANDE
-// ─────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID  ?? "YOUR_SERVICE_ID";
-const EMAILJS_TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID ?? "YOUR_TEMPLATE_ID";
-const EMAILJS_PUBLIC_KEY  = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY  ?? "YOUR_PUBLIC_KEY";
-
-async function sendFeedbackEmail(payload: {
-  type: string;
-  message: string;
-  email: string;
-  userName: string;
-}) {
-  // Carga el SDK solo cuando se necesita
-  if (!(window as any).emailjs) {
-    await new Promise<void>((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
-      s.onload = () => {
-        (window as any).emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-        resolve();
-      };
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
-  return (window as any).emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-    to_email:   "bicodeservices.info@gmail.com",
-    from_name:  payload.userName || "Usuario anónimo",
-    from_email: payload.email    || "sin-email@turrinder.com",
-    type:       payload.type,
-    message:    payload.message,
-    sent_at:    new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
-  });
-}
 
 // ─────────────────────────────────────────────────────────
 // FEEDBACK MODAL
@@ -81,7 +43,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
-    // Pre-fill email if logged in
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) setEmail(data.user.email);
     });
@@ -95,7 +56,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
     try {
       const { data } = await supabase.auth.getUser();
       const userName = data.user?.user_metadata?.full_name ?? data.user?.email ?? "Anónimo";
-      await sendFeedbackEmail({ type, message: message.trim(), email, userName });
+      const userId = data.user?.id ?? 'desconocido';
+      await enviarFeedback(type, `[${userName}] ${message.trim()}`, email, userId);
       setStatus("success");
     } catch (e) {
       console.error(e);
@@ -109,7 +71,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   return (
     <>
       <style>{`
-        /* ── Feedback Backdrop ── */
         .fb-backdrop {
           position: fixed; inset: 0; z-index: 200;
           background: rgba(0,0,0,0);
@@ -122,8 +83,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           background: rgba(0,0,10,0.80);
           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
         }
-
-        /* ── Card ── */
         .fb-modal {
           position: relative; z-index: 201;
           width: 100%; max-width: 460px;
@@ -140,15 +99,11 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
           background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
         }
-
-        /* Aurora tint that changes with type */
         .fb-aurora {
           position: absolute; top: 0; left: 0; right: 0; height: 180px;
           pointer-events: none; z-index: 0;
           transition: background 0.4s ease;
         }
-
-        /* Close */
         .fb-close {
           position: absolute; top: 14px; right: 14px; z-index: 10;
           width: 30px; height: 30px; border-radius: 50%;
@@ -158,14 +113,10 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           cursor: pointer; transition: all 0.2s ease;
         }
         .fb-close:hover { background: rgba(255,255,255,0.09); color: #fff; }
-
-        /* Header */
         .fb-header { position: relative; z-index: 1; padding: 32px 28px 18px; text-align: center; }
         .fb-emoji { font-size: 38px; display: block; margin-bottom: 10px; transition: all 0.25s ease; line-height: 1; }
         .fb-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #f5f8ff; letter-spacing: -0.5px; margin-bottom: 4px; }
         .fb-subtitle { font-family: 'DM Sans', sans-serif; font-size: 12.5px; color: rgba(180,215,240,0.38); }
-
-        /* Type chips */
         .fb-types { position: relative; z-index: 1; display: flex; gap: 8px; padding: 0 22px 16px; }
         .fb-type-chip {
           flex: 1; padding: 9px 6px; border-radius: 12px; cursor: pointer;
@@ -184,12 +135,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         .fb-type-emoji { font-size: 16px; line-height: 1; }
         .fb-type-label { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: rgba(180,215,240,0.35); transition: color 0.2s; }
         .fb-type-chip.sel .fb-type-label { color: #f5f8ff; }
-
-        /* Body */
         .fb-body { position: relative; z-index: 1; padding: 0 22px 8px; display: flex; flex-direction: column; gap: 12px; }
-
         .fb-label { font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(180,215,240,0.3); margin-bottom: 5px; display: block; }
-
         .fb-input, .fb-textarea {
           width: 100%; background: rgba(255,255,255,0.03);
           border: 1px solid rgba(255,255,255,0.07);
@@ -202,13 +149,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         .fb-textarea { padding: 12px 14px; min-height: 110px; line-height: 1.55; }
         .fb-input::placeholder, .fb-textarea::placeholder { color: rgba(180,215,240,0.18); }
         .fb-input:focus, .fb-textarea:focus { border-color: rgba(255,255,255,0.18); box-shadow: 0 0 0 3px rgba(255,255,255,0.04); }
-
         .fb-char { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.2); text-align: right; margin-top: 3px; }
-
-        /* Error */
         .fb-err { padding: 9px 14px; background: rgba(248,113,113,0.07); border: 1px solid rgba(248,113,113,0.22); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 12px; color: #fca5a5; }
-
-        /* CTA */
         .fb-cta { position: relative; z-index: 1; padding: 8px 22px 26px; display: flex; flex-direction: column; gap: 8px; }
         .fb-btn-send {
           width: 100%; padding: 14px;
@@ -226,12 +168,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         .fb-btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
         .fb-btn-cancel { width: 100%; padding: 12px; background: transparent; border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: rgba(180,215,240,0.3); cursor: pointer; transition: all 0.2s ease; }
         .fb-btn-cancel:hover { background: rgba(255,255,255,0.03); color: rgba(180,215,240,0.55); }
-
-        /* Spinner */
         .fb-spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Success */
         .fb-success { text-align: center; padding: 28px 22px 36px; position: relative; z-index: 1; }
         @keyframes successPop { 0%{transform:scale(0.5);opacity:0} 70%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
         .fb-success-icon { font-size: 52px; animation: successPop 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; margin-bottom: 14px; display: block; }
@@ -241,7 +179,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
       <div className={`fb-backdrop ${visible ? "in" : ""}`} onClick={handleClose}>
         <div className={`fb-modal ${visible ? "in" : ""}`} onClick={e => e.stopPropagation()}>
-          {/* Aurora */}
           <div className="fb-aurora" style={{
             background: `radial-gradient(ellipse 70% 50% at 50% -5%, ${chosen.color}22 0%, transparent 65%)`
           }} />
@@ -256,7 +193,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <>
-              {/* Header */}
               <div className="fb-header">
                 <span className="fb-emoji" style={{ filter: `drop-shadow(0 0 12px ${chosen.color}88)` }}>
                   {chosen.emoji}
@@ -265,7 +201,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
                 <div className="fb-subtitle">Tu opinión nos ayuda a mejorar la plataforma.</div>
               </div>
 
-              {/* Type selector */}
               <div className="fb-types">
                 {FEEDBACK_TYPES.map(f => (
                   <button
@@ -284,7 +219,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
 
-              {/* Fields */}
               <div className="fb-body">
                 <div>
                   <label className="fb-label">Tu email (opcional)</label>
@@ -316,7 +250,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
                 {errMsg && <div className="fb-err">⚠️ {errMsg}</div>}
               </div>
 
-              {/* CTA */}
               <div className="fb-cta">
                 <button
                   className="fb-btn-send"
@@ -745,6 +678,17 @@ function VIPModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────
+// DISCORD LOGO SVG (inline, sin dependencia externa)
+// ─────────────────────────────────────────────────────────
+function DiscordIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // SIDE NAV
 // ─────────────────────────────────────────────────────────
 export default function SideNav() {
@@ -872,6 +816,7 @@ export default function SideNav() {
         .snav-panel:not(.open) .snav-item-streamer::after { content: 'Ser Streamer'; border-color: rgba(167,139,250,0.3); color: #a78bfa; }
         .snav-panel:not(.open) .snav-item-vip::after { content: 'VIP ✨'; border-color: rgba(255,195,0,0.3); color: #ffd700; }
         .snav-panel:not(.open) .snav-item-feedback::after { content: 'Feedback & Bugs'; border-color: rgba(52,211,153,0.3); color: #34d399; }
+        .snav-panel:not(.open) .snav-item-discord::after { content: 'Comunidad Discord'; border-color: rgba(88,101,242,0.4); color: #7289da; }
 
         .snav-item-icon { width: 32px; height: 32px; flex-shrink: 0; position: relative; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease; filter: brightness(0.45) saturate(0.2); }
         .snav-item.active .snav-item-icon { filter: brightness(1) saturate(1.1) drop-shadow(0 0 7px var(--item-accent)); }
@@ -879,6 +824,11 @@ export default function SideNav() {
         .snav-item.active:hover .snav-item-icon { transform: scale(1.12) rotate(-4deg); filter: brightness(1.1) saturate(1.3) drop-shadow(0 0 10px var(--item-accent)); }
         .snav-item-icon-glow { position: absolute; inset: -8px; border-radius: 50%; background: radial-gradient(circle, var(--item-accent) 0%, transparent 70%); opacity: 0; transition: opacity 0.3s ease; z-index: -1; filter: blur(7px); }
         .snav-item.active .snav-item-icon-glow { opacity: 0.3; }
+
+        /* ── Discord icon wrapper (SVG, no Image) ── */
+        .snav-item-icon-svg { width: 32px; height: 32px; flex-shrink: 0; position: relative; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s ease, filter 0.3s ease; color: rgba(255,255,255,0.28); display: flex; align-items: center; justify-content: center; }
+        .snav-item:hover .snav-item-icon-svg { transform: scale(1.12) rotate(-4deg); color: rgba(114,137,218,0.7); }
+        .snav-item-discord:hover .snav-item-icon-svg { filter: drop-shadow(0 0 6px rgba(88,101,242,0.5)); }
 
         .snav-item-text { display: flex; flex-direction: column; gap: 2px; flex: 1; opacity: 0; transform: translateX(-6px); transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1); white-space: nowrap; overflow: hidden; max-width: 0; }
         .snav-panel.open .snav-item-text { opacity: 1; transform: translateX(0); max-width: 200px; transition: opacity 0.25s ease 0.18s, transform 0.25s ease 0.18s, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1); }
@@ -897,6 +847,10 @@ export default function SideNav() {
         .snav-panel.open .snav-divider-label { opacity: 1; transition: opacity 0.25s ease 0.2s; }
 
         @keyframes crownBounce { 0%,100%{transform:translateY(0)rotate(-5deg)} 50%{transform:translateY(-4px)rotate(5deg)} }
+
+        /* ── Discord button special glow on hover ── */
+        @keyframes discordPulse { 0%,100%{box-shadow:0 0 0 0 rgba(88,101,242,0)} 50%{box-shadow:0 0 18px 3px rgba(88,101,242,0.18)} }
+        .snav-item-discord:hover { animation: discordPulse 1.8s ease-in-out infinite; }
 
         .snav-footer { position: relative; z-index: 2; padding: 12px 12px 20px; border-top: 1px solid rgba(84,199,248,0.07); overflow: hidden; flex-shrink: 0; }
         .snav-footer-line { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.16); text-align: center; white-space: nowrap; opacity: 0; transition: opacity 0.2s ease; }
@@ -1023,7 +977,7 @@ export default function SideNav() {
             <div className="snav-item-dot" style={{ background: "#a78bfa", boxShadow: "0 0 10px #a78bfa" }} />
           </button>
 
-          {/* ── FEEDBACK / BUG ── NEW ── */}
+          {/* Feedback / Bug */}
           <button
             className="snav-item snav-item-feedback"
             onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setFeedbackOpen(true), 200); }}
@@ -1036,7 +990,6 @@ export default function SideNav() {
           >
             <div className="snav-item-icon" style={{ "--item-accent": "#34d399" } as React.CSSProperties}>
               <div className="snav-item-icon-glow" />
-              {/* Si tenés el PNG de feedback usá Image, si no, este emoji fallback */}
               <span style={{ fontSize: 24, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>🐛</span>
             </div>
             <div className="snav-item-text">
@@ -1044,6 +997,42 @@ export default function SideNav() {
               <span className="snav-item-desc">Bug, idea o consulta</span>
             </div>
             <div className="snav-item-dot" style={{ background: "#34d399", boxShadow: "0 0 10px #34d399" }} />
+          </button>
+
+          {/* ── DISCORD ── NUEVO ── */}
+          <button
+            className="snav-item snav-item-discord"
+            onClick={() => {
+              if (isMobile) setOpen(false);
+              window.open("https://discord.gg/jXkEpvCvRD", "_blank", "noopener,noreferrer");
+            }}
+            data-tooltip="Comunidad Discord"
+            style={{
+              "--item-accent":        "#7289da",
+              "--item-accent-bg":     "rgba(88,101,242,0.07)",
+              "--item-accent-border": "rgba(88,101,242,0.20)",
+            } as React.CSSProperties}
+          >
+            <div
+              className="snav-item-icon-svg"
+              style={{ "--item-accent": "#7289da" } as React.CSSProperties}
+            >
+              <DiscordIcon size={22} />
+            </div>
+            <div className="snav-item-text">
+              <span
+                className="snav-item-label"
+                style={{
+                  background: "linear-gradient(135deg,#b9bfff,#7289da)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                Comunidad
+              </span>
+              <span className="snav-item-desc">Unite a nuestro Discord</span>
+            </div>
+            <div className="snav-item-dot" style={{ background: "#7289da", boxShadow: "0 0 10px #7289da" }} />
           </button>
 
           {/* VIP */}

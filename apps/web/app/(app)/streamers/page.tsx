@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import SideNav from "@/components/ui/BottomNav";
+import { enviarPostulacion } from '@/services/discordService';
+import { supabase } from "@/services/supabase.client";
 
 const CATS         = ["Gaming", "Just Chatting", "Tech", "Música", "Educación", "Arte", "Deportes", "Otro"];
 const PLATAFORMAS  = ["Twitch", "YouTube", "TikTok", "Kick", "Instagram", "Otra"];
@@ -70,9 +72,9 @@ export default function StreamersPage() {
     if (!form.bio) { setError("Contanos algo sobre vos antes de enviar."); return; }
     setError(null); setSending(true);
     try {
-      const res  = await fetch("/api/streamers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Error al enviar."); return; }
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id ?? 'invitado';
+      await enviarPostulacion({ ...form, userId });
       setSent(true);
     } catch { setError("Error de conexión. Intentá de nuevo."); }
     finally  { setSending(false); }
