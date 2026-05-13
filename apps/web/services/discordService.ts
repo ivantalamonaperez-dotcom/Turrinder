@@ -1,11 +1,27 @@
-const BOT_URL = process.env.NEXT_PUBLIC_BOT_URL ?? 'http://localhost:3001';
+const BOT_URL =
+  process.env.NEXT_PUBLIC_BOT_URL || 'https://api.turrinder.com';
 
-export async function enviarFeedback(subtipo: string, mensaje: string, email?: string, userId?: string) {
+export async function enviarFeedback(
+  subtipo: string,
+  mensaje: string,
+  email?: string,
+  userId?: string
+) {
   try {
     await fetch(`${BOT_URL}/discord`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo: 'feedback', datos: { subtipo, mensaje, email, userId } }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tipo: 'feedback',
+        datos: {
+          subtipo,
+          mensaje,
+          email,
+          userId,
+        },
+      }),
     });
   } catch (e) {
     console.error('[Discord] Error enviando feedback:', e);
@@ -27,8 +43,13 @@ export async function enviarPostulacion(datos: {
   try {
     await fetch(`${BOT_URL}/discord`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo: 'postulacion', datos }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tipo: 'postulacion',
+        datos,
+      }),
     });
   } catch (e) {
     console.error('[Discord] Error enviando postulacion:', e);
@@ -55,8 +76,13 @@ export async function enviarReporte(datos: {
   try {
     await fetch(`${BOT_URL}/discord`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo: 'reporte', datos }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tipo: 'reporte',
+        datos,
+      }),
     });
   } catch (e) {
     console.error('[Discord] Error enviando reporte:', e);
@@ -71,8 +97,13 @@ export async function enviarLogLogin(datos: {
   try {
     await fetch(`${BOT_URL}/discord`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo: 'log_login', datos }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tipo: 'log_login',
+        datos,
+      }),
     });
   } catch (e) {
     console.error('[Discord] Error enviando log login:', e);
