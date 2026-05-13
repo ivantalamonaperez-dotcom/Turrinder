@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "../styles/globals.css";
+import logoImg from "../Images/logoweb.png";
 
 export const metadata: Metadata = {
   title: {
-    default: "Turrinder Video Chat — Random Cam, Dating & Live Debates Platform 2026",
+    default: "Turrinder — Debates, Ligues y Chat en Vivo",
     template: "%s | Turrinder",
   },
   description:
@@ -75,9 +76,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <head>
-        {/* Favicon desde Images/logo.png */}
-        <link rel="icon" href="../Images/logo.png" type="image/png" />
-        <link rel="apple-touch-icon" href="../Images/logo.png" />
+        {/* Favicon */}
+        <link rel="icon" href={logoImg.src} type="image/png" />
+        <link rel="apple-touch-icon" href={logoImg.src} />
 
         {/* Monetag */}
         <meta name="monetag" content="c6d46c91cf1717e2d3fce1ccb12559a8" />
