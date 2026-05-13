@@ -3,16 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient, Session } from "@supabase/supabase-js";
+import { logLogin } from "@/lib/logLogin";
 
-/**
- * /auth/callback
- *
- * Supabase redirige aquí después del OAuth de Google.
- * Cuando usa el flujo implícito, el token llega en el HASH de la URL
- * (#access_token=...), no como query param. getSession() solo funciona
- * si el cliente ya procesó ese hash, por eso usamos onAuthStateChange
- * como fuente de verdad.
- */
 export default function AuthCallback() {
   const router = useRouter();
 
@@ -23,20 +15,12 @@ export default function AuthCallback() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
 
-      // Esperar sesión de forma confiable:
-      // 1. Si ya existe (recarga de página), getSession() la devuelve de inmediato.
-      // 2. Si viene del hash de OAuth, onAuthStateChange la captura cuando
-      //    el cliente JS de Supabase procesa el fragmento de URL.
       const session = await new Promise<Session | null>((resolve) => {
-        // Primero: verificar si ya hay sesión activa
         supabase.auth.getSession().then(({ data }) => {
           if (data.session) {
             resolve(data.session);
             return;
           }
-
-          // Segundo: esperar el evento SIGNED_IN que Supabase dispara
-          // automáticamente al detectar #access_token en la URL
           const { data: { subscription } } = supabase.auth.onAuthStateChange(
             (event, session) => {
               if (event === "SIGNED_IN" && session) {
@@ -45,8 +29,6 @@ export default function AuthCallback() {
               }
             }
           );
-
-          // Timeout de seguridad: 8 segundos máximo
           setTimeout(() => {
             subscription.unsubscribe();
             resolve(null);
@@ -55,25 +37,37 @@ export default function AuthCallback() {
       });
 
       if (!session) {
-        // Sin sesión → volver al login
         router.replace("/");
         return;
       }
 
       const userId = session.user.id;
 
-      // Verificar si el usuario ya completó su perfil
+      // ── Chequear ban ──
+      const banRes = await fetch("/api/check-ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      const banData = await banRes.json();
+
+      if (banData.banned) {
+        await supabase.auth.signOut();
+        router.replace("/?banned=true");
+        return;
+      }
+
+      await logLogin(userId, "google");
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("id, name, age")
         .eq("id", userId)
         .single();
 
-      // Si tiene nombre y edad → perfil completo → discover
       if (profile && profile.name && profile.age) {
         router.replace("/discover");
       } else {
-        // Perfil incompleto → registro, saltando paso de email/contraseña
         router.replace("/auth/register?from=google");
       }
     };
@@ -81,7 +75,6 @@ export default function AuthCallback() {
     handleCallback();
   }, [router]);
 
-  // Pantalla de carga mientras procesa
   return (
     <div style={{
       minHeight: "100vh",

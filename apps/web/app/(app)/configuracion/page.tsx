@@ -204,25 +204,27 @@ function ActionBtn({ label, accent, onClick }: { label: string; accent: string; 
   );
 }
 
-// ─── Section: Moderación ─────────────────────────────────────────
 function ModeracionSection() {
   const [autoBlock,    setAutoBlock]    = useState(true);
   const [sensibilidad, setSensibilidad] = useState(60);
   const [skipReported, setSkipReported] = useState(true);
   const [anonimos,     setAnonimos]     = useState(false);
-  const [reports,    setReports]    = useState<Report[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [expanded,   setExpanded]   = useState<string | null>(null);
-  const [editingId,   setEditingId]   = useState<string | null>(null);
-  const [detailInput, setDetailInput] = useState("");
-  const [saving,      setSaving]      = useState(false);
-  const [saveMsg,     setSaveMsg]     = useState<string | null>(null);
+  const [reports,      setReports]      = useState<Report[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [expanded,     setExpanded]     = useState<string | null>(null);
+  const [editingId,    setEditingId]    = useState<string | null>(null);
+  const [detailInput,  setDetailInput]  = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [saveMsg,      setSaveMsg]      = useState<string | null>(null);
+  const [banCount,     setBanCount]     = useState(0); // ← advertencias = baneos recibidos
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
+
+      // Reportes que hizo el usuario
       const { data, error } = await supabase
         .from("reports")
         .select("*")
@@ -230,6 +232,14 @@ function ModeracionSection() {
         .order("created_at", { ascending: false })
         .limit(50);
       if (!error && data) setReports(data as Report[]);
+
+      // Cuántas veces fue baneado el usuario logueado
+      const { count } = await supabase
+        .from("bans")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id);
+      setBanCount(count ?? 0);
+
       setLoading(false);
     };
     load();
@@ -316,13 +326,21 @@ function ModeracionSection() {
                       <span style={{ fontSize: 11, color: "rgba(180,215,240,0.25)", display: "inline-block", transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▾</span>
                     </div>
                   </div>
+
+                  {/* Explicación del estado */}
                   {isOpen && (
                     <div style={{ background: "rgba(249,115,22,0.04)", border: "1px solid rgba(249,115,22,0.12)", borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-                        {(["pendiente", "en_revision", "resuelto", "descartado"] as Report["status"][]).map(s => (
-                          <span key={s} style={{ padding: "3px 10px", borderRadius: 100, fontSize: 10, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", background: r.status === s ? `${STATUS_META[s].color}22` : "transparent", border: `1px solid ${r.status === s ? STATUS_META[s].color + "55" : "rgba(255,255,255,0.07)"}`, color: r.status === s ? STATUS_META[s].color : "rgba(180,215,240,0.28)" }}>{STATUS_META[s].label}</span>
-                        ))}
+                      
+                      {/* Descripción del estado actual */}
+                      <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: `${meta.color}0e`, border: `1px solid ${meta.color}22` }}>
+                        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: meta.color, fontWeight: 600, marginBottom: 3 }}>
+                          {r.status === "pendiente"   && "⏳ Tu reporte está esperando revisión del equipo."}
+                          {r.status === "en_revision" && "👀 El equipo está revisando tu reporte. Aún no se tomó acción."}
+                          {r.status === "resuelto"    && "✅ El usuario fue sancionado. Gracias por reportar."}
+                          {r.status === "descartado"  && "❌ El reporte fue revisado y no se encontró una violación."}
+                        </div>
                       </div>
+
                       {r.details && !isEdit && (
                         <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12.5, color: "rgba(180,215,240,0.6)", lineHeight: 1.6, marginBottom: 12 }}>
                           <span style={{ color: "rgba(249,115,22,0.5)", fontSize: 10, fontWeight: 700, letterSpacing: 1, marginRight: 6 }}>DETALLES</span>
@@ -355,8 +373,16 @@ function ModeracionSection() {
             })}
           </div>
         )}
-        <Row label="Advertencias recibidas" sub="Sin advertencias activas">
-          <Badge label="0 ACTIVAS" color="#4ade80" />
+
+        {/* Advertencias recibidas = cantidad de baneos del usuario logueado */}
+        <Row
+          label="Advertencias recibidas"
+          sub={banCount === 0 ? "Sin advertencias activas" : `Tuviste ${banCount} sanción${banCount > 1 ? "es" : ""} en tu cuenta`}
+        >
+          <Badge
+            label={banCount === 0 ? "0 ACTIVAS" : `${banCount} ${banCount > 1 ? "SANCIONES" : "SANCIÓN"}`}
+            color={banCount === 0 ? "#4ade80" : "#f97316"}
+          />
         </Row>
       </Block>
     </>

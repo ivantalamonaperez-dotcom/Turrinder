@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/services/supabase.client";
 import { chatService } from "@/features/chat/chat.service";
 import { useRouter, useParams } from "next/navigation";
+import { enviarReporte } from "@/services/discordService";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -347,6 +348,7 @@ function ReportModal({ name, otherId, myId, onClose }: {
 }) {
   const [reason,  setReason]  = useState("");
   const [detail,  setDetail]  = useState("");
+  const [imgurUrls, setImgurUrls] = useState("");
   const [sending, setSending] = useState(false);
   const [sent,    setSent]    = useState(false);
 
@@ -354,15 +356,75 @@ function ReportModal({ name, otherId, myId, onClose }: {
     if (!reason) return;
     setSending(true);
     try {
+      // Parsear URLs de imgur
+      const urls = imgurUrls
+        .split(/[\n,\s]+/)
+        .map(u => u.trim())
+        .filter(u => u.startsWith("http"));
+
+      // Guardar en Supabase
       await supabase.from("reports").insert({
-        reporter_id: myId,
-        reported_id: otherId,
-        reason,
-        detail:      detail.trim() || null,
-        created_at:  new Date().toISOString(),
-      });
-    } catch { /* silently succeed */ }
-    finally { setSending(false); setSent(true); }
+  reporter_user_id: myId,
+  reported_user_id: otherId,
+  reported_name:    name,
+  reason,
+  details:          detail.trim() || null,
+  evidence_urls:    urls,
+  status:           "pendiente",
+});
+
+     const countRes = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL ?? "http://localhost:3001"}/report-count/${otherId}`);
+const countData = await countRes.json();
+const totalReports = countData.count ?? 1;
+
+      
+
+      // Obtener info del reportado y reportador
+      const { data: reportedProfile } = await supabase
+        .from("profiles")
+        .select("name, age, avatar_url, gender, bio")
+        .eq("id", otherId)
+        .single();
+
+      const { data: reporterProfile } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", myId)
+        .single();
+
+      // Obtener última IP del reportado
+      const { data: lastLog } = await supabase
+        .from("login_logs")
+        .select("ip, created_at, method")
+        .eq("user_id", otherId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Enviar a Discord
+      await enviarReporte({
+  reportedId:     otherId,
+  reportedName:   reportedProfile?.name ?? name,
+  reportedAge:    reportedProfile?.age,
+  reportedGender: reportedProfile?.gender,
+  reportedBio:    reportedProfile?.bio,
+  reportedAvatar: reportedProfile?.avatar_url,
+  reporterId:     myId,
+  reporterName:   reporterProfile?.name ?? "Anónimo",
+  reason,
+  detail:         detail.trim() || undefined,
+  evidenceUrls:   urls,
+  totalReports: totalReports,
+  lastIp:         lastLog?.ip ?? "Desconocida",
+  lastLogin:      lastLog?.created_at ?? undefined,
+  lastMethod:     lastLog?.method ?? undefined,
+});
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSending(false);
+      setSent(true);
+    }
   };
 
   return (
@@ -376,47 +438,77 @@ function ReportModal({ name, otherId, myId, onClose }: {
                 <path d="M8 14l4 4L20 10" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <h2 className="cv-modal-title" style={{ textAlign: "center" }}>Reporte enviado</h2>
-            <p className="cv-modal-body" style={{ textAlign: "center" }}>
-              Gracias por ayudarnos a mantener la comunidad segura.
+            <h2 className="cv-modal-title" style={{ textAlign:"center" }}>Reporte enviado</h2>
+            <p className="cv-modal-body" style={{ textAlign:"center" }}>
+              Gracias por ayudarnos a mantener la comunidad segura. Revisaremos el caso.
             </p>
-            <button className="cv-mbtn cv-mbtn--primary" style={{ width: "100%" }} onClick={onClose}>Cerrar</button>
+            <button className="cv-mbtn cv-mbtn--primary" style={{ width:"100%" }} onClick={onClose}>Cerrar</button>
           </>
         ) : (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div className="cv-modal-icon cv-modal-icon--warn" style={{ flexShrink: 0 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <div className="cv-modal-icon cv-modal-icon--warn" style={{ flexShrink:0 }}>
                 <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
                   <path d="M14 3L25 22H3L14 3z" stroke="#f59e0b" strokeWidth="1.6" strokeLinejoin="round"/>
                   <path d="M14 11v5M14 19v.6" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
               </div>
               <div>
-                <h2 className="cv-modal-title" style={{ marginBottom: 2 }}>Reportar a {name}</h2>
-                <p style={{ fontSize: 12, color: "rgba(165,210,240,0.45)" }}>Tu identidad no será revelada</p>
+                <h2 className="cv-modal-title" style={{ marginBottom:2 }}>Reportar a {name}</h2>
+                <p style={{ fontSize:12, color:"rgba(165,210,240,0.45)" }}>Tu identidad no será revelada</p>
               </div>
             </div>
-            <div style={{ height: 1, background: "rgba(84,199,248,0.08)", margin: "4px 0" }} />
+
+            <div style={{ height:1, background:"rgba(84,199,248,0.08)", margin:"4px 0" }}/>
+
+            {/* Motivo */}
             <div>
-              <p style={{ fontSize: 12, color: "rgba(165,210,240,0.5)", marginBottom: 10, fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase" }}>
+              <p style={{ fontSize:12, color:"rgba(165,210,240,0.5)", marginBottom:10, fontWeight:600, letterSpacing:"1.5px", textTransform:"uppercase" }}>
                 Motivo principal
               </p>
               <div className="cv-report-reasons">
                 {REPORT_REASONS.map(r => (
                   <button key={r.id} className={`cv-reason-chip ${reason === r.id ? "active" : ""}`} onClick={() => setReason(r.id)}>
-                    <span style={{ fontSize: 16 }}>{r.emoji}</span>
+                    <span style={{ fontSize:16 }}>{r.emoji}</span>
                     <span>{r.label}</span>
                   </button>
                 ))}
               </div>
             </div>
+
+            {/* Detalle */}
             <div>
-              <p style={{ fontSize: 12, color: "rgba(165,210,240,0.5)", marginBottom: 8, fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase" }}>
-                Detalles adicionales
+              <p style={{ fontSize:12, color:"rgba(165,210,240,0.5)", marginBottom:8, fontWeight:600, letterSpacing:"1.5px", textTransform:"uppercase" }}>
+                Descripción
               </p>
-              <textarea className="cv-report-ta" placeholder="Describí qué pasó (opcional)…" value={detail} onChange={e => setDetail(e.target.value.slice(0, 300))} rows={3} />
-              <div style={{ fontSize: 10, color: "rgba(165,210,240,0.25)", textAlign: "right", marginTop: 4 }}>{detail.length}/300</div>
+              <textarea
+                className="cv-report-ta"
+                placeholder="Describí qué pasó (opcional)…"
+                value={detail}
+                onChange={e => setDetail(e.target.value.slice(0,300))}
+                rows={3}
+              />
+              <div style={{ fontSize:10, color:"rgba(165,210,240,0.25)", textAlign:"right", marginTop:4 }}>{detail.length}/300</div>
             </div>
+
+            {/* Pruebas imgur */}
+            <div>
+              <p style={{ fontSize:12, color:"rgba(165,210,240,0.5)", marginBottom:4, fontWeight:600, letterSpacing:"1.5px", textTransform:"uppercase" }}>
+                Pruebas (opcional)
+              </p>
+              <p style={{ fontSize:11, color:"rgba(165,210,240,0.3)", marginBottom:8, lineHeight:1.5 }}>
+                Subí las capturas a <a href="https://imgur.com" target="_blank" rel="noreferrer" style={{ color:"#54c7f8" }}>imgur.com</a> y pegá los links acá, uno por línea.
+              </p>
+              <textarea
+                className="cv-report-ta"
+                placeholder={"https://i.imgur.com/ejemplo1.png\nhttps://i.imgur.com/ejemplo2.png"}
+                value={imgurUrls}
+                onChange={e => setImgurUrls(e.target.value)}
+                rows={3}
+                style={{ fontFamily:"monospace", fontSize:12 }}
+              />
+            </div>
+
             <div className="cv-modal-actions">
               <button className="cv-mbtn cv-mbtn--ghost" onClick={onClose} disabled={sending}>Cancelar</button>
               <button className="cv-mbtn cv-mbtn--warn" onClick={submit} disabled={!reason || sending}>

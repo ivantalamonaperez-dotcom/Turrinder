@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import img from "../Images/logo.png";
 import imgLigues      from "../Images/ligues.png";
 import imgDebates     from "../Images/debates.png";
 import imgIdiomas     from "../Images/idiomas.png";
 import imgModalidades from "../Images/modalidades.png";
+import BanModal from "../components/BanModal";
 
 /* ─── TYPES ──────────────────────────────────────────────────── */
 interface Profile {
@@ -95,7 +96,6 @@ body::before{
   opacity:0.7;
 }
 
-/* ─── PAGE LAYOUT ─────────────────────────────────────────────── */
 .page{
   position:relative;z-index:1;
   min-height:100vh;
@@ -105,10 +105,7 @@ body::before{
   grid-template-areas:"left right";
 }
 
-/* ── NAV ── */
-nav{
-  display:none;
-}
+nav{ display:none; }
 .nav-stats{display:flex;align-items:center;gap:26px;}
 .nav-stat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);}
 .dot-live{
@@ -184,7 +181,6 @@ nav{
 .logo-hero .logo-wordmark{font-size:82px;letter-spacing:-4.5px;}
 .logo-hero .logo-tagline{font-size:11px;letter-spacing:5px;margin-top:6px;}
 
-/* ── HERO ── */
 .hero{
   grid-area:left;
   display:flex;flex-direction:column;justify-content:center;align-items:center;
@@ -202,7 +198,6 @@ nav{
   max-width:320px;
 }
 
-/* ── CAROUSEL ── */
 .carousel-wrap{
   position:relative;width:100%;max-width:400px;
   margin:28px auto 0;
@@ -246,7 +241,6 @@ nav{
 
 @keyframes fadeSlideUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── AUTH PANEL ── */
 .auth-panel{
   grid-area:right;
   display:flex;flex-direction:column;justify-content:center;
@@ -296,7 +290,6 @@ nav{
 }
 .forgot-link:hover{color:rgba(84,199,248,0.9);}
 
-/* ── GOOGLE BTN ── */
 .btn-google{
   width:100%;padding:14px;
   background:rgba(255,255,255,0.04);
@@ -312,11 +305,8 @@ nav{
 .btn-google:disabled{opacity:0.5;cursor:not-allowed;}
 .google-icon{width:18px;height:18px;flex-shrink:0;}
 
-
-
 .terms-text{margin-top:28px;font-size:10px;color:rgba(143,212,255,0.18);text-align:center;letter-spacing:0.3px;line-height:1.8;}
 
-/* ── STRIP ── */
 .strip{ display:none; }
 .strip-left{display:flex;align-items:center;gap:24px}
 .strip-stat{display:flex;flex-direction:column}
@@ -329,7 +319,6 @@ nav{
 .sf-dot{width:6px;height:6px;border-radius:50%;background:var(--sky);opacity:0.65}
 .strip-right{font-size:11px;color:rgba(143,212,255,0.14);letter-spacing:0.3px}
 
-/* ── PARTICLES ── */
 .particle{position:fixed;border-radius:50%;pointer-events:none;z-index:1;}
 @keyframes particleFloat{
   0%  {transform:translate(0,0) scale(0.6);opacity:0}
@@ -347,25 +336,14 @@ nav{
 }
 #particles{position:fixed;inset:0;pointer-events:none;z-index:1;}
 
-/* ═══════════════════════════════════════════════════════════════
-   MOBILE — logo móvil en el panel de auth
-   ═══════════════════════════════════════════════════════════════ */
-
-/* Logo que solo aparece en mobile dentro del auth-panel */
 .logo-mobile-auth{
-  display:none; /* oculto en desktop */
+  display:none;
   flex-direction:column;align-items:center;gap:6px;
   margin-bottom:30px;
   animation:fadeSlideUp 0.5s 0s both;
 }
-.logo-mobile-auth .logo-icon-wrap{
-  width:96px;height:96px;
-  margin-bottom:6px;
-}
-/* Sin caja ni borde en mobile */
-.logo-mobile-auth .logo-icon-bg{
-  display:none;
-}
+.logo-mobile-auth .logo-icon-wrap{ width:96px;height:96px;margin-bottom:6px; }
+.logo-mobile-auth .logo-icon-bg{ display:none; }
 .logo-mobile-auth .logo-icon-img{
   padding:0;
   filter:drop-shadow(0 0 18px rgba(84,199,248,0.65)) brightness(1.1);
@@ -385,69 +363,38 @@ nav{
   line-height:1;padding-left:1px;
 }
 
-
-
-/* ─── RESPONSIVE BREAKPOINTS ─────────────────────────────────── */
 @media(max-width:900px){
-  .page{
-    grid-template-columns:1fr;
-    grid-template-areas:"right";
-  }
-
+  .page{ grid-template-columns:1fr; grid-template-areas:"right"; }
   .hero{ display:none; }
-
-  .auth-panel{
-    padding:60px 28px 60px;
-    min-height:100vh;
-    justify-content:flex-start;
-    padding-top:56px;
-  }
-
-  /* Mostrar logo mobile dentro del auth-panel */
+  .auth-panel{ padding:60px 28px 60px;min-height:100vh;justify-content:flex-start;padding-top:56px; }
   .logo-mobile-auth{ display:flex; }
-
 }
 
 @media(max-width:560px){
-  .auth-panel{
-    padding:48px 20px 80px;
-  }
-
+  .auth-panel{ padding:48px 20px 80px; }
   .logo-mobile-auth .logo-icon-wrap{width:80px;height:80px;}
   .logo-mobile-auth .logo-wordmark{font-size:36px;letter-spacing:-1.8px;}
   .logo-mobile-auth .logo-tagline{font-size:7px;letter-spacing:2.8px;}
-
   .auth-heading{font-size:24px;}
   .auth-sub{font-size:13px;margin-bottom:22px;}
-
   .fields-row{grid-template-columns:1fr}
-
   .input{padding:13px 15px;font-size:15px;border-radius:12px;}
   .btn-primary{padding:15px;font-size:15px;border-radius:12px;}
   .btn-google{padding:13px;font-size:14px;border-radius:12px;}
-
-  /* Toast más bajo para no tapar el teclado */
   .toast-wrap{ bottom:100px !important; }
-
   .strip{display:none}
 }
 
-/* Safe area para iPhones con notch/home indicator */
 @supports(padding-bottom:env(safe-area-inset-bottom)){
   @media(max-width:560px){
-    .auth-panel{
-      padding-bottom:calc(80px + env(safe-area-inset-bottom));
-    }
+    .auth-panel{ padding-bottom:calc(80px + env(safe-area-inset-bottom)); }
   }
 }
 
-/* Tap highlight elimination en mobile */
 @media(hover:none){
   .btn-primary:hover{ transform:none; box-shadow:0 8px 32px rgba(84,199,248,0.4); }
   .btn-google:hover{ background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12); }
   button{ -webkit-tap-highlight-color:transparent; }
-
-  /* Active states más responsivos al toque */
   .btn-primary:active{ transform:scale(0.98); opacity:0.9; }
   .btn-google:active{ transform:scale(0.98); opacity:0.9; }
 }
@@ -526,16 +473,10 @@ function HeroCarousel() {
         ))}
         <div className="carousel-glow" />
       </div>
-
       <div className="carousel-label">
-        <div className={`carousel-label-name ${labelVisible ? "visible" : ""}`}>
-          {slide.name}
-        </div>
-        <div className={`carousel-label-desc ${labelVisible ? "visible" : ""}`}>
-          {slide.desc}
-        </div>
+        <div className={`carousel-label-name ${labelVisible ? "visible" : ""}`}>{slide.name}</div>
+        <div className={`carousel-label-desc ${labelVisible ? "visible" : ""}`}>{slide.desc}</div>
       </div>
-
       <div className="carousel-dots">
         {carouselSlides.map((_, i) => (
           <div
@@ -549,7 +490,7 @@ function HeroCarousel() {
   );
 }
 
-/* ─── LOGO COMPONENT ─────────────────────────────────────────── */
+/* ─── LOGO ───────────────────────────────────────────────────── */
 function Logo({ variant = "nav" }: { variant?: "nav" | "hero" | "mobile-auth" }) {
   const isHero = variant === "hero";
   const isMobileAuth = variant === "mobile-auth";
@@ -560,18 +501,14 @@ function Logo({ variant = "nav" }: { variant?: "nav" | "hero" | "mobile-auth" })
         <img src={(img as any).src ?? img} alt="Turrinder" className="logo-icon-img" />
       </div>
       <div className="logo-text-group">
-        <span className="logo-wordmark">
-          Turr<em>inder</em>
-        </span>
-        {isMobileAuth && (
-          <span className="logo-tagline">connect · debate · grow</span>
-        )}
+        <span className="logo-wordmark">Turr<em>inder</em></span>
+        {isMobileAuth && <span className="logo-tagline">connect · debate · grow</span>}
       </div>
     </div>
   );
 }
 
-/* ─── GOOGLE ICON SVG ────────────────────────────────────────── */
+/* ─── GOOGLE ICON ────────────────────────────────────────────── */
 function GoogleIcon() {
   return (
     <svg className="google-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
@@ -583,7 +520,7 @@ function GoogleIcon() {
   );
 }
 
-/* ─── COMPONENTS ─────────────────────────────────────────────── */
+/* ─── TOAST ──────────────────────────────────────────────────── */
 function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -611,6 +548,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   );
 }
 
+/* ─── PARTICLES ──────────────────────────────────────────────── */
 function Particles() {
   useEffect(() => {
     const container = document.getElementById("particles");
@@ -649,6 +587,7 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [banModal, setBanModal] = useState(false);
   const router = useRouter();
 
   const getSupabase = async () => {
@@ -671,6 +610,26 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       return;
     }
 
+    const banRes = await fetch("/api/check-ban", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: data.user.id }),
+    });
+    const banData = await banRes.json();
+
+    if (banData.banned) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      setBanModal(true);
+      return;
+    }
+
+    await fetch("/api/log-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: data.user.id, method: "email" }),
+    });
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("id, name")
@@ -689,32 +648,19 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     const supabase = await getSupabase();
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
-
     if (error) {
       onToast("Error al conectar con Google ❌");
       setGoogleLoading(false);
     }
   };
 
-  const goToRegister = () => {
-    router.push("/auth/register");
-  };
-
   return (
     <div>
-      {/* Botón Google — arriba, prominente */}
-      <button
-        className="btn-google"
-        onClick={handleGoogleLogin}
-        disabled={googleLoading}
-      >
+      <button className="btn-google" onClick={handleGoogleLogin} disabled={googleLoading}>
         <GoogleIcon />
         {googleLoading ? "Conectando con Google..." : "Continuar con Google"}
       </button>
@@ -728,33 +674,22 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       <div className="field">
         <label className="label">Email</label>
         <input
-          className="input"
-          type="email"
-          placeholder="tu@email.com"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          autoComplete="email"
-          inputMode="email"
+          className="input" type="email" placeholder="tu@email.com"
+          value={email} onChange={e => setEmail(e.target.value)}
+          autoComplete="email" inputMode="email"
         />
       </div>
       <div className="field">
         <label className="label">Contraseña</label>
         <input
-          className="input"
-          type="password"
-          placeholder="••••••••"
-          value={pass}
-          onChange={e => setPass(e.target.value)}
+          className="input" type="password" placeholder="••••••••"
+          value={pass} onChange={e => setPass(e.target.value)}
           onKeyDown={e => e.key === "Enter" && handleLogin()}
           autoComplete="current-password"
         />
       </div>
 
-      <button
-        className="forgot-link"
-        onClick={() => router.push("/auth/forgot-password")}
-        type="button"
-      >
+      <button className="forgot-link" onClick={() => router.push("/auth/forgot-password")} type="button">
         ¿Olvidaste tu contraseña?
       </button>
 
@@ -765,17 +700,32 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
 
       <div style={{ marginTop: 20, textAlign: "center" }}>
         <span style={{ color: "var(--muted)", fontSize: 13 }}>¿No tenés cuenta?{" "}</span>
-        <button onClick={goToRegister} style={{ background:"none", border:"none", color:"#54c7f8", cursor:"pointer", fontWeight:700, fontSize:13 }}>
+        <button onClick={() => router.push("/auth/register")}
+          style={{ background: "none", border: "none", color: "#54c7f8", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
           Registrate
         </button>
       </div>
+
+      {banModal && <BanModal onClose={() => setBanModal(false)} />}
     </div>
   );
+}
+
+/* ─── BANNED DETECTOR ────────────────────────────────────────── */
+function BannedDetector({ onBanned }: { onBanned: () => void }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("banned") === "true") {
+      onBanned();
+    }
+  }, [searchParams, onBanned]);
+  return null;
 }
 
 /* ─── MAIN COMPONENT ─────────────────────────────────────────── */
 export default function Turrinder() {
   const [toast, setToast] = useState<string | null>(null);
+  const [showBanModal, setShowBanModal] = useState(false);
   const stripRef = useRef<HTMLDivElement>(null);
 
   const onlineCount = useFluctuate(8342, 120);
@@ -787,54 +737,42 @@ export default function Turrinder() {
   return (
     <>
       <style>{globalStyles}</style>
+
+      {/* Suspense requerido por useSearchParams */}
+      <Suspense fallback={null}>
+        <BannedDetector onBanned={() => setShowBanModal(true)} />
+      </Suspense>
+
       <div className="flag-stripe" />
       <div className="aurora" />
       <Particles />
 
       <div className="page">
-        {/* NAV: siempre visible en desktop, minimalista en mobile */}
         <nav>
           <Logo variant="nav" />
           <div className="nav-stats">
-            <div className="nav-stat">
-              <div className="dot-live" />
-              <strong>{onlineCount}</strong> en línea
-            </div>
-            <div className="nav-stat">
-              <div className="dot-sky" />
-              <strong>{videoCount}</strong> en videocall
-            </div>
+            <div className="nav-stat"><div className="dot-live" /><strong>{onlineCount}</strong> en línea</div>
+            <div className="nav-stat"><div className="dot-sky" /><strong>{videoCount}</strong> en videocall</div>
           </div>
         </nav>
 
-        {/* HERO (solo desktop) */}
         <section className="hero">
           <Logo variant="hero" />
-          <h1 className="hero-title">
-            El lugar donde streamers, debatistas y personas reales se encuentran.
-          </h1>
+          <h1 className="hero-title">El lugar donde streamers, debatistas y personas reales se encuentran.</h1>
           <HeroCarousel />
         </section>
 
-        {/* AUTH PANEL: en mobile ocupa toda la pantalla */}
         <section className="auth-panel">
-
-          {/* Logo mobile: solo visible en pantallas pequeñas */}
           <Logo variant="mobile-auth" />
-
-
           <h2 className="auth-heading">Empezá ahora</h2>
           <p className="auth-sub">En 60 segundos ya estás adentro — sin importar para qué venís.</p>
-
           <LoginForm onToast={setToast} />
-
           <div className="terms-text">
             Al continuar aceptás los términos de uso y la política de privacidad.<br />
             Turrinder © 2025 · Para mayores de 18 años · Plataforma para todos.
           </div>
         </section>
 
-        {/* STRIP: oculto en mobile pequeño */}
         <div className="strip" ref={stripRef}>
           <div className="strip-left">
             <div className="strip-stat">
@@ -863,6 +801,7 @@ export default function Turrinder() {
       </div>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {showBanModal && <BanModal onClose={() => setShowBanModal(false)} />}
     </>
   );
 }

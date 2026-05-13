@@ -22,7 +22,7 @@ export async function enviarPostulacion(datos: {
   frecuencia: string;
   link: string;
   bio: string;
-  userId?: string;  // ← agregás esto
+  userId?: string;
 }) {
   try {
     await fetch(`${BOT_URL}/discord`, {
@@ -32,5 +32,49 @@ export async function enviarPostulacion(datos: {
     });
   } catch (e) {
     console.error('[Discord] Error enviando postulacion:', e);
+  }
+}
+
+export async function enviarReporte(datos: {
+  reportedId: string;
+  reportedName: string;
+  reportedAge?: number;
+  reportedGender?: string;
+  reportedBio?: string;
+  reportedAvatar?: string;
+  reporterId: string;
+  reporterName: string;
+  reason: string;
+  detail?: string;
+  evidenceUrls: string[];
+  totalReports: number;
+  lastIp: string;
+  lastLogin?: string;
+  lastMethod?: string;
+}) {
+  try {
+    await fetch(`${BOT_URL}/discord`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo: 'reporte', datos }),
+    });
+  } catch (e) {
+    console.error('[Discord] Error enviando reporte:', e);
+  }
+}
+
+export async function enviarLogLogin(datos: {
+  userId: string;
+  method: string;
+  ip?: string;
+}) {
+  try {
+    await fetch(`${BOT_URL}/discord`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo: 'log_login', datos }),
+    });
+  } catch (e) {
+    console.error('[Discord] Error enviando log login:', e);
   }
 }
