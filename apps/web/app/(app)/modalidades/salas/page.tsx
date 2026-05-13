@@ -926,72 +926,65 @@ function RoomView({
     []
   );
 
-  const {
-    participants,
-    localStream,
-
-    videoOn,
-    audioOn,
-
-    blockedByHost,
-
-    presenceCount,
-    chatMessages,
-
-    stopMedia,
-    toggleVideo,
-    toggleAudio,
-    sendChat,
-    notifyRoomClosed,
-
-    muteParticipant,
-    unmuteParticipant,
-    camOffParticipant,
-    camOnParticipant,
-    kickParticipant,
-    banParticipant,
-    muteAll,
-
-    tempMuteParticipant,
-    shadowMuteParticipant,
-
-    cohosts,
-    hostId,
-    assignCohost,
-    transferHost,
-
-    roomSettings,
-    updateSettings,
-    setRoomMode,
-
-    speakQueue,
-    currentSpeaker,
-    speakEndsAt,
-
-    requestSpeak,
-    approveSpeak,
-    rejectSpeak,
-    cutSpeaker,
-    extendSpeakTime,
-
-    raisedHands,
-    raiseHand,
-
-    activeVote,
-    startVote,
-    castVote,
-
-    modLogs,
-    tempMutes,
-  } = useDebateMedia(
-    room.id,
-    isHost,
-    currentUserId,
-    currentUserName,
-    currentUserAvatarUrl,
-    currentUserRole,
-    toast
-  );
+const {
+  participants,
+  localStream,
+  videoOn,
+  audioOn,
+  blockedByHost,
+  presenceCount,
+  chatMessages,
+  stopMedia,
+  toggleVideo,
+  toggleAudio,
+  sendChat,
+  notifyRoomClosed,
+  muteParticipant,
+  unmuteParticipant,
+  camOffParticipant,
+  camOnParticipant,
+  kickParticipant,
+  banParticipant,
+  muteAll,
+  tempMuteParticipant,
+  shadowMuteParticipant,
+  cohosts,
+  hostId,
+  assignCohost,
+  transferHost,
+  roomSettings,
+  updateSettings,
+  setRoomMode,
+  speakQueue,
+  currentSpeaker,
+  speakEndsAt,
+  requestSpeak,
+  approveSpeak,
+  rejectSpeak,
+  cutSpeaker,
+  extendSpeakTime,
+  raisedHands,
+  raiseHand,
+  activeVote,
+  startVote,
+  castVote,
+  modLogs,
+  tempMutes,
+} = useDebateMedia(
+  room.id,
+  isHost,
+  currentUserId,
+  currentUserName,
+  currentUserAvatarUrl,
+  currentUserRole,
+  toast,
+  // FIX 1: onForceLeave — se llama cuando el servidor expulsa/banea/cierra.
+  // stopMedia no está disponible aquí todavía (viene del hook), así que
+  // el hook ya lo maneja internamente. Acá solo necesitamos salir de la UI.
+  useCallback(() => {
+    onLeave();
+  }, [onLeave])
+);
 
   const canModerate =
     isHost || cohosts.has(currentUserId);

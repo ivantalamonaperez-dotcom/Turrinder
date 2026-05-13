@@ -1,5 +1,33 @@
 "use client";
 
+/**
+ * useDebateMedia — VERSIÓN FINAL CON FIXES CRÍTICOS
+ *
+ * CAMBIOS vs versión anterior:
+ *
+ * 1. KICK / BAN / CLOSE en tiempo real
+ *    Antes: onClosed solo hacía toast, y no había listeners para
+ *    "debate-you-kicked" ni "debate-you-banned".
+ *    Ahora: los tres eventos llaman onForceLeave() inmediatamente,
+ *    lo que provoca que la UI retire al usuario de la sala en tiempo real.
+ *
+ * 2. VIDEO / AUDIO DE PARTICIPANTES REMOTOS
+ *    Antes: useWebRTC existía separado y nunca se conectaba con los
+ *    Participant. El campo `stream` de cada participante era siempre
+ *    undefined, por lo que VideoTile nunca tenía nada que mostrar.
+ *    Ahora: la señalización WebRTC (RTCPeerConnection por userId) está
+ *    integrada aquí. Cuando llega "debate-user-joined" se inicia una
+ *    conexión como initiator. Cuando llega una "offer" de un peer se
+ *    responde como receiver. Al recibir el track remoto se actualiza
+ *    `remoteStreams` (Map<userId, MediaStream>) que se inyecta como
+ *    `stream` en cada Participant al mapear el estado del servidor.
+ *
+ * 3. ICE candidates encolados por peer
+ *    Cada RTCPeerConnection tiene su propia cola de ICE candidates
+ *    (Map<userId, RTCIceCandidateInit[]>) para manejar el race condition
+ *    en que los candidates llegan antes que el remoteDescription.
+ */
+
 import {
   useCallback,
   useEffect,
@@ -9,7 +37,7 @@ import {
 import { useSocket } from "@/hooks/useSocket";
 
 /* =========================================================
-   EXPORT TYPES (para page.tsx)
+   EXPORT TYPES
 ========================================================= */
 
 export type Participant = {
@@ -73,12 +101,21 @@ export type ModLog = {
   ts: number;
 };
 
-/* ========================================================= */
+/* =========================================================
+   CONSTANTES
+========================================================= */
 
-type ToastFn = (
-  msg: string,
-  type?: "info" | "warn" | "error"
-) => void;
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+];
+
+/* =========================================================
+   HOOK
+========================================================= */
+
+type ToastFn = (msg: string, type?: "info" | "warn" | "error") => void;
 
 export function useDebateMedia(
   roomId: string,
@@ -87,20 +124,36 @@ export function useDebateMedia(
   currentUserName: string,
   currentUserAvatarUrl: string | null,
   currentUserRole: "streamer" | "viewer",
-  onToast?: ToastFn
+  onToast?: ToastFn,
+  /**
+   * FIX 1: Callback que se llama cuando el servidor expulsa/banea/cierra
+   * la sala para este usuario. Debe provocar que la UI salga de RoomView.
+   * En page.tsx pasá: () => { stopMedia(); onLeave(); }
+   */
+  onForceLeave?: () => void
 ) {
   const { socket } = useSocket();
 
+  /* ── Stream local ───────────────────────────────────────────────────────── */
   const localStreamRef = useRef<MediaStream | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
-  // FIX: ref para saber si ya recibimos el primer debate-room-state.
-  // Si el join llegó antes de que el host creara la sala (ROOM_NOT_FOUND)
-  // necesitamos reintentarlo. Este flag evita reintentos innecesarios
-  // una vez que la sala ya fue confirmada.
+  const [audioOn, setAudioOn] = useState(true);
+  const [videoOn, setVideoOn] = useState(true);
+
+  /* ── WebRTC: peers y streams remotos ───────────────────────────────────── */
+  // FIX 2: Un RTCPeerConnection por userId remoto
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+
+  // Cola de ICE candidates por peer (para el race condition offer/candidate)
+  const iceCandidateQueuesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+
+  // Map<userId, MediaStream> — se inyecta en Participant.stream al mapear
+  const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+
+  /* ── Estado de sala ─────────────────────────────────────────────────────── */
   const roomConfirmedRef = useRef(false);
-
-  // FIX: guardamos los datos de join en un ref para poder reutilizarlos
-  // en el retry sin depender de closures desactualizadas.
   const joinPayloadRef = useRef({
     roomId,
     userId: currentUserId,
@@ -108,7 +161,6 @@ export function useDebateMedia(
     avatarUrl: currentUserAvatarUrl,
   });
 
-  // Mantener el ref actualizado si cambian los datos del usuario
   useEffect(() => {
     joinPayloadRef.current = {
       roomId,
@@ -118,89 +170,55 @@ export function useDebateMedia(
     };
   }, [roomId, currentUserId, currentUserName, currentUserAvatarUrl]);
 
-  const [localStream, setLocalStream] =
-    useState<MediaStream | null>(null);
-
-  const [audioOn, setAudioOn] = useState(true);
-  const [videoOn, setVideoOn] = useState(true);
-
-  const [blockedByHost, setBlockedByHost] =
-    useState({
-      mic: false,
-      cam: false,
-    });
-
-  const [participants, setParticipants] =
-    useState<Participant[]>([]);
-
-  const [presenceCount, setPresenceCount] =
-    useState(1);
-
-  const [chatMessages, setChatMessages] =
-    useState<ChatMessage[]>([]);
-
+  const [blockedByHost, setBlockedByHost] = useState({ mic: false, cam: false });
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [presenceCount, setPresenceCount] = useState(1);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [cohosts, setCohosts] = useState<Set<string>>(new Set());
-
   const [hostId, setHostId] = useState("");
-
-  const [speakQueue, setSpeakQueue] =
-    useState<SpeakRequest[]>([]);
-
-  const [raisedHands, setRaisedHands] =
-    useState<Set<string>>(new Set());
-
-  const [currentSpeaker, setCurrentSpeaker] =
-    useState<string | null>(null);
-
-  const [speakEndsAt, setSpeakEndsAt] =
-    useState<number | null>(null);
-
-  const [roomSettings, setRoomSettings] =
-    useState<RoomSettings>({
-      strictMode: false,
-      freeMode: false,
-      chatEnabled: true,
-      allMutedOnEntry: true,
-      cameraAllowed: true,
-      speakTimeLimit: 60000,
-    });
-
-  const [activeVote, setActiveVote] =
-    useState<ActiveVote | null>(null);
-
+  const [speakQueue, setSpeakQueue] = useState<SpeakRequest[]>([]);
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [currentSpeaker, setCurrentSpeaker] = useState<string | null>(null);
+  const [speakEndsAt, setSpeakEndsAt] = useState<number | null>(null);
+  const [roomSettings, setRoomSettings] = useState<RoomSettings>({
+    strictMode: false,
+    freeMode: false,
+    chatEnabled: true,
+    allMutedOnEntry: true,
+    cameraAllowed: true,
+    speakTimeLimit: 60000,
+  });
+  const [activeVote, setActiveVote] = useState<ActiveVote | null>(null);
   const [modLogs, setModLogs] = useState<ModLog[]>([]);
+  const [tempMutes, setTempMutes] = useState<Record<string, number>>({});
 
-  const [tempMutes, setTempMutes] =
-    useState<Record<string, number>>({});
+  /* ── Refs estables para closures ────────────────────────────────────────── */
+  const socketRef = useRef(socket);
+  useEffect(() => { socketRef.current = socket; }, [socket]);
 
-  /* ========================================================= */
+  const onForceLeaveRef = useRef(onForceLeave);
+  useEffect(() => { onForceLeaveRef.current = onForceLeave; }, [onForceLeave]);
 
+  /* ── Toast helper ───────────────────────────────────────────────────────── */
   const toast = useCallback(
-    (
-      msg: string,
-      type: "info" | "warn" | "error" = "info"
-    ) => onToast?.(msg, type),
+    (msg: string, type: "info" | "warn" | "error" = "info") => onToast?.(msg, type),
     [onToast]
   );
 
   /* =========================================================
-     MEDIA
+     MEDIA — pedir cámara/mic (una sola vez)
   ========================================================= */
 
-  const initMedia = useCallback(async () => {
-    if (localStreamRef.current)
-      return localStreamRef.current;
+  const initMedia = useCallback(async (): Promise<MediaStream | null> => {
+    if (localStreamRef.current) return localStreamRef.current;
 
     try {
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: true,
-        });
-
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      });
       localStreamRef.current = stream;
       setLocalStream(stream);
-
       return stream;
     } catch {
       toast("No se pudo acceder a cámara/mic", "error");
@@ -210,52 +228,176 @@ export function useDebateMedia(
 
   useEffect(() => {
     initMedia();
+    return () => {
+      // Detener todos los tracks al desmontar
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* =========================================================
+     WebRTC helpers
+  ========================================================= */
+
+  /** Drena la cola de ICE candidates de un peer dado. */
+  const drainIceQueue = useCallback(async (targetUserId: string) => {
+    const peer = peersRef.current.get(targetUserId);
+    if (!peer || !peer.remoteDescription) return;
+
+    const queue = iceCandidateQueuesRef.current.get(targetUserId) ?? [];
+    if (queue.length === 0) return;
+
+    iceCandidateQueuesRef.current.set(targetUserId, []);
+    console.log(`[WebRTC] 🧊 Drenando ${queue.length} ICE candidates para ${targetUserId}`);
+
+    for (const candidate of queue) {
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn("[WebRTC] Error aplicando ICE encolado:", e);
+      }
+    }
+  }, []);
+
+  /**
+   * Crea un RTCPeerConnection para targetUserId.
+   * Si initiator=true, genera y envía la offer.
+   */
+  const createPeerWith = useCallback(async (
+    targetUserId: string,
+    initiator: boolean
+  ): Promise<RTCPeerConnection | null> => {
+    // Evitar duplicados
+    if (peersRef.current.has(targetUserId)) {
+      return peersRef.current.get(targetUserId)!;
+    }
+
+    // Asegurar stream local antes de crear el peer
+    if (!localStreamRef.current) {
+      await initMedia();
+    }
+
+    const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    peersRef.current.set(targetUserId, peer);
+    iceCandidateQueuesRef.current.set(targetUserId, []);
+
+    // Agregar tracks locales al peer
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => {
+        peer.addTrack(track, localStreamRef.current!);
+      });
+      console.log(`[WebRTC] ✅ Tracks locales añadidos para peer ${targetUserId}`);
+    } else {
+      console.warn(`[WebRTC] ⚠️ Peer creado sin tracks locales para ${targetUserId}`);
+    }
+
+    // FIX 2: Cuando llega el stream remoto, guardarlo con el userId
+    peer.ontrack = (event) => {
+      const stream = event.streams[0];
+      if (!stream) return;
+      console.log(`[WebRTC] 🎥 Stream remoto recibido de ${targetUserId}`);
+      remoteStreamsRef.current.set(targetUserId, stream);
+      // Actualizar estado para re-render de participantes
+      setRemoteStreams(new Map(remoteStreamsRef.current));
+    };
+
+    // Enviar ICE candidates al peer remoto a través del socket
+    peer.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current) {
+        socketRef.current.emit("signal", {
+          to: targetUserId,
+          data: { type: "candidate", candidate: event.candidate },
+        });
+      }
+    };
+
+    peer.oniceconnectionstatechange = () => {
+      const state = peer.iceConnectionState;
+      console.log(`[WebRTC] Estado ICE con ${targetUserId}:`, state);
+      if (["disconnected", "failed", "closed"].includes(state)) {
+        closePeerWith(targetUserId);
+      }
+    };
+
+    if (initiator) {
+      try {
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        socketRef.current?.emit("signal", { to: targetUserId, data: offer });
+        console.log(`[WebRTC] 📤 Offer enviada a ${targetUserId}`);
+      } catch (e) {
+        console.error(`[WebRTC] Error creando offer para ${targetUserId}:`, e);
+      }
+    }
+
+    return peer;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initMedia]);
+
+  /** Cierra y limpia el peer de un usuario específico. */
+  const closePeerWith = useCallback((targetUserId: string) => {
+    const peer = peersRef.current.get(targetUserId);
+    if (peer) {
+      peer.ontrack             = null;
+      peer.onicecandidate      = null;
+      peer.oniceconnectionstatechange = null;
+      peer.close();
+      peersRef.current.delete(targetUserId);
+      console.log(`[WebRTC] 🧹 Peer cerrado con ${targetUserId}`);
+    }
+    iceCandidateQueuesRef.current.delete(targetUserId);
+    remoteStreamsRef.current.delete(targetUserId);
+    setRemoteStreams(new Map(remoteStreamsRef.current));
+  }, []);
+
+  /** Cierra todos los peers (al desmontar o al salir de sala). */
+  const closeAllPeers = useCallback(() => {
+    peersRef.current.forEach((peer, uid) => {
+      peer.ontrack             = null;
+      peer.onicecandidate      = null;
+      peer.oniceconnectionstatechange = null;
+      peer.close();
+      console.log(`[WebRTC] 🧹 Peer cerrado con ${uid}`);
+    });
+    peersRef.current.clear();
+    iceCandidateQueuesRef.current.clear();
+    remoteStreamsRef.current.clear();
+    setRemoteStreams(new Map());
+  }, []);
 
   /* =========================================================
      ROOM JOIN
-     FIX: el host emite "debate-create-room" en page.tsx y el
-     guest emite "debate-join-room" aquí. En React Strict Mode
-     (y en condiciones de red normales) el guest puede llegar
-     al servidor antes de que el host haya creado la sala,
-     recibiendo ROOM_NOT_FOUND. El retry se maneja en el bloque
-     de sockets de abajo escuchando "debate-error".
-     Aquí solo emitimos el join inicial.
   ========================================================= */
 
   useEffect(() => {
     if (!socket?.connected) return;
 
-    // Resetear la confirmación al (re)conectar
     roomConfirmedRef.current = false;
-
     socket.emit("debate-join-room", joinPayloadRef.current);
 
     return () => {
       socket.emit("debate-leave-room", { roomId });
+      closeAllPeers();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, roomId]);
 
   /* =========================================================
-     SOCKETS
+     SOCKETS — estado de sala + señalización WebRTC
   ========================================================= */
 
   useEffect(() => {
     if (!socket) return;
 
+    /* ── Estado completo de la sala ───────────────────────────────────────── */
     const onState = (state: any) => {
-      // La sala existe y estamos dentro: marcar como confirmada
       roomConfirmedRef.current = true;
 
       setPresenceCount(state.members?.length || 1);
-
       setHostId(state.hostId || "");
-
       setCohosts(new Set(state.cohosts || []));
-
       setCurrentSpeaker(state.currentSpeaker || null);
-
       setSpeakEndsAt(state.speakEndsAt || null);
 
       setRoomSettings({
@@ -268,11 +410,10 @@ export function useDebateMedia(
       });
 
       const queue = (state.speakQueue || []).map((x: any) => ({
-        userId:   x.userId,
-        userName: x.userName || x.name || "Usuario",
+        userId:    x.userId,
+        userName:  x.userName || x.name || "Usuario",
         avatarUrl: x.avatarUrl || null,
       }));
-
       setSpeakQueue(queue);
 
       const hands = new Set<string>(
@@ -280,34 +421,30 @@ export function useDebateMedia(
           typeof x === "string" ? x : x.userId
         )
       );
-
       setRaisedHands(hands);
 
-      // FIX: además de mapear los campos del servidor, propagamos
-      // isHost e isCohost para que el HostPanel pueda identificarlos
-      // correctamente sin depender solo del campo "role".
+      // FIX 2: Inyectar stream remoto en cada Participant
       const mapped = (state.members || [])
         .filter((m: any) => m.userId !== currentUserId)
         .map((m: any) => ({
-          id:          m.userId,
-          name:        m.userName || m.name || "Usuario",
-          avatarUrl:   m.avatarUrl || null,
-          role:        m.role || "viewer",
-          hasVideo:    !m.camBlocked,
-          hasAudio:    !m.micBlocked,
-          mutedByHost: !!m.micBlocked,
+          id:           m.userId,
+          name:         m.userName || m.name || "Usuario",
+          avatarUrl:    m.avatarUrl || null,
+          role:         m.role || "viewer",
+          hasVideo:     !m.camBlocked,
+          hasAudio:     !m.micBlocked,
+          mutedByHost:  !!m.micBlocked,
           camOffByHost: !!m.camBlocked,
-          handRaised:  !!m.handRaised,
-          shadowMuted: !!m.shadowMuted,
-          isHost:      m.userId === state.hostId,
-          isCohost:    (state.cohosts || []).includes(m.userId),
-          isSpeaking:  m.userId === state.currentSpeaker,
+          handRaised:   !!m.handRaised,
+          shadowMuted:  !!m.shadowMuted,
+          isHost:       m.userId === state.hostId,
+          isCohost:     (state.cohosts || []).includes(m.userId),
+          isSpeaking:   m.userId === state.currentSpeaker,
+          // ↓ clave: stream del peer WebRTC asociado a este userId
+          stream:       remoteStreamsRef.current.get(m.userId),
         }));
-
       setParticipants(mapped);
 
-      // FIX: si el usuario actual está bloqueado por el host,
-      // actualizar el estado local para que los controles reflejen eso.
       const selfInServer = (state.members || []).find(
         (m: any) => m.userId === currentUserId
       );
@@ -319,6 +456,61 @@ export function useDebateMedia(
       }
     };
 
+    /* ── Nuevo participante → iniciar conexión WebRTC como initiator ───────── */
+    const onUserJoined = async ({ userId: uid }: any) => {
+      if (uid === currentUserId) return;
+      console.log(`[WebRTC] 👤 Usuario unido: ${uid} — iniciando conexión como initiator`);
+      await createPeerWith(uid, true);
+    };
+
+    /* ── Participante que se fue → limpiar su peer ─────────────────────────── */
+    const onUserLeft = ({ userId: uid }: any) => {
+      console.log(`[WebRTC] 🚪 Usuario fue: ${uid}`);
+      closePeerWith(uid);
+    };
+
+    /* ── Señalización WebRTC ──────────────────────────────────────────────── */
+    const onSignal = async ({ from, data }: { from: string; data: any }) => {
+      let peer = peersRef.current.get(from);
+
+      // Si no existe el peer aún (offer entrante), crear como receiver
+      if (!peer) {
+        if (data.type !== "offer") return; // ignorar si no es offer inicial
+        console.log(`[WebRTC] 📥 Offer recibida de ${from} — creando peer como receiver`);
+        peer = await createPeerWith(from, false) ?? undefined;
+        if (!peer) return;
+      }
+
+      try {
+        if (data.type === "offer") {
+          await peer.setRemoteDescription(new RTCSessionDescription(data));
+          await drainIceQueue(from);
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          socket.emit("signal", { to: from, data: answer });
+          console.log(`[WebRTC] 📤 Answer enviada a ${from}`);
+
+        } else if (data.type === "answer") {
+          await peer.setRemoteDescription(new RTCSessionDescription(data));
+          await drainIceQueue(from);
+
+        } else if (data.type === "candidate" && data.candidate) {
+          if (!peer.remoteDescription) {
+            // Encolar si remoteDescription aún no está seteado
+            const queue = iceCandidateQueuesRef.current.get(from) ?? [];
+            queue.push(data.candidate);
+            iceCandidateQueuesRef.current.set(from, queue);
+            console.log(`[WebRTC] 🧊 ICE candidate encolado para ${from}`);
+          } else {
+            await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
+      } catch (e) {
+        console.warn(`[WebRTC] Señal ignorada de ${from}:`, e);
+      }
+    };
+
+    /* ── Chat ─────────────────────────────────────────────────────────────── */
     const onChat = (msg: any) => {
       setChatMessages((p) => [
         ...p,
@@ -332,16 +524,29 @@ export function useDebateMedia(
       ]);
     };
 
+    /* ── FIX 1: Sala cerrada / expulsado / baneado → salir en tiempo real ─── */
     const onClosed = () => {
-      toast("Sala cerrada", "warn");
+      toast("La sala fue cerrada", "warn");
+      closeAllPeers();
+      onForceLeaveRef.current?.();
     };
 
-    // ── FIX: retry cuando el guest llega antes que el host ──────────────
-    // El servidor emite "debate-error" con code "ROOM_NOT_FOUND" cuando
-    // joinRoom no encuentra la sala. Esto ocurre si el guest entra
-    // justo mientras el host todavía no emitió "debate-create-room".
-    // Reintentamos el join con backoff hasta que la sala exista.
-    let retryCount  = 0;
+    const onKicked = ({ roomId: rid }: any) => {
+      if (rid !== roomId) return;
+      toast("Fuiste expulsado de la sala", "warn");
+      closeAllPeers();
+      onForceLeaveRef.current?.();
+    };
+
+    const onBanned = ({ roomId: rid }: any) => {
+      if (rid !== roomId) return;
+      toast("Fuiste baneado de esta sala", "error");
+      closeAllPeers();
+      onForceLeaveRef.current?.();
+    };
+
+    /* ── Retry ROOM_NOT_FOUND ─────────────────────────────────────────────── */
+    let retryCount = 0;
     const MAX_RETRY = 8;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -350,19 +555,16 @@ export function useDebateMedia(
         err.code   === "ROOM_NOT_FOUND" &&
         err.roomId === roomId           &&
         !roomConfirmedRef.current       &&
-        !isHost                         // el host nunca hace join, crea la sala
+        !isHost
       ) {
         if (retryCount >= MAX_RETRY) {
           toast("No se pudo conectar a la sala", "error");
           return;
         }
-
-        // Backoff exponencial suave: 800ms, 1.2s, 1.8s, 2.4s …
         const delay = Math.min(800 * (retryCount + 1), 4000);
         retryCount++;
-
         retryTimer = setTimeout(() => {
-          if (roomConfirmedRef.current) return; // ya entró por otra vía
+          if (roomConfirmedRef.current) return;
           socket.emit("debate-join-room", joinPayloadRef.current);
         }, delay);
       }
@@ -376,16 +578,27 @@ export function useDebateMedia(
       }
     };
 
+    /* ── Registro de listeners ───────────────────────────────────────────── */
     socket.on("debate-room-state",   onState);
+    socket.on("debate-user-joined",  onUserJoined);
+    socket.on("debate-user-left",    onUserLeft);
+    socket.on("signal",              onSignal);
     socket.on("debate-chat-message", onChat);
     socket.on("debate-room-closed",  onClosed);
+    socket.on("debate-you-kicked",   onKicked);
+    socket.on("debate-you-banned",   onBanned);
     socket.on("debate-error",        onError);
 
     return () => {
       if (retryTimer) clearTimeout(retryTimer);
       socket.off("debate-room-state",   onState);
+      socket.off("debate-user-joined",  onUserJoined);
+      socket.off("debate-user-left",    onUserLeft);
+      socket.off("signal",              onSignal);
       socket.off("debate-chat-message", onChat);
       socket.off("debate-room-closed",  onClosed);
+      socket.off("debate-you-kicked",   onKicked);
+      socket.off("debate-you-banned",   onBanned);
       socket.off("debate-error",        onError);
     };
   }, [
@@ -394,16 +607,32 @@ export function useDebateMedia(
     currentUserId,
     isHost,
     toast,
+    createPeerWith,
+    closePeerWith,
+    closeAllPeers,
+    drainIceQueue,
   ]);
 
   /* =========================================================
-     CONTROLS
+     Sincronizar streams remotos en los participants cuando
+     remoteStreams cambia (ej: un peer tarda en conectarse)
+  ========================================================= */
+  useEffect(() => {
+    setParticipants((prev) =>
+      prev.map((p) => ({
+        ...p,
+        stream: remoteStreams.get(p.id) ?? p.stream,
+      }))
+    );
+  }, [remoteStreams]);
+
+  /* =========================================================
+     CONTROLES DE MEDIA LOCAL
   ========================================================= */
 
   const toggleAudio = useCallback(() => {
     const s = localStreamRef.current;
     if (!s) return;
-
     s.getAudioTracks().forEach((t) => {
       t.enabled = !t.enabled;
       setAudioOn(t.enabled);
@@ -413,7 +642,6 @@ export function useDebateMedia(
   const toggleVideo = useCallback(() => {
     const s = localStreamRef.current;
     if (!s) return;
-
     s.getVideoTracks().forEach((t) => {
       t.enabled = !t.enabled;
       setVideoOn(t.enabled);
@@ -422,6 +650,8 @@ export function useDebateMedia(
 
   const stopMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    setLocalStream(null);
   }, []);
 
   /* =========================================================
@@ -436,7 +666,7 @@ export function useDebateMedia(
   );
 
   /* =========================================================
-     HELPERS
+     HELPERS DE EMISIÓN
   ========================================================= */
 
   const emit = useCallback(
@@ -536,7 +766,7 @@ export function useDebateMedia(
     updateSettings: (patch: Partial<RoomSettings>) =>
       setRoomSettings((prev) => ({ ...prev, ...patch })),
 
-    setRoomMode: (mode: "strict" | "free") =>
+    setRoomMode: (mode: "strict" | "free" | "normal") =>
       emit("debate-set-mode", { mode }),
 
     speakQueue,
@@ -571,13 +801,13 @@ export function useDebateMedia(
       tn?: string
     ) =>
       setActiveVote({
-        id:       crypto.randomUUID?.() || String(Date.now()),
+        id:         crypto.randomUUID?.() || String(Date.now()),
         type,
-        question: q,
-        options:  type === "yes_no" ? ["Sí", "No"] : ["Expulsar", "Cancelar"],
-        votes:    {},
-        endsAt:   Date.now() + ms,
-        targetId: tid,
+        question:   q,
+        options:    type === "yes_no" ? ["Sí", "No"] : ["Expulsar", "Cancelar"],
+        votes:      {},
+        endsAt:     Date.now() + ms,
+        targetId:   tid,
         targetName: tn,
       }),
 
