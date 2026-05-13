@@ -5,35 +5,58 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { createClient } from "@supabase/supabase-js";
+
 import routes from "../routes/index";
 
+// existentes
 import registerMatchmakingEvents from "../../realtime/events/matchmaking.events";
 import registerWebRTCEvents from "../../webrtc/webrtc.events";
 import registerChatEvents from "../../realtime/events/chat.events";
 import registerAdEvents from "../../ad/ad.events";
 import { matchmakingHandler } from "../../realtime/handlers/matchmaking.handler";
-import { createClient } from "@supabase/supabase-js";
 
-// ─── Supabase admin client (solo para verificar tokens) ───────────────────────
+// NUEVO debates
+import registerDebatesEvents from "../../realtime/debates/events/debates.events";
+import { debateHandler } from "../../realtime/handlers/debate.handler";
+// ─────────────────────────────────────────────────────────────
+// Supabase admin client
+// ─────────────────────────────────────────────────────────────
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// ─── Express ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Express
+// ─────────────────────────────────────────────────────────────
 const app = express();
 
-const ALLOWED_ORIGIN = process.env.FRONTEND_URL || "https://turrinder.com";
+const ALLOWED_ORIGIN =
+  process.env.FRONTEND_URL || "https://turrinder.com";
 
-app.use(cors({
-  origin: ALLOWED_ORIGIN,
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: ALLOWED_ORIGIN,
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 app.use("/api", routes);
 
-// ─── HTTP + Socket.IO ─────────────────────────────────────────────────────────
+// healthcheck opcional
+app.get("/health", (_, res) => {
+  res.status(200).json({
+    ok: true,
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// HTTP + Socket.IO
+// ─────────────────────────────────────────────────────────────
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
@@ -42,59 +65,90 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"],
     credentials: true,
   },
+
+  transports: ["websocket", "polling"],
+
+  pingInterval: 25000,
+  pingTimeout: 20000,
+
+  maxHttpBufferSize: 1e6,
 });
 
-// ─── Middleware de autenticación Socket.IO ────────────────────────────────────
-// Verifica el JWT de Supabase ANTES de aceptar cualquier conexión.
-// El cliente debe enviar el access_token en socket.auth.token
+// ─────────────────────────────────────────────────────────────
+// Auth middleware Socket.IO
+// ─────────────────────────────────────────────────────────────
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token as string | undefined;
 
     if (!token) {
-      return next(new Error("AUTH_REQUIRED: No se proporcionó token"));
+      return next(new Error("AUTH_REQUIRED"));
     }
 
-    // Verificar el token con Supabase — esto valida firma y expiración
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    const {
+      data: { user },
+      error,
+    } = await supabaseAdmin.auth.getUser(token);
 
     if (error || !user) {
-      return next(new Error("AUTH_INVALID: Token inválido o expirado"));
+      return next(new Error("AUTH_INVALID"));
     }
 
-    // Guardar el userId verificado en socket.data para usarlo en los handlers
-    // A partir de aquí, socket.data.userId es confiable — viene de Supabase
     socket.data.userId = user.id;
 
     next();
   } catch (err) {
-    console.error("[Auth Middleware] Error inesperado:", err);
-    next(new Error("AUTH_ERROR: Error interno de autenticación"));
+    console.error("[SOCKET AUTH ERROR]", err);
+    next(new Error("AUTH_ERROR"));
   }
 });
 
-// ─── Conexiones ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Connections
+// ─────────────────────────────────────────────────────────────
 io.on("connection", (socket) => {
-  console.log("🟢 Usuario conectado:", socket.id, "| UUID:", socket.data.userId);
+  const userId = socket.data.userId as string;
 
-  // ⚠️ ORDEN: Ad ANTES que Matchmaking.
-  // registerAdEvents intercepta "find-match" con el guard de AD_MODE.
-  // matchmaking.events también escucha "find-match" pero el guard del
-  // handler lo bloquea si está en AD_MODE — doble seguridad.
+  console.log("🟢 Socket conectado:", socket.id, "| user:", userId);
+
+  // IMPORTANTE:
+  // No rompemos lógica existente.
+  // Se mantienen tus módulos actuales.
   registerAdEvents(io, socket);
   registerMatchmakingEvents(io, socket);
   registerWebRTCEvents(io, socket);
   registerChatEvents(io, socket);
 
-  socket.on("disconnect", () => {
-    console.log("🔴 Usuario desconectado:", socket.id);
+  // NUEVO módulo separado debates
+  registerDebatesEvents(io, socket);
+
+  socket.on("disconnect", (reason) => {
+    console.log("🔴 Socket desconectado:", socket.id, "|", reason);
+
+    // lógica vieja
     matchmakingHandler.handleLeave(socket, io);
+
+    // lógica nueva debates
+    debateHandler.handleDisconnect(io, socket);
   });
 });
 
-// ─── Arranque ─────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
+// ─────────────────────────────────────────────────────────────
+// Limpieza automática cada 60s
+// ─────────────────────────────────────────────────────────────
+setInterval(() => {
+  try {
+    debateHandler.runMaintenance(io);
+  } catch (e) {
+    console.error("[Debates Maintenance Error]", e);
+  }
+}, 60_000);
+
+// ─────────────────────────────────────────────────────────────
+// Start
+// ─────────────────────────────────────────────────────────────
+const PORT = Number(process.env.PORT || 3001);
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Sistema único (API + Video) corriendo en el puerto ${PORT}`);
+  console.log(`🚀 Sistema único corriendo en puerto ${PORT}`);
 });
