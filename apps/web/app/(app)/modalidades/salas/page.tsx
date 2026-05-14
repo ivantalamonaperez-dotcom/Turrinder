@@ -887,6 +887,17 @@ function RoomCard({ room, userId, onJoin }: { room: Room; userId: string; onJoin
 // Reemplazá tu función RoomView por esta completa
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── RoomView rediseñado ──────────────────────────────────────────────────────
+// Cambios visuales:
+//   - Controles con íconos SVG + etiqueta, tooltips y estados activos
+//   - Sin recuadro dr-self-pip (eliminado)
+//   - Barra de controles flotante centrada con glassmorphism
+//   - Header más compacto y elegante
+//   - Animaciones de entrada y micro-interacciones en botones
+//   - Indicador de "hablando" más prominente
+//   - Toasts con animación slide-in desde la derecha
+// ─────────────────────────────────────────────────────────────────────────────
+
 function RoomView({
   room, currentUserId, currentUserName, currentUserAvatarUrl,
   currentUserRole, onLeave, closeRoom, setCount,
@@ -902,19 +913,17 @@ function RoomView({
 }) {
   const { socket } = useSocket();
 
-  // ── FIX: valor inicial solo para bootstrapping del hook ──────────────────────
+  // ── valor inicial solo para bootstrapping del hook ───────────────────────────
   const initialIsHost = room.host_id === currentUserId;
 
   const [toasts, setToasts] = useState<
     { id: string; msg: string; type: "info" | "warn" | "error" }[]
   >([]);
-
-  const [pinnedId, setPinnedId]       = useState<string | null>(null);
-  const [chatOpen, setChatOpen]       = useState(false);
+  const [pinnedId, setPinnedId]           = useState<string | null>(null);
+  const [chatOpen, setChatOpen]           = useState(false);
   const [hostPanelOpen, setHostPanelOpen] = useState(initialIsHost);
-  const [handRaised, setHandRaised]   = useState(false);
-
-  const selfVideoRef = useRef<HTMLVideoElement>(null);
+  const [handRaised, setHandRaised]       = useState(false);
+  const [leaveConfirm, setLeaveConfirm]   = useState(false);
 
   const toast = useCallback(
     (msg: string, type: "info" | "warn" | "error" = "info") => {
@@ -924,151 +933,70 @@ function RoomView({
     []
   );
 
-  // ── Hook (recibe initialIsHost para la conexión inicial) ─────────────────────
   const {
-    participants,
-    localStream,
-    videoOn,
-    audioOn,
-    blockedByHost,
-    presenceCount,
-    chatMessages,
-    stopMedia,
-    toggleVideo,
-    toggleAudio,
-    sendChat,
-    notifyRoomClosed,
-    muteParticipant,
-    unmuteParticipant,
-    camOffParticipant,
-    camOnParticipant,
-    kickParticipant,
-    banParticipant,
-    muteAll,
-    tempMuteParticipant,
-    shadowMuteParticipant,
-    cohosts,
-    hostId,
-    assignCohost,
-    transferHost,
-    roomSettings,
-    updateSettings,
-    setRoomMode,
-    speakQueue,
-    currentSpeaker,
-    speakEndsAt,
-    requestSpeak,
-    approveSpeak,
-    rejectSpeak,
-    cutSpeaker,
-    extendSpeakTime,
-    raisedHands,
-    raiseHand,
-    activeVote,
-    startVote,
-    castVote,
-    modLogs,
-    tempMutes,
+    participants, localStream, videoOn, audioOn, blockedByHost,
+    presenceCount, chatMessages, stopMedia, toggleVideo, toggleAudio,
+    sendChat, notifyRoomClosed, muteParticipant, unmuteParticipant,
+    camOffParticipant, camOnParticipant, kickParticipant, banParticipant,
+    muteAll, tempMuteParticipant, shadowMuteParticipant, cohosts, hostId,
+    assignCohost, transferHost, roomSettings, updateSettings, setRoomMode,
+    speakQueue, currentSpeaker, speakEndsAt, requestSpeak, approveSpeak,
+    rejectSpeak, cutSpeaker, extendSpeakTime, raisedHands, raiseHand,
+    activeVote, startVote, castVote, modLogs, tempMutes,
   } = useDebateMedia(
-    room.id,
-    initialIsHost,
-    currentUserId,
-    currentUserName,
-    currentUserAvatarUrl,
-    currentUserRole,
-    toast,
-    useCallback(() => {
-      onLeave();
-    }, [onLeave])
+    room.id, initialIsHost, currentUserId, currentUserName,
+    currentUserAvatarUrl, currentUserRole, toast,
+    useCallback(() => { onLeave(); }, [onLeave])
   );
 
-  // ── FIX: isHost reactivo derivado del hostId que devuelve el socket ──────────
-  // Mientras hostId === "" (antes del primer debate-room-state), usa room.host_id
+  // ── isHost reactivo ──────────────────────────────────────────────────────────
   const isHost = hostId !== ""
     ? hostId === currentUserId
     : room.host_id === currentUserId;
 
   const canModerate = isHost || cohosts.has(currentUserId);
 
-  // ── FIX: abrir el panel automáticamente cuando este usuario recibe el host ───
+  // ── abrir panel cuando se recibe el host ────────────────────────────────────
   useEffect(() => {
-    if (isHost) {
-      setHostPanelOpen(true);
-    }
+    if (isHost) setHostPanelOpen(true);
   }, [isHost]);
 
-  // ─────────────────────────
-  // sync count
-  // ─────────────────────────
+  // ── sync count ───────────────────────────────────────────────────────────────
   useEffect(() => {
     setCount(room.id, presenceCount);
   }, [presenceCount, room.id, setCount]);
 
-  // ─────────────────────────
-  // create backend debate room
-  // ─────────────────────────
+  // ── create backend debate room (solo creador original) ───────────────────────
   useEffect(() => {
     if (!initialIsHost || !socket?.connected) return;
-
     socket.emit("debate-create-room", {
-      roomId:    room.id,
-      hostName:  currentUserName,
-      avatarUrl: currentUserAvatarUrl,
-      maxPeople: room.max_people,
+      roomId: room.id, hostName: currentUserName,
+      avatarUrl: currentUserAvatarUrl, maxPeople: room.max_people,
     });
-  }, [
-    initialIsHost,
-    socket,
-    room.id,
-    room.max_people,
-    currentUserId,
-    currentUserName,
-    currentUserAvatarUrl,
-  ]);
+  }, [initialIsHost, socket, room.id, room.max_people, currentUserId, currentUserName, currentUserAvatarUrl]);
 
-  // ─────────────────────────
-  // host unload cleanup
-  // ─────────────────────────
+  // ── host unload cleanup ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!isHost) return;
-
-    const unload = () => {
-      socket?.emit("debate-close-room", { roomId: room.id });
-    };
-
+    const unload = () => socket?.emit("debate-close-room", { roomId: room.id });
     window.addEventListener("beforeunload", unload);
     return () => window.removeEventListener("beforeunload", unload);
   }, [isHost, room.id, socket]);
 
-  // ─────────────────────────
-  // local stream preview
-  // ─────────────────────────
-  useEffect(() => {
-    if (selfVideoRef.current && localStream) {
-      selfVideoRef.current.srcObject = localStream;
-    }
-  }, [localStream]);
-
-  // ─────────────────────────
-  // shortcuts
-  // ─────────────────────────
+  // ── shortcuts ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!canModerate) return;
-
     const key = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.ctrlKey && e.key === "m") { muteAll(true);  e.preventDefault(); }
       if (e.ctrlKey && e.key === "u") { muteAll(false); e.preventDefault(); }
       if (e.ctrlKey && e.key === "p") { setHostPanelOpen((p) => !p); e.preventDefault(); }
     };
-
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [canModerate, muteAll]);
 
-  // ─────────────────────────
-  // leave
-  // ─────────────────────────
+  // ── leave ────────────────────────────────────────────────────────────────────
   const handleLeave = useCallback(async () => {
     if (isHost) {
       notifyRoomClosed();
@@ -1090,33 +1018,20 @@ function RoomView({
     if (next && !canModerate) requestSpeak();
   }, [handRaised, raiseHand, canModerate, requestSpeak]);
 
-  // ─────────────────────────
-  // self participant
-  // ─────────────────────────
-  const selfParticipant = useMemo(
-    (): Participant => ({
-      id:             currentUserId,
-      name:           currentUserName,
-      avatarUrl:      currentUserAvatarUrl,
-      role:           currentUserRole,
-      hasVideo:       videoOn,
-      hasAudio:       audioOn,
-      mutedByHost:    blockedByHost.mic,
-      camOffByHost:   blockedByHost.cam,
-      isHost,
-      isCohost:       cohosts.has(currentUserId),
-      isSpeaking:     currentSpeaker === currentUserId,
-      handRaised,
-      shadowMuted:    false,
-      tempMutedUntil: null,
-      stream:         localStream ?? undefined,
-    }),
-    [
-      currentUserId, currentUserName, currentUserAvatarUrl, currentUserRole,
-      videoOn, audioOn, blockedByHost, isHost, cohosts,
-      currentSpeaker, handRaised, localStream,
-    ]
-  );
+  // ── self participant ─────────────────────────────────────────────────────────
+  const selfParticipant = useMemo((): Participant => ({
+    id: currentUserId, name: currentUserName, avatarUrl: currentUserAvatarUrl,
+    role: currentUserRole, hasVideo: videoOn, hasAudio: audioOn,
+    mutedByHost: blockedByHost.mic, camOffByHost: blockedByHost.cam,
+    isHost, isCohost: cohosts.has(currentUserId),
+    isSpeaking: currentSpeaker === currentUserId,
+    handRaised, shadowMuted: false, tempMutedUntil: null,
+    stream: localStream ?? undefined,
+  }), [
+    currentUserId, currentUserName, currentUserAvatarUrl, currentUserRole,
+    videoOn, audioOn, blockedByHost, isHost, cohosts,
+    currentSpeaker, handRaised, localStream,
+  ]);
 
   const allParticipants = useMemo(
     () => [selfParticipant, ...participants],
@@ -1127,161 +1042,968 @@ function RoomView({
   const visible = pinned   ? allParticipants.filter((p) => p.id !== pinned.id) : allParticipants;
   const { cols } = gridLayout(visible.length);
 
-  // ─────────────────────────
-  // render
-  // ─────────────────────────
+  const currentMode = roomSettings.strictMode ? "strict" : roomSettings.freeMode ? "libre" : null;
+  const iAmSpeaking = currentSpeaker === currentUserId;
+
+  // ── render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="dr-room-view">
-      {/* TOASTS */}
-      <div className="dr-toasts-stack">
-        {toasts.map((t) => (
-          <Toast
-            key={t.id}
-            message={t.msg}
-            type={t.type}
-            onDone={() => setToasts((p) => p.filter((x) => x.id !== t.id))}
-          />
-        ))}
-      </div>
+    <>
+      {/* ── ESTILOS DE LA SALA ── */}
+      <style>{`
+        /* ── ROOM VIEW BASE ── */
+        .rv-root {
+          display: flex;
+          flex-direction: column;
+          height: 100dvh;
+          overflow: hidden;
+          position: relative;
+          z-index: 2;
+          background: #020810;
+          font-family: 'DM Sans', sans-serif;
+        }
 
-      {/* HEADER */}
-      <div className="dr-room-header">
-        <div className="dr-room-meta">
-          <span className="dr-live-dot" />
-          <span>{room.title}</span>
+        /* ── HEADER ── */
+        .rv-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 20px;
+          height: 56px;
+          border-bottom: 1px solid rgba(84,199,248,0.07);
+          background: rgba(2,8,16,0.95);
+          backdrop-filter: blur(20px);
+          flex-shrink: 0;
+          z-index: 20;
+          position: relative;
+          animation: rv-slide-down 0.4s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes rv-slide-down {
+          from { opacity: 0; transform: translateY(-100%); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .rv-header-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+        .rv-live-indicator {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 5px 10px;
+          background: rgba(74,222,128,0.08);
+          border: 1px solid rgba(74,222,128,0.2);
+          border-radius: 100px;
+          flex-shrink: 0;
+        }
+        .rv-live-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #4ade80;
+          box-shadow: 0 0 8px rgba(74,222,128,0.8);
+          animation: rv-pulse 2s ease-in-out infinite;
+        }
+        @keyframes rv-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.5; transform: scale(0.8); }
+        }
+        .rv-live-text {
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 1.5px;
+          color: #4ade80;
+        }
+        .rv-title {
+          font-family: 'Syne', sans-serif;
+          font-size: 14px;
+          font-weight: 800;
+          color: #f0f6ff;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 280px;
+        }
+        .rv-mode-badge {
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          padding: 3px 8px;
+          border-radius: 6px;
+          flex-shrink: 0;
+        }
+        .rv-mode-badge.strict {
+          background: rgba(248,113,113,0.12);
+          border: 1px solid rgba(248,113,113,0.3);
+          color: #f87171;
+        }
+        .rv-mode-badge.libre {
+          background: rgba(74,222,128,0.1);
+          border: 1px solid rgba(74,222,128,0.3);
+          color: #4ade80;
+        }
+        .rv-header-right {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .rv-count-pill {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 12px;
+          font-weight: 600;
+          color: rgba(180,215,240,0.5);
+          background: rgba(84,199,248,0.04);
+          border: 1px solid rgba(84,199,248,0.09);
+          border-radius: 100px;
+          padding: 4px 11px;
+          white-space: nowrap;
+        }
+        .rv-count-icon { font-size: 12px; }
+        .rv-hdr-btn {
+          position: relative;
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          border: 1px solid rgba(84,199,248,0.12);
+          background: rgba(84,199,248,0.05);
+          color: rgba(180,215,240,0.55);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.18s;
+        }
+        .rv-hdr-btn:hover {
+          background: rgba(84,199,248,0.12);
+          color: rgba(180,215,240,0.9);
+          border-color: rgba(84,199,248,0.25);
+        }
+        .rv-hdr-btn.active {
+          background: rgba(84,199,248,0.14);
+          border-color: rgba(84,199,248,0.4);
+          color: #54c7f8;
+        }
+        .rv-hdr-btn-badge {
+          position: absolute;
+          top: -5px;
+          right: -5px;
+          min-width: 17px;
+          height: 17px;
+          border-radius: 9px;
+          background: #54c7f8;
+          color: #020810;
+          font-size: 9px;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 3px;
+          animation: rv-pop 0.25s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes rv-pop {
+          from { transform: scale(0); }
+          to   { transform: scale(1); }
+        }
+        .rv-leave-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 14px;
+          border-radius: 10px;
+          border: 1px solid rgba(248,113,113,0.2);
+          background: rgba(248,113,113,0.07);
+          color: #f87171;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.18s;
+          font-family: 'DM Sans', sans-serif;
+          white-space: nowrap;
+        }
+        .rv-leave-btn:hover {
+          background: rgba(248,113,113,0.15);
+          border-color: rgba(248,113,113,0.45);
+          box-shadow: 0 0 16px rgba(248,113,113,0.15);
+        }
+        .rv-leave-btn.confirming {
+          background: rgba(248,113,113,0.2);
+          border-color: rgba(248,113,113,0.6);
+          animation: rv-shake 0.3s ease;
+        }
+        @keyframes rv-shake {
+          0%,100% { transform: translateX(0); }
+          25%      { transform: translateX(-3px); }
+          75%      { transform: translateX(3px); }
+        }
+
+        /* ── BODY ── */
+        .rv-body {
+          flex: 1;
+          display: flex;
+          overflow: hidden;
+          position: relative;
+        }
+        .rv-content {
+          display: flex;
+          flex: 1;
+          overflow: hidden;
+          transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+        }
+
+        /* ── SPEAKER BANNER ── */
+        .rv-speaker-banner {
+          position: absolute;
+          top: 10px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 30;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 16px;
+          background: rgba(74,222,128,0.12);
+          border: 1px solid rgba(74,222,128,0.35);
+          border-radius: 100px;
+          backdrop-filter: blur(12px);
+          animation: rv-banner-in 0.35s cubic-bezier(0.34,1.56,0.64,1);
+          box-shadow: 0 4px 20px rgba(74,222,128,0.15);
+        }
+        @keyframes rv-banner-in {
+          from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.9); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+        }
+        .rv-speaker-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #4ade80;
+          animation: rv-pulse 1s ease-in-out infinite;
+          box-shadow: 0 0 8px rgba(74,222,128,0.8);
+        }
+        .rv-speaker-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: #4ade80;
+          letter-spacing: 0.3px;
+        }
+        .rv-speaker-name {
+          font-size: 12px;
+          font-weight: 600;
+          color: rgba(240,246,255,0.85);
+          max-width: 140px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* ── VIDEO AREA ── */
+        .rv-video-area {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          position: relative;
+          padding-bottom: 80px; /* espacio para controles flotantes */
+        }
+        .rv-meet-grid {
+          flex: 1;
+          display: grid;
+          gap: 8px;
+          padding: 12px;
+          overflow: hidden;
+          grid-template-columns: repeat(var(--grid-cols, 2), 1fr);
+          align-content: center;
+          animation: rv-grid-in 0.5s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes rv-grid-in {
+          from { opacity: 0; transform: scale(0.97); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        .rv-pinned-layout {
+          flex: 1;
+          display: flex;
+          gap: 8px;
+          padding: 12px;
+          overflow: hidden;
+        }
+        .rv-pinned-stage { flex: 1; min-width: 0; }
+        .rv-pinned-rail {
+          width: 150px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          overflow-y: auto;
+          flex-shrink: 0;
+        }
+
+        /* ── CONTROLS BAR (flotante, centrada) ── */
+        .rv-controls {
+          position: absolute;
+          bottom: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 40;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 10px 16px;
+          background: rgba(4,12,26,0.88);
+          border: 1px solid rgba(84,199,248,0.12);
+          border-radius: 20px;
+          backdrop-filter: blur(24px);
+          box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(84,199,248,0.04);
+          animation: rv-controls-in 0.5s 0.2s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes rv-controls-in {
+          from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .rv-controls-divider {
+          width: 1px;
+          height: 28px;
+          background: rgba(84,199,248,0.1);
+          flex-shrink: 0;
+        }
+
+        /* ── CONTROL BUTTON ── */
+        .rv-ctrl-btn {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 3px;
+          padding: 8px 12px;
+          border-radius: 14px;
+          border: 1px solid transparent;
+          background: transparent;
+          color: rgba(180,215,240,0.65);
+          cursor: pointer;
+          transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+          font-family: 'DM Sans', sans-serif;
+          min-width: 56px;
+        }
+        .rv-ctrl-btn:hover {
+          background: rgba(84,199,248,0.08);
+          border-color: rgba(84,199,248,0.15);
+          color: rgba(180,215,240,0.95);
+          transform: translateY(-1px);
+        }
+        .rv-ctrl-btn:active {
+          transform: translateY(0) scale(0.96);
+        }
+        .rv-ctrl-btn.on {
+          color: #f0f6ff;
+        }
+        .rv-ctrl-btn.off {
+          color: rgba(248,113,113,0.7);
+        }
+        .rv-ctrl-btn.off .rv-ctrl-icon-wrap {
+          background: rgba(248,113,113,0.1);
+          border-color: rgba(248,113,113,0.2);
+        }
+        .rv-ctrl-btn.active-state {
+          color: #54c7f8;
+          background: rgba(84,199,248,0.1);
+          border-color: rgba(84,199,248,0.3);
+        }
+        .rv-ctrl-btn.hand-active {
+          color: #fbbf24;
+          background: rgba(251,191,36,0.1);
+          border-color: rgba(251,191,36,0.3);
+          animation: rv-hand-bounce 0.6s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes rv-hand-bounce {
+          0%   { transform: translateY(0) rotate(0deg); }
+          30%  { transform: translateY(-4px) rotate(-10deg); }
+          60%  { transform: translateY(-2px) rotate(5deg); }
+          100% { transform: translateY(0) rotate(0deg); }
+        }
+        .rv-ctrl-btn.danger-btn {
+          color: #f87171;
+          border-color: rgba(248,113,113,0.2);
+          background: rgba(248,113,113,0.05);
+        }
+        .rv-ctrl-btn.danger-btn:hover {
+          background: rgba(248,113,113,0.14);
+          border-color: rgba(248,113,113,0.4);
+          box-shadow: 0 0 16px rgba(248,113,113,0.15);
+        }
+        .rv-ctrl-icon-wrap {
+          width: 38px;
+          height: 38px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.06);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.18s;
+        }
+        .rv-ctrl-btn:hover .rv-ctrl-icon-wrap {
+          background: rgba(84,199,248,0.1);
+          border-color: rgba(84,199,248,0.2);
+        }
+        .rv-ctrl-btn.off .rv-ctrl-icon-wrap {
+          background: rgba(248,113,113,0.08);
+          border-color: rgba(248,113,113,0.18);
+        }
+        .rv-ctrl-btn.active-state .rv-ctrl-icon-wrap {
+          background: rgba(84,199,248,0.12);
+          border-color: rgba(84,199,248,0.35);
+        }
+        .rv-ctrl-btn.hand-active .rv-ctrl-icon-wrap {
+          background: rgba(251,191,36,0.12);
+          border-color: rgba(251,191,36,0.3);
+        }
+        .rv-ctrl-label {
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.2px;
+          white-space: nowrap;
+        }
+        .rv-ctrl-btn-dot {
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #4ade80;
+          box-shadow: 0 0 6px rgba(74,222,128,0.8);
+          animation: rv-pulse 2s infinite;
+        }
+
+        /* ── SPEAK TIMER IN CONTROLS ── */
+        .rv-speak-timer-wrap {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: rgba(74,222,128,0.08);
+          border: 1px solid rgba(74,222,128,0.25);
+          border-radius: 12px;
+          color: #4ade80;
+          font-size: 12px;
+          font-weight: 700;
+          animation: rv-pop 0.3s cubic-bezier(0.34,1.56,0.64,1);
+        }
+
+        /* ── TOASTS REDISEÑADOS ── */
+        .rv-toasts-stack {
+          position: fixed;
+          top: 70px;
+          right: 16px;
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          pointer-events: none;
+        }
+        .rv-toast {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 11px 16px;
+          border-radius: 13px;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.4;
+          backdrop-filter: blur(20px);
+          max-width: 300px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+          animation: rv-toast-in 0.35s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes rv-toast-in {
+          from { opacity: 0; transform: translateX(20px) scale(0.95); }
+          to   { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        .rv-toast-info  {
+          background: rgba(84,199,248,0.14);
+          border: 1px solid rgba(84,199,248,0.28);
+          color: #e8f6ff;
+        }
+        .rv-toast-warn  {
+          background: rgba(251,191,36,0.12);
+          border: 1px solid rgba(251,191,36,0.3);
+          color: #fef3c7;
+        }
+        .rv-toast-error {
+          background: rgba(248,113,113,0.12);
+          border: 1px solid rgba(248,113,113,0.3);
+          color: #fee2e2;
+        }
+        .rv-toast-icon { font-size: 16px; flex-shrink: 0; }
+
+        /* ── LEAVE CONFIRM OVERLAY ── */
+        .rv-confirm-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 500;
+          background: rgba(0,0,0,0.6);
+          backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          animation: rv-fadein 0.2s ease;
+        }
+        @keyframes rv-fadein { from { opacity:0; } to { opacity:1; } }
+        .rv-confirm-card {
+          background: rgba(4,12,26,0.98);
+          border: 1px solid rgba(84,199,248,0.12);
+          border-radius: 20px;
+          padding: 28px;
+          max-width: 340px;
+          width: 90%;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+          animation: rv-pop 0.35s cubic-bezier(0.34,1.56,0.64,1);
+          text-align: center;
+        }
+        .rv-confirm-icon {
+          font-size: 36px;
+          margin-bottom: 12px;
+          display: block;
+        }
+        .rv-confirm-title {
+          font-family: 'Syne', sans-serif;
+          font-size: 18px;
+          font-weight: 800;
+          color: #f0f6ff;
+          margin-bottom: 8px;
+        }
+        .rv-confirm-text {
+          font-size: 13px;
+          color: rgba(180,215,240,0.5);
+          margin-bottom: 20px;
+          line-height: 1.6;
+        }
+        .rv-confirm-actions {
+          display: flex;
+          gap: 10px;
+        }
+        .rv-confirm-cancel {
+          flex: 1;
+          padding: 11px;
+          border-radius: 12px;
+          border: 1px solid rgba(84,199,248,0.12);
+          background: rgba(84,199,248,0.04);
+          color: rgba(180,215,240,0.55);
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.16s;
+          font-family: 'DM Sans', sans-serif;
+        }
+        .rv-confirm-cancel:hover {
+          background: rgba(84,199,248,0.1);
+          color: rgba(180,215,240,0.9);
+        }
+        .rv-confirm-leave {
+          flex: 1;
+          padding: 11px;
+          border-radius: 12px;
+          border: 1px solid rgba(248,113,113,0.3);
+          background: rgba(248,113,113,0.1);
+          color: #f87171;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.16s;
+          font-family: 'DM Sans', sans-serif;
+        }
+        .rv-confirm-leave:hover {
+          background: rgba(248,113,113,0.2);
+          box-shadow: 0 0 20px rgba(248,113,113,0.2);
+        }
+
+        /* ── HOST PANEL SLIDE-IN ── */
+        .rv-host-panel-wrap {
+          animation: rv-panel-in 0.35s cubic-bezier(0.16,1,0.3,1);
+        }
+        @keyframes rv-panel-in {
+          from { opacity: 0; transform: translateX(24px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ── CHAT SLIDE-IN ── */
+        .rv-chat-wrap {
+          animation: rv-chat-in 0.3s cubic-bezier(0.16,1,0.3,1);
+        }
+        @keyframes rv-chat-in {
+          from { opacity: 0; transform: translateX(16px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        @media (max-width: 600px) {
+          .rv-controls { gap: 2px; padding: 8px 10px; }
+          .rv-ctrl-btn { padding: 6px 8px; min-width: 44px; }
+          .rv-ctrl-icon-wrap { width: 32px; height: 32px; border-radius: 10px; }
+          .rv-ctrl-label { font-size: 9px; }
+          .rv-title { max-width: 140px; }
+        }
+      `}</style>
+
+      {/* ── CONFIRM OVERLAY ── */}
+      {leaveConfirm && (
+        <div className="rv-confirm-overlay" onClick={() => setLeaveConfirm(false)}>
+          <div className="rv-confirm-card" onClick={e => e.stopPropagation()}>
+            <span className="rv-confirm-icon">{isHost ? "🔒" : "🚪"}</span>
+            <div className="rv-confirm-title">
+              {isHost ? "¿Cerrar la sala?" : "¿Salir del debate?"}
+            </div>
+            <div className="rv-confirm-text">
+              {isHost
+                ? "Todos los participantes serán desconectados y la sala se cerrará permanentemente."
+                : "Podés volver a unirte si la sala sigue activa."}
+            </div>
+            <div className="rv-confirm-actions">
+              <button className="rv-confirm-cancel" onClick={() => setLeaveConfirm(false)}>
+                Cancelar
+              </button>
+              <button className="rv-confirm-leave" onClick={() => { setLeaveConfirm(false); handleLeave(); }}>
+                {isHost ? "Cerrar sala" : "Salir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="rv-root">
+        {/* ── TOASTS ── */}
+        <div className="rv-toasts-stack">
+          {toasts.map((t) => (
+            <div key={t.id} className={`rv-toast rv-toast-${t.type}`}>
+              <span className="rv-toast-icon">
+                {t.type === "info" ? "ℹ️" : t.type === "warn" ? "⚠️" : "❌"}
+              </span>
+              <span>{t.msg}</span>
+              {/* auto-dismiss gestionado por el componente Toast existente — acá solo visual */}
+            </div>
+          ))}
+        </div>
+        {/* usar el Toast original para el dismiss funcional */}
+        <div style={{ display: "none" }}>
+          {toasts.map((t) => (
+            <Toast key={t.id} message={t.msg} type={t.type}
+              onDone={() => setToasts((p) => p.filter((x) => x.id !== t.id))} />
+          ))}
         </div>
 
-        <div className="dr-room-header-right">
-          <span>{presenceCount}/{room.max_people}</span>
-          <button onClick={() => setChatOpen((p) => !p)}>💬</button>
-          <button onClick={handleLeave}>{isHost ? "Cerrar sala" : "Salir"}</button>
+        {/* ── HEADER ── */}
+        <div className="rv-header">
+          <div className="rv-header-left">
+            <div className="rv-live-indicator">
+              <span className="rv-live-dot" />
+              <span className="rv-live-text">EN VIVO</span>
+            </div>
+            <span className="rv-title">{room.title}</span>
+            {currentMode && (
+              <span className={`rv-mode-badge ${currentMode}`}>
+                {currentMode === "strict" ? "🔒 ESTRICTO" : "🆓 LIBRE"}
+              </span>
+            )}
+            {isHost && (
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "1px", padding: "3px 8px", borderRadius: 6, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.3)", color: "#fbbf24" }}>
+                👑 HOST
+              </span>
+            )}
+          </div>
+
+          <div className="rv-header-right">
+            <div className="rv-count-pill">
+              <span className="rv-count-icon">👥</span>
+              {presenceCount}/{room.max_people}
+            </div>
+
+            {/* Chat toggle */}
+            <button
+              className={`rv-hdr-btn ${chatOpen ? "active" : ""}`}
+              onClick={() => setChatOpen(p => !p)}
+              title="Chat"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+            </button>
+
+            {/* Moderación toggle (solo moderadores) */}
+            {canModerate && (
+              <button
+                className={`rv-hdr-btn ${hostPanelOpen ? "active" : ""}`}
+                onClick={() => setHostPanelOpen(p => !p)}
+                title="Panel de moderación"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                {speakQueue.length > 0 && (
+                  <span className="rv-hdr-btn-badge">{speakQueue.length}</span>
+                )}
+              </button>
+            )}
+
+            {/* Salir */}
+            <button className="rv-leave-btn" onClick={() => setLeaveConfirm(true)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              {isHost ? "Cerrar sala" : "Salir"}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* BODY */}
-      <div className="dr-room-body">
-        <div className={`dr-room-content ${hostPanelOpen && canModerate ? "with-panel" : ""}`}>
+        {/* ── BODY ── */}
+        <div className="rv-body">
+          <div className={`dr-room-content ${hostPanelOpen && canModerate ? "with-panel" : ""}`}>
 
-          {/* VIDEO AREA */}
-          <div className="dr-video-area">
-            {pinned && (
-              <div className="dr-pinned-stage">
-                <VideoTile
-                  participant={pinned}
-                  isPinned
-                  isLocalSelf={pinned.id === currentUserId}
-                  canModerate={canModerate}
-                  isSpeakerHighlight={currentSpeaker === pinned.id}
-                  onPin={()    => togglePin(pinned.id)}
-                  onMute={()   => muteParticipant(pinned.id)}
-                  onUnmute={() => unmuteParticipant(pinned.id)}
-                  onCamOff={() => camOffParticipant(pinned.id)}
-                  onCamOn={()  => camOnParticipant(pinned.id)}
-                  onKick={()   => kickParticipant(pinned.id)}
-                  onBan={()    => banParticipant(pinned.id)}
+            {/* VIDEO AREA */}
+            <div className="rv-video-area">
+
+              {/* Banner hablante actual */}
+              {currentSpeaker && (
+                <div className="rv-speaker-banner">
+                  <span className="rv-speaker-dot" />
+                  <span className="rv-speaker-label">Hablando:</span>
+                  <span className="rv-speaker-name">
+                    {allParticipants.find(p => p.id === currentSpeaker)?.name ?? "..."}
+                  </span>
+                  {speakEndsAt && <SpeakTimer endsAt={speakEndsAt} />}
+                </div>
+              )}
+
+              {pinned ? (
+                <div className="rv-pinned-layout">
+                  <div className="rv-pinned-stage">
+                    <VideoTile
+                      participant={pinned} isPinned
+                      isLocalSelf={pinned.id === currentUserId}
+                      canModerate={canModerate}
+                      isSpeakerHighlight={currentSpeaker === pinned.id}
+                      onPin={() => togglePin(pinned.id)}
+                      onMute={() => muteParticipant(pinned.id)}
+                      onUnmute={() => unmuteParticipant(pinned.id)}
+                      onCamOff={() => camOffParticipant(pinned.id)}
+                      onCamOn={() => camOnParticipant(pinned.id)}
+                      onKick={() => kickParticipant(pinned.id)}
+                      onBan={() => banParticipant(pinned.id)}
+                    />
+                  </div>
+                  <div className="rv-pinned-rail">
+                    {visible.map(p => (
+                      <VideoTile key={p.id} participant={p}
+                        isLocalSelf={p.id === currentUserId}
+                        canModerate={canModerate}
+                        isSpeakerHighlight={currentSpeaker === p.id}
+                        onPin={() => togglePin(p.id)}
+                        onMute={() => muteParticipant(p.id)}
+                        onUnmute={() => unmuteParticipant(p.id)}
+                        onCamOff={() => camOffParticipant(p.id)}
+                        onCamOn={() => camOnParticipant(p.id)}
+                        onKick={() => kickParticipant(p.id)}
+                        onBan={() => banParticipant(p.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="rv-meet-grid"
+                  style={{ "--grid-cols": cols } as React.CSSProperties}
+                >
+                  {visible.map(p => (
+                    <VideoTile key={p.id} participant={p}
+                      isLocalSelf={p.id === currentUserId}
+                      canModerate={canModerate}
+                      isSpeakerHighlight={currentSpeaker === p.id}
+                      onPin={() => togglePin(p.id)}
+                      onMute={() => muteParticipant(p.id)}
+                      onUnmute={() => unmuteParticipant(p.id)}
+                      onCamOff={() => camOffParticipant(p.id)}
+                      onCamOn={() => camOnParticipant(p.id)}
+                      onKick={() => kickParticipant(p.id)}
+                      onBan={() => banParticipant(p.id)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* ── CONTROLES FLOTANTES ── */}
+              <div className="rv-controls">
+
+                {/* Micrófono */}
+                <button
+                  className={`rv-ctrl-btn ${audioOn && !blockedByHost.mic ? "on" : "off"}`}
+                  onClick={toggleAudio}
+                  disabled={blockedByHost.mic}
+                  title={blockedByHost.mic ? "Silenciado por el host" : audioOn ? "Silenciar micrófono" : "Activar micrófono"}
+                >
+                  <div className="rv-ctrl-icon-wrap">
+                    {audioOn && !blockedByHost.mic ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span className="rv-ctrl-label">{audioOn && !blockedByHost.mic ? "Mic ON" : "Mic OFF"}</span>
+                </button>
+
+                {/* Cámara */}
+                <button
+                  className={`rv-ctrl-btn ${videoOn && !blockedByHost.cam ? "on" : "off"}`}
+                  onClick={toggleVideo}
+                  disabled={blockedByHost.cam}
+                  title={blockedByHost.cam ? "Cámara bloqueada por el host" : videoOn ? "Apagar cámara" : "Encender cámara"}
+                >
+                  <div className="rv-ctrl-icon-wrap">
+                    {videoOn && !blockedByHost.cam ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="1" y1="1" x2="23" y2="23"/><path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34m-7.72-2.06a4 4 0 1 1-5.56-5.56"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span className="rv-ctrl-label">{videoOn && !blockedByHost.cam ? "Cámara ON" : "Cámara OFF"}</span>
+                </button>
+
+                <div className="rv-controls-divider" />
+
+                {/* Levantar mano (solo no-moderadores) */}
+                {!canModerate && (
+                  <button
+                    className={`rv-ctrl-btn ${handRaised ? "hand-active" : ""}`}
+                    onClick={handleRaiseHand}
+                    title={handRaised ? "Bajar mano" : "Pedir turno para hablar"}
+                  >
+                    <div className="rv-ctrl-icon-wrap">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+                      </svg>
+                      {handRaised && <span className="rv-ctrl-btn-dot" />}
+                    </div>
+                    <span className="rv-ctrl-label">{handRaised ? "Bajar mano" : "Pedir turno"}</span>
+                  </button>
+                )}
+
+                {/* Timer de habla (cuando es el speaker) */}
+                {iAmSpeaking && speakEndsAt && (
+                  <div className="rv-speak-timer-wrap">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <SpeakTimer endsAt={speakEndsAt} />
+                  </div>
+                )}
+
+                {/* Micrófono activo al hablar */}
+                {iAmSpeaking && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#4ade80", padding: "4px 10px", background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: 8 }}>
+                    🎙️ Hablando
+                  </span>
+                )}
+
+                <div className="rv-controls-divider" />
+
+                {/* Chat */}
+                <button
+                  className={`rv-ctrl-btn ${chatOpen ? "active-state" : ""}`}
+                  onClick={() => setChatOpen(p => !p)}
+                  title="Abrir/cerrar chat"
+                >
+                  <div className="rv-ctrl-icon-wrap">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <span className="rv-ctrl-label">Chat</span>
+                </button>
+
+                {/* Panel moderación (solo moderadores, versión compacta) */}
+                {canModerate && (
+                  <button
+                    className={`rv-ctrl-btn ${hostPanelOpen ? "active-state" : ""}`}
+                    onClick={() => setHostPanelOpen(p => !p)}
+                    title="Panel de moderación (Ctrl+P)"
+                  >
+                    <div className="rv-ctrl-icon-wrap">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      </svg>
+                      {speakQueue.length > 0 && <span className="rv-ctrl-btn-dot" style={{ background: "#fbbf24", boxShadow: "0 0 6px rgba(251,191,36,0.8)" }} />}
+                    </div>
+                    <span className="rv-ctrl-label">Moderar</span>
+                  </button>
+                )}
+
+              </div>
+            </div>
+
+            {/* HOST PANEL */}
+            {hostPanelOpen && canModerate && (
+              <div className="rv-host-panel-wrap">
+                <HostPanel
+                  allParticipants={allParticipants}
+                  speakQueue={speakQueue}
+                  raisedHands={raisedHands}
+                  currentSpeaker={currentSpeaker}
+                  speakEndsAt={speakEndsAt}
+                  cohosts={cohosts}
+                  roomSettings={roomSettings}
+                  modLogs={modLogs}
+                  tempMutes={tempMutes}
+                  activeVote={activeVote}
+                  hostId={hostId}
+                  userId={currentUserId}
+                  onMute={muteParticipant}
+                  onUnmute={unmuteParticipant}
+                  onCamOff={camOffParticipant}
+                  onCamOn={camOnParticipant}
+                  onKick={kickParticipant}
+                  onBan={banParticipant}
+                  onTempMute={tempMuteParticipant}
+                  onShadowMute={shadowMuteParticipant}
+                  onApprove={approveSpeak}
+                  onReject={rejectSpeak}
+                  onCut={cutSpeaker}
+                  onExtend={extendSpeakTime}
+                  onMuteAll={muteAll}
+                  onSetMode={setRoomMode}
+                  onUpdateSettings={updateSettings}
+                  onAssignCohost={assignCohost}
+                  onTransferHost={transferHost}
+                  onStartVote={startVote}
+                  onCastVote={castVote}
                 />
               </div>
             )}
-
-            <div
-              className="dr-meet-grid"
-              style={{ "--grid-cols": cols } as React.CSSProperties}
-            >
-              {visible.map((p) => (
-                <VideoTile
-                  key={p.id}
-                  participant={p}
-                  isLocalSelf={p.id === currentUserId}
-                  canModerate={canModerate}
-                  isSpeakerHighlight={currentSpeaker === p.id}
-                  onPin={()    => togglePin(p.id)}
-                  onMute={()   => muteParticipant(p.id)}
-                  onUnmute={() => unmuteParticipant(p.id)}
-                  onCamOff={() => camOffParticipant(p.id)}
-                  onCamOn={()  => camOnParticipant(p.id)}
-                  onKick={()   => kickParticipant(p.id)}
-                  onBan={()    => banParticipant(p.id)}
-                />
-              ))}
-            </div>
           </div>
 
-          {/* HOST PANEL */}
-          {hostPanelOpen && canModerate && (
-            <HostPanel
-              allParticipants={allParticipants}
-              speakQueue={speakQueue}
-              raisedHands={raisedHands}
-              currentSpeaker={currentSpeaker}
-              speakEndsAt={speakEndsAt}
-              cohosts={cohosts}
-              roomSettings={roomSettings}
-              modLogs={modLogs}
-              tempMutes={tempMutes}
-              activeVote={activeVote}
-              hostId={hostId}
-              userId={currentUserId}
-              onMute={muteParticipant}
-              onUnmute={unmuteParticipant}
-              onCamOff={camOffParticipant}
-              onCamOn={camOnParticipant}
-              onKick={kickParticipant}
-              onBan={banParticipant}
-              onTempMute={tempMuteParticipant}
-              onShadowMute={shadowMuteParticipant}
-              onApprove={approveSpeak}
-              onReject={rejectSpeak}
-              onCut={cutSpeaker}
-              onExtend={extendSpeakTime}
-              onMuteAll={muteAll}
-              onSetMode={setRoomMode}
-              onUpdateSettings={updateSettings}
-              onAssignCohost={assignCohost}
-              onTransferHost={transferHost}
-              onStartVote={startVote}
-              onCastVote={castVote}
-            />
+          {/* CHAT */}
+          {chatOpen && (
+            <div className="rv-chat-wrap">
+              <ChatPanel
+                messages={chatMessages}
+                onSend={sendChat}
+                onClose={() => setChatOpen(false)}
+                userId={currentUserId}
+                enabled={roomSettings.chatEnabled}
+              />
+            </div>
           )}
         </div>
-
-        {/* CHAT */}
-        {chatOpen && (
-          <ChatPanel
-            messages={chatMessages}
-            onSend={sendChat}
-            onClose={() => setChatOpen(false)}
-            userId={currentUserId}
-            enabled={roomSettings.chatEnabled}
-          />
-        )}
       </div>
-
-      {/* SELF PIP */}
-      <div className="dr-self-pip">
-        <video ref={selfVideoRef} autoPlay playsInline muted />
-        <span>{currentUserName}</span>
-      </div>
-
-      {/* CONTROLS */}
-      <div className="dr-controls">
-        <button onClick={toggleAudio}>{audioOn  ? "🎙️" : "🔇"}</button>
-        <button onClick={toggleVideo}>{videoOn  ? "📹" : "📵"}</button>
-
-        {!canModerate && (
-          <button onClick={handleRaiseHand}>{handRaised ? "✋" : "🙋"}</button>
-        )}
-
-        {currentSpeaker === currentUserId && speakEndsAt && (
-          <SpeakTimer endsAt={speakEndsAt} />
-        )}
-
-        <button onClick={() => setChatOpen((p) => !p)}>💬</button>
-
-        {canModerate && (
-          <button onClick={() => setHostPanelOpen((p) => !p)}>👑</button>
-        )}
-      </div>
-    </div>
+    </>
   );
 }
 // ─── Página principal ─────────────────────────────────────────────────────────
@@ -1545,44 +2267,273 @@ function GlobalStyles() {
       .dr-empty-create-btn { padding:11px 26px; border-radius:14px; border:1px solid rgba(84,199,248,0.3); background:rgba(84,199,248,0.1); color:var(--sky); font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; font-family:'DM Sans',sans-serif; }
       .dr-empty-create-btn:hover { background:rgba(84,199,248,0.18); box-shadow:0 0 20px rgba(84,199,248,0.15); }
 
-      /* ── TOAST ── */
+      /* ── TOAST (sistema existente, no se usa en sala pero se mantiene) ── */
       .dr-toasts-stack { position:fixed; top:14px; right:14px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
       .dr-toast { padding:10px 16px; border-radius:12px; font-size:13px; font-weight:500; line-height:1.4; backdrop-filter:blur(16px); animation:dr-fadein 0.25s ease; }
       .dr-toast-info  { background:rgba(84,199,248,0.18); border:1px solid rgba(84,199,248,0.3); color:#e8f6ff; }
       .dr-toast-warn  { background:rgba(251,191,36,0.15); border:1px solid rgba(251,191,36,0.35); color:#fef3c7; }
       .dr-toast-error { background:rgba(248,113,113,0.15); border:1px solid rgba(248,113,113,0.35); color:#fee2e2; }
 
-      /* ── ROOM VIEW ── */
-      .dr-room-view { display:flex; flex-direction:column; height:100dvh; overflow:hidden; position:relative; z-index:2; }
-      .dr-room-header { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; border-bottom:1px solid rgba(84,199,248,0.07); background:rgba(3,10,20,0.9); backdrop-filter:blur(12px); flex-shrink:0; gap:10px; flex-wrap:wrap; }
-      .dr-room-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
-      .dr-room-logo-mini { width:26px; height:26px; border-radius:8px; background:rgba(84,199,248,0.1); border:1px solid rgba(84,199,248,0.2); display:flex; align-items:center; justify-content:center; }
-      .dr-room-logo-t { font-family:'Syne',sans-serif; font-size:14px; font-weight:800; color:var(--sky); }
-      .dr-room-title-text { font-family:'Syne',sans-serif; font-size:15px; font-weight:800; letter-spacing:-0.3px; color:#f0f6ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
-      .dr-room-tags { display:flex; gap:4px; flex-wrap:nowrap; overflow:hidden; }
-      .dr-room-header-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
-      .dr-room-count-pill { display:flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:rgba(180,215,240,0.55); background:rgba(84,199,248,0.05); border:1px solid rgba(84,199,248,0.1); border-radius:100px; padding:4px 10px; }
-      .dr-room-count-dot { width:5px; height:5px; border-radius:50%; background:#4ade80; animation:dr-pulse 2s infinite; }
-      .dr-chat-toggle-btn { position:relative; width:36px; height:36px; border-radius:10px; border:1px solid rgba(84,199,248,0.15); background:rgba(84,199,248,0.06); color:rgba(180,215,240,0.6); cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
-      .dr-chat-toggle-btn:hover { background:rgba(84,199,248,0.12); }
-      .dr-chat-badge { position:absolute; top:-4px; right:-4px; width:16px; height:16px; border-radius:50%; background:var(--sky); color:#030a14; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; }
-      .dr-leave-btn { padding:7px 14px; border-radius:10px; border:1px solid rgba(248,113,113,0.2); background:rgba(248,113,113,0.07); color:var(--danger); font-size:12px; font-weight:600; cursor:pointer; transition:all 0.18s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
-      .dr-leave-btn:hover { background:rgba(248,113,113,0.14); border-color:rgba(248,113,113,0.4); }
-      .room-mode-badge { font-size:9px; font-weight:700; letter-spacing:1px; padding:3px 8px; border-radius:6px; }
-      .room-mode-badge.strict { background:rgba(248,113,113,0.12); border:1px solid rgba(248,113,113,0.3); color:var(--danger); }
-      .room-mode-badge.free   { background:rgba(74,222,128,0.1);  border:1px solid rgba(74,222,128,0.3);  color:#4ade80; }
+      /* ══════════════════════════════════════════════════════════════
+         ── ROOM VIEW — REDISEÑADO ──
+      ══════════════════════════════════════════════════════════════ */
 
-      /* ── ROOM BODY / LAYOUT ── */
-      .dr-room-body { flex:1; display:flex; overflow:hidden; position:relative; }
+      /* ── Animaciones globales de la sala ── */
+      @keyframes rv-pulse      { 0%,100%{opacity:1;transform:scale(1);}  50%{opacity:0.5;transform:scale(0.8);} }
+      @keyframes rv-pop        { from{transform:scale(0);}               to{transform:scale(1);} }
+      @keyframes rv-fadein     { from{opacity:0;}                        to{opacity:1;} }
+      @keyframes rv-slide-down { from{opacity:0;transform:translateY(-100%);} to{opacity:1;transform:translateY(0);} }
+      @keyframes rv-controls-in{ from{opacity:0;transform:translateX(-50%) translateY(20px);} to{opacity:1;transform:translateX(-50%) translateY(0);} }
+      @keyframes rv-grid-in    { from{opacity:0;transform:scale(0.97);}  to{opacity:1;transform:scale(1);} }
+      @keyframes rv-panel-in   { from{opacity:0;transform:translateX(24px);} to{opacity:1;transform:translateX(0);} }
+      @keyframes rv-chat-in    { from{opacity:0;transform:translateX(16px);} to{opacity:1;transform:translateX(0);} }
+      @keyframes rv-banner-in  { from{opacity:0;transform:translateX(-50%) translateY(-10px) scale(0.9);} to{opacity:1;transform:translateX(-50%) translateY(0) scale(1);} }
+      @keyframes rv-toast-in   { from{opacity:0;transform:translateX(20px) scale(0.95);} to{opacity:1;transform:translateX(0) scale(1);} }
+      @keyframes rv-shake      { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
+      @keyframes rv-hand-bounce{ 0%{transform:translateY(0) rotate(0deg);} 30%{transform:translateY(-4px) rotate(-10deg);} 60%{transform:translateY(-2px) rotate(5deg);} 100%{transform:translateY(0) rotate(0deg);} }
+
+      /* ── Base ── */
+      .rv-root { display:flex; flex-direction:column; height:100dvh; overflow:hidden; position:relative; z-index:2; }
+
+      /* ── Header ── */
+      .rv-header {
+        display:flex; align-items:center; justify-content:space-between;
+        padding:0 20px; height:56px;
+        border-bottom:1px solid rgba(84,199,248,0.07);
+        background:rgba(2,8,16,0.95); backdrop-filter:blur(20px);
+        flex-shrink:0; z-index:20; position:relative;
+        animation:rv-slide-down 0.4s cubic-bezier(0.16,1,0.3,1) both;
+      }
+      .rv-header-left  { display:flex; align-items:center; gap:12px; min-width:0; }
+      .rv-header-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+
+      .rv-live-indicator {
+        display:flex; align-items:center; gap:6px;
+        padding:5px 10px;
+        background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.2);
+        border-radius:100px; flex-shrink:0;
+      }
+      .rv-live-dot {
+        width:7px; height:7px; border-radius:50%; background:#4ade80;
+        box-shadow:0 0 8px rgba(74,222,128,0.8);
+        animation:rv-pulse 2s ease-in-out infinite;
+      }
+      .rv-live-text { font-size:9px; font-weight:800; letter-spacing:1.5px; color:#4ade80; }
+
+      .rv-title {
+        font-family:'Syne',sans-serif; font-size:14px; font-weight:800;
+        color:#f0f6ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px;
+      }
+      .rv-mode-badge { font-size:9px; font-weight:700; letter-spacing:1px; padding:3px 8px; border-radius:6px; flex-shrink:0; }
+      .rv-mode-badge.strict { background:rgba(248,113,113,0.12); border:1px solid rgba(248,113,113,0.3); color:#f87171; }
+      .rv-mode-badge.libre  { background:rgba(74,222,128,0.1);   border:1px solid rgba(74,222,128,0.3);  color:#4ade80; }
+      .rv-host-badge {
+        font-size:9px; font-weight:800; letter-spacing:1px; padding:3px 8px; border-radius:6px; flex-shrink:0;
+        background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); color:#fbbf24;
+        animation:rv-pop 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      }
+      .rv-count-pill {
+        display:flex; align-items:center; gap:5px;
+        font-size:12px; font-weight:600; color:rgba(180,215,240,0.5);
+        background:rgba(84,199,248,0.04); border:1px solid rgba(84,199,248,0.09);
+        border-radius:100px; padding:4px 11px; white-space:nowrap;
+      }
+
+      /* Botones de cabecera (iconos) */
+      .rv-hdr-btn {
+        position:relative; width:36px; height:36px; border-radius:10px;
+        border:1px solid rgba(84,199,248,0.12); background:rgba(84,199,248,0.05);
+        color:rgba(180,215,240,0.55); cursor:pointer;
+        display:flex; align-items:center; justify-content:center;
+        transition:all 0.18s;
+      }
+      .rv-hdr-btn:hover { background:rgba(84,199,248,0.12); color:rgba(180,215,240,0.9); border-color:rgba(84,199,248,0.25); }
+      .rv-hdr-btn.active { background:rgba(84,199,248,0.14); border-color:rgba(84,199,248,0.4); color:#54c7f8; }
+      .rv-hdr-btn-badge {
+        position:absolute; top:-5px; right:-5px;
+        min-width:17px; height:17px; border-radius:9px;
+        background:#54c7f8; color:#020810;
+        font-size:9px; font-weight:800;
+        display:flex; align-items:center; justify-content:center; padding:0 3px;
+        animation:rv-pop 0.25s cubic-bezier(0.34,1.56,0.64,1);
+      }
+
+      /* Botón salir */
+      .rv-leave-btn {
+        display:flex; align-items:center; gap:6px;
+        padding:7px 14px; border-radius:10px;
+        border:1px solid rgba(248,113,113,0.2); background:rgba(248,113,113,0.07);
+        color:#f87171; font-size:12px; font-weight:700; cursor:pointer;
+        transition:all 0.18s; font-family:'DM Sans',sans-serif; white-space:nowrap;
+      }
+      .rv-leave-btn:hover { background:rgba(248,113,113,0.15); border-color:rgba(248,113,113,0.45); box-shadow:0 0 16px rgba(248,113,113,0.15); }
+
+      /* ── Body / layout ── */
+      .rv-body    { flex:1; display:flex; overflow:hidden; position:relative; }
+      .rv-content { display:flex; flex:1; overflow:hidden; }
+
+      /* Alias para compatibilidad con clases existentes usadas en HostPanel/Chat */
       .dr-room-content { display:flex; flex:1; overflow:hidden; }
-      .dr-video-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-      .dr-meet-grid { flex:1; display:grid; gap:6px; padding:8px; overflow:hidden; grid-template-columns:repeat(var(--grid-cols,2), 1fr); align-content:center; }
-      .dr-meet-grid.scrollable { overflow-y:auto; align-content:start; }
-      .dr-pinned-layout { flex:1; display:flex; gap:6px; padding:8px; overflow:hidden; }
-      .dr-pinned-stage { flex:1; min-width:0; }
-      .dr-pinned-rail { width:160px; display:flex; flex-direction:column; gap:5px; overflow-y:auto; flex-shrink:0; }
+      .dr-room-content.with-panel { /* panel ocupa su propio width fijo */ }
 
-      /* ── VIDEO TILE ── */
+      /* ── Speaker banner ── */
+      .rv-speaker-banner {
+        position:absolute; top:10px; left:50%; transform:translateX(-50%);
+        z-index:30; display:flex; align-items:center; gap:8px;
+        padding:7px 16px;
+        background:rgba(74,222,128,0.12); border:1px solid rgba(74,222,128,0.35);
+        border-radius:100px; backdrop-filter:blur(12px);
+        animation:rv-banner-in 0.35s cubic-bezier(0.34,1.56,0.64,1);
+        box-shadow:0 4px 20px rgba(74,222,128,0.15);
+        pointer-events:none;
+      }
+      .rv-speaker-dot   { width:8px; height:8px; border-radius:50%; background:#4ade80; animation:rv-pulse 1s ease-in-out infinite; box-shadow:0 0 8px rgba(74,222,128,0.8); }
+      .rv-speaker-label { font-size:12px; font-weight:700; color:#4ade80; letter-spacing:0.3px; }
+      .rv-speaker-name  { font-size:12px; font-weight:600; color:rgba(240,246,255,0.85); max-width:140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+      /* ── Área de video ── */
+      .rv-video-area {
+        flex:1; display:flex; flex-direction:column; overflow:hidden;
+        position:relative;
+        padding-bottom:80px; /* espacio para controles flotantes */
+      }
+      .rv-meet-grid {
+        flex:1; display:grid; gap:8px; padding:12px; overflow:hidden;
+        grid-template-columns:repeat(var(--grid-cols,2),1fr);
+        align-content:center;
+        animation:rv-grid-in 0.5s cubic-bezier(0.16,1,0.3,1) both;
+      }
+      .rv-pinned-layout { flex:1; display:flex; gap:8px; padding:12px; overflow:hidden; }
+      .rv-pinned-stage  { flex:1; min-width:0; }
+      .rv-pinned-rail   { width:150px; display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex-shrink:0; }
+
+      /* Alias compatibles con VideoTile existente */
+      .dr-pinned-stage { flex:1; min-width:0; }
+      .dr-pinned-rail  { width:160px; display:flex; flex-direction:column; gap:5px; overflow-y:auto; flex-shrink:0; }
+
+      /* ── Controles flotantes ── */
+      .rv-controls {
+        position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+        z-index:40; display:flex; align-items:center; gap:6px;
+        padding:10px 16px;
+        background:rgba(4,12,26,0.88); border:1px solid rgba(84,199,248,0.12);
+        border-radius:20px; backdrop-filter:blur(24px);
+        box-shadow:0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(84,199,248,0.04);
+        animation:rv-controls-in 0.5s 0.2s cubic-bezier(0.16,1,0.3,1) both;
+      }
+      .rv-controls-divider { width:1px; height:28px; background:rgba(84,199,248,0.1); flex-shrink:0; }
+
+      /* ── Botón de control ── */
+      .rv-ctrl-btn {
+        position:relative; display:flex; flex-direction:column; align-items:center; gap:3px;
+        padding:8px 12px; border-radius:14px;
+        border:1px solid transparent; background:transparent;
+        color:rgba(180,215,240,0.65); cursor:pointer;
+        transition:all 0.18s cubic-bezier(0.16,1,0.3,1);
+        font-family:'DM Sans',sans-serif; min-width:56px;
+      }
+      .rv-ctrl-btn:hover  { background:rgba(84,199,248,0.08); border-color:rgba(84,199,248,0.15); color:rgba(180,215,240,0.95); transform:translateY(-1px); }
+      .rv-ctrl-btn:active { transform:translateY(0) scale(0.96); }
+      .rv-ctrl-btn.on     { color:#f0f6ff; }
+      .rv-ctrl-btn.off    { color:rgba(248,113,113,0.7); }
+      .rv-ctrl-btn.active-state { color:#54c7f8; background:rgba(84,199,248,0.1); border-color:rgba(84,199,248,0.3); }
+      .rv-ctrl-btn.hand-active  { color:#fbbf24; background:rgba(251,191,36,0.1); border-color:rgba(251,191,36,0.3); animation:rv-hand-bounce 0.6s cubic-bezier(0.34,1.56,0.64,1); }
+      .rv-ctrl-btn.danger-btn   { color:#f87171; border-color:rgba(248,113,113,0.2); background:rgba(248,113,113,0.05); }
+      .rv-ctrl-btn.danger-btn:hover { background:rgba(248,113,113,0.14); border-color:rgba(248,113,113,0.4); box-shadow:0 0 16px rgba(248,113,113,0.15); }
+      .rv-ctrl-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none !important; }
+
+      .rv-ctrl-icon-wrap {
+        width:38px; height:38px; border-radius:12px;
+        background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);
+        display:flex; align-items:center; justify-content:center;
+        transition:all 0.18s;
+      }
+      .rv-ctrl-btn:hover      .rv-ctrl-icon-wrap { background:rgba(84,199,248,0.1); border-color:rgba(84,199,248,0.2); }
+      .rv-ctrl-btn.off        .rv-ctrl-icon-wrap { background:rgba(248,113,113,0.08); border-color:rgba(248,113,113,0.18); }
+      .rv-ctrl-btn.active-state .rv-ctrl-icon-wrap { background:rgba(84,199,248,0.12); border-color:rgba(84,199,248,0.35); }
+      .rv-ctrl-btn.hand-active  .rv-ctrl-icon-wrap { background:rgba(251,191,36,0.12); border-color:rgba(251,191,36,0.3); }
+
+      .rv-ctrl-label { font-size:10px; font-weight:600; letter-spacing:0.2px; white-space:nowrap; }
+
+      .rv-ctrl-btn-dot {
+        position:absolute; top:6px; right:6px;
+        width:7px; height:7px; border-radius:50%;
+        background:#4ade80; box-shadow:0 0 6px rgba(74,222,128,0.8);
+        animation:rv-pulse 2s infinite;
+      }
+
+      /* Timer de habla inline en controles */
+      .rv-speak-timer-wrap {
+        display:flex; align-items:center; gap:6px; padding:6px 12px;
+        background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.25);
+        border-radius:12px; color:#4ade80; font-size:12px; font-weight:700;
+        animation:rv-pop 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      }
+
+      /* Badge "hablando ahora" */
+      .rv-speaking-badge {
+        font-size:11px; font-weight:700; color:#4ade80;
+        padding:4px 10px;
+        background:rgba(74,222,128,0.1); border:1px solid rgba(74,222,128,0.25);
+        border-radius:8px; white-space:nowrap;
+        animation:rv-pop 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      }
+
+      /* ── Toasts rediseñados (sala) ── */
+      .rv-toasts-stack { position:fixed; top:70px; right:16px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+      .rv-toast {
+        display:flex; align-items:center; gap:10px;
+        padding:11px 16px; border-radius:13px;
+        font-size:13px; font-weight:500; line-height:1.4;
+        backdrop-filter:blur(20px); max-width:300px;
+        box-shadow:0 8px 32px rgba(0,0,0,0.4);
+        animation:rv-toast-in 0.35s cubic-bezier(0.34,1.56,0.64,1);
+      }
+      .rv-toast-info  { background:rgba(84,199,248,0.14);  border:1px solid rgba(84,199,248,0.28);  color:#e8f6ff; }
+      .rv-toast-warn  { background:rgba(251,191,36,0.12);  border:1px solid rgba(251,191,36,0.3);   color:#fef3c7; }
+      .rv-toast-error { background:rgba(248,113,113,0.12); border:1px solid rgba(248,113,113,0.3);  color:#fee2e2; }
+      .rv-toast-icon  { font-size:16px; flex-shrink:0; }
+
+      /* ── Modal de confirmación de salida ── */
+      .rv-confirm-overlay {
+        position:fixed; inset:0; z-index:500;
+        background:rgba(0,0,0,0.6); backdrop-filter:blur(8px);
+        display:flex; align-items:center; justify-content:center;
+        animation:rv-fadein 0.2s ease;
+      }
+      .rv-confirm-card {
+        background:rgba(4,12,26,0.98); border:1px solid rgba(84,199,248,0.12);
+        border-radius:20px; padding:28px; max-width:340px; width:90%;
+        box-shadow:0 24px 80px rgba(0,0,0,0.6);
+        animation:rv-pop 0.35s cubic-bezier(0.34,1.56,0.64,1);
+        text-align:center;
+      }
+      .rv-confirm-icon  { font-size:36px; margin-bottom:12px; display:block; }
+      .rv-confirm-title { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#f0f6ff; margin-bottom:8px; }
+      .rv-confirm-text  { font-size:13px; color:rgba(180,215,240,0.5); margin-bottom:20px; line-height:1.6; }
+      .rv-confirm-actions { display:flex; gap:10px; }
+      .rv-confirm-cancel {
+        flex:1; padding:11px; border-radius:12px;
+        border:1px solid rgba(84,199,248,0.12); background:rgba(84,199,248,0.04);
+        color:rgba(180,215,240,0.55); font-size:13px; font-weight:600; cursor:pointer;
+        transition:all 0.16s; font-family:'DM Sans',sans-serif;
+      }
+      .rv-confirm-cancel:hover { background:rgba(84,199,248,0.1); color:rgba(180,215,240,0.9); }
+      .rv-confirm-leave {
+        flex:1; padding:11px; border-radius:12px;
+        border:1px solid rgba(248,113,113,0.3); background:rgba(248,113,113,0.1);
+        color:#f87171; font-size:13px; font-weight:700; cursor:pointer;
+        transition:all 0.16s; font-family:'DM Sans',sans-serif;
+      }
+      .rv-confirm-leave:hover { background:rgba(248,113,113,0.2); box-shadow:0 0 20px rgba(248,113,113,0.2); }
+
+      /* ── Wrappers con animación de panel y chat ── */
+      .rv-host-panel-wrap { animation:rv-panel-in 0.35s cubic-bezier(0.16,1,0.3,1); }
+      .rv-chat-wrap       { animation:rv-chat-in 0.3s cubic-bezier(0.16,1,0.3,1); }
+
+      /* ══════════════════════════════════════════════════════════════
+         ── VIDEO TILE (sin cambios funcionales) ──
+      ══════════════════════════════════════════════════════════════ */
       .dr-tile { position:relative; border-radius:14px; background:#050d1a; border:1.5px solid rgba(84,199,248,0.08); overflow:hidden; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; transition:border-color 0.2s; }
       .dr-tile-pinned { border-color:rgba(84,199,248,0.3); box-shadow:0 0 30px rgba(84,199,248,0.1); aspect-ratio:16/9; height:100%; }
       .dr-tile-speaking { border-color:rgba(74,222,128,0.6)!important; box-shadow:0 0 24px rgba(74,222,128,0.2)!important; animation:tile-glow 1.5s ease-in-out infinite; }
@@ -1621,7 +2572,10 @@ function GlobalStyles() {
       .dr-menu-ban { color:var(--danger)!important; }
       .dr-menu-ban:hover { background:rgba(248,113,113,0.08)!important; }
 
-      /* ── CHAT ── */
+      /* ── Speak timer ── */
+      .speak-timer { display:flex; align-items:center; justify-content:center; }
+
+      /* ── Chat (sin cambios) ── */
       .dr-chat { position:absolute; right:0; top:0; bottom:0; width:280px; z-index:50; background:rgba(3,10,22,0.97); border-left:1px solid rgba(84,199,248,0.09); display:flex; flex-direction:column; backdrop-filter:blur(16px); }
       .dr-chat-header { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid rgba(84,199,248,0.07); flex-shrink:0; font-size:13px; font-weight:600; color:rgba(180,215,240,0.7); }
       .dr-chat-header-left { display:flex; align-items:center; gap:7px; }
@@ -1642,31 +2596,7 @@ function GlobalStyles() {
       .dr-chat-send:hover { background:rgba(84,199,248,0.2); border-color:rgba(84,199,248,0.45); }
       .dr-chat-disabled { padding:10px 14px; font-size:12px; color:rgba(180,215,240,0.3); text-align:center; border-top:1px solid rgba(84,199,248,0.07); }
 
-      /* ── CONTROLS ── */
-      .dr-controls { display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 16px; border-top:1px solid rgba(84,199,248,0.07); background:rgba(3,10,20,0.9); backdrop-filter:blur(12px); flex-shrink:0; }
-      .dr-ctrl-btn { width:42px; height:42px; border-radius:12px; border:1px solid rgba(84,199,248,0.15); background:rgba(84,199,248,0.06); color:rgba(180,215,240,0.6); cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
-      .dr-ctrl-btn.active  { border-color:rgba(84,199,248,0.45); background:rgba(84,199,248,0.14); color:var(--sky); }
-      .dr-ctrl-btn.off     { border-color:rgba(248,113,113,0.2); background:rgba(248,113,113,0.08); color:var(--danger); }
-      .dr-ctrl-btn.neutral { border-color:rgba(84,199,248,0.1); background:rgba(84,199,248,0.04); }
-      .dr-ctrl-btn:hover { transform:scale(1.06); }
-      .dr-ctrl-blocked-warn { font-size:18px; opacity:0.7; }
-      .dr-controls-timer { display:flex; align-items:center; }
-
-      /* ── SELF PIP ── */
-      .dr-self-pip { position:fixed; bottom:76px; right:14px; width:130px; z-index:60; border-radius:12px; overflow:hidden; border:1.5px solid rgba(84,199,248,0.2); background:#040c18; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
-      .dr-self-pip-video { width:100%; display:block; aspect-ratio:4/3; object-fit:cover; }
-      .dr-self-pip-avatar { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#040c18; aspect-ratio:4/3; }
-      .dr-self-pip-avatar-img { width:44px; height:44px; border-radius:50%; object-fit:cover; border:1.5px solid rgba(84,199,248,0.25); }
-      .dr-self-pip-initials { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:rgba(180,215,240,0.4); }
-      .dr-self-pip-info { padding:5px 8px; display:flex; align-items:center; justify-content:space-between; background:rgba(3,10,20,0.9); }
-      .dr-self-pip-name { font-size:10px; font-weight:600; color:rgba(180,215,240,0.55); }
-      .dr-self-pip-icons { display:flex; gap:3px; }
-      .dr-room-desc-bar { display:flex; align-items:center; gap:8px; padding:7px 16px; border-top:1px solid rgba(84,199,248,0.06); font-size:12px; color:rgba(180,215,240,0.4); background:rgba(3,10,20,0.6); flex-shrink:0; }
-
-      /* ── SPEAK TIMER ── */
-      .speak-timer { display:flex; align-items:center; justify-content:center; }
-
-      /* ── VOTE PANEL ── */
+      /* ── Vote panel ── */
       .vote-panel { background:rgba(167,139,250,0.07); border:1px solid rgba(167,139,250,0.2); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
       .vote-header { display:flex; align-items:center; gap:6px; }
       .vote-icon { font-size:14px; }
@@ -1683,7 +2613,7 @@ function GlobalStyles() {
       .vote-opt:disabled { opacity:0.7; cursor:not-allowed; }
       .vote-count { font-size:10px; opacity:0.7; }
 
-      /* ── HOST PANEL ── */
+      /* ── Host panel (sin cambios) ── */
       .host-panel { width:296px; flex-shrink:0; display:flex; flex-direction:column; background:rgba(3,10,22,0.98); border-left:1px solid rgba(84,199,248,0.1); overflow:hidden; }
       .host-panel-header { padding:12px 14px 0; border-bottom:1px solid rgba(84,199,248,0.07); flex-shrink:0; }
       .host-panel-title { font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:rgba(180,215,240,0.35); display:block; margin-bottom:8px; }
@@ -1693,8 +2623,6 @@ function GlobalStyles() {
       .host-tab:hover:not(.active) { color:rgba(180,215,240,0.7); }
       .host-tab-badge { position:absolute; top:2px; right:4px; min-width:14px; height:14px; border-radius:7px; background:var(--danger); color:#fff; font-size:8px; font-weight:700; padding:0 3px; display:flex; align-items:center; justify-content:center; }
       .host-panel-body { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px; }
-
-      /* Current speaker bar */
       .current-speaker-bar { background:rgba(74,222,128,0.07); border:1px solid rgba(74,222,128,0.2); border-radius:10px; padding:8px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
       .current-speaker-info { display:flex; align-items:center; gap:6px; min-width:0; }
       .speaking-dot { width:8px; height:8px; border-radius:50%; background:#4ade80; animation:dr-pulse 1s infinite; flex-shrink:0; }
@@ -1704,8 +2632,6 @@ function GlobalStyles() {
       .spk-btn { padding:4px 9px; border-radius:7px; border:none; cursor:pointer; font-size:11px; font-weight:700; font-family:'DM Sans',sans-serif; }
       .spk-btn.extend { background:rgba(84,199,248,0.1); color:var(--sky); }
       .spk-btn.cut    { background:rgba(248,113,113,0.1); color:var(--danger); }
-
-      /* HP sections */
       .hp-section { display:flex; flex-direction:column; gap:8px; }
       .hp-subsection { display:flex; flex-direction:column; gap:6px; }
       .hp-subsection-title { font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:rgba(180,215,240,0.3); padding:2px 0; }
@@ -1713,8 +2639,6 @@ function GlobalStyles() {
       .hp-quick-actions { display:flex; gap:5px; flex-wrap:wrap; }
       .hq-btn { flex:1; padding:7px 6px; border-radius:8px; border:1px solid rgba(84,199,248,0.15); background:rgba(84,199,248,0.05); color:rgba(180,215,240,0.65); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.15s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
       .hq-btn:hover { background:rgba(84,199,248,0.12); color:#e8f2ff; }
-
-      /* User list */
       .hp-list { display:flex; flex-direction:column; gap:4px; }
       .hp-user { background:rgba(84,199,248,0.03); border:1px solid rgba(84,199,248,0.07); border-radius:10px; overflow:hidden; }
       .hp-user.speaking { border-color:rgba(74,222,128,0.3); background:rgba(74,222,128,0.04); }
@@ -1740,8 +2664,6 @@ function GlobalStyles() {
       .icon-on  { font-size:12px; opacity:0.65; }
       .icon-off { font-size:12px; opacity:0.2; filter:grayscale(1); }
       .hp-chevron { font-size:9px; color:rgba(180,215,240,0.25); margin-left:4px; }
-
-      /* HP actions */
       .hp-actions { padding:8px 10px; border-top:1px solid rgba(84,199,248,0.06); display:flex; flex-direction:column; gap:5px; background:rgba(3,10,20,0.4); }
       .hp-actions-row { display:flex; gap:5px; flex-wrap:wrap; }
       .ha-btn { flex:1; padding:6px 8px; border-radius:7px; border:1px solid rgba(84,199,248,0.12); background:rgba(84,199,248,0.05); color:rgba(180,215,240,0.7); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.14s; font-family:'DM Sans',sans-serif; white-space:nowrap; min-width:80px; }
@@ -1752,14 +2674,10 @@ function GlobalStyles() {
       .ha-btn.warn:hover { background:rgba(251,191,36,0.13); }
       .ha-btn.danger { border-color:rgba(248,113,113,0.25); color:var(--danger); background:rgba(248,113,113,0.06); }
       .ha-btn.danger:hover { background:rgba(248,113,113,0.13); }
-
-      /* Temp mute dropdown */
       .ha-tmute-wrap { position:relative; flex:1; }
       .ha-tmute-menu { position:absolute; bottom:calc(100% + 4px); left:0; z-index:200; background:rgba(4,12,24,0.98); border:1px solid rgba(84,199,248,0.15); border-radius:10px; padding:5px; min-width:110px; box-shadow:0 8px 24px rgba(0,0,0,0.5); }
       .ha-tmute-menu button { display:block; width:100%; padding:7px 12px; background:none; border:none; color:rgba(180,215,240,0.7); font-size:12px; font-weight:600; cursor:pointer; border-radius:6px; transition:all 0.12s; font-family:'DM Sans',sans-serif; text-align:left; }
       .ha-tmute-menu button:hover { background:rgba(84,199,248,0.08); color:#e8f2ff; }
-
-      /* Queue */
       .queue-item { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; background:rgba(84,199,248,0.04); border:1px solid rgba(84,199,248,0.08); }
       .queue-item.hand { border-color:rgba(251,191,36,0.2); background:rgba(251,191,36,0.04); }
       .queue-pos { font-size:11px; font-weight:700; color:rgba(180,215,240,0.3); flex-shrink:0; min-width:18px; }
@@ -1770,8 +2688,6 @@ function GlobalStyles() {
       .qa-btn.approve:hover { background:rgba(74,222,128,0.22); }
       .qa-btn.reject  { background:rgba(248,113,113,0.1); color:var(--danger); }
       .qa-btn.reject:hover { background:rgba(248,113,113,0.2); }
-
-      /* Settings */
       .mode-buttons { display:flex; gap:5px; }
       .mode-btn { flex:1; padding:7px 4px; border-radius:9px; border:1px solid rgba(84,199,248,0.1); background:rgba(84,199,248,0.03); color:rgba(180,215,240,0.5); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
       .mode-btn.active { border-color:rgba(84,199,248,0.4); background:rgba(84,199,248,0.1); color:var(--sky); }
@@ -1791,15 +2707,13 @@ function GlobalStyles() {
       .toggle-btn { padding:4px 10px; border-radius:7px; border:1px solid; font-size:11px; font-weight:700; cursor:pointer; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
       .toggle-btn.on  { border-color:rgba(74,222,128,0.35); background:rgba(74,222,128,0.1); color:#4ade80; }
       .toggle-btn.off { border-color:rgba(84,199,248,0.12); background:rgba(84,199,248,0.04); color:rgba(180,215,240,0.3); }
-
-      /* Logs */
       .log-item { display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:7px; background:rgba(84,199,248,0.03); border:1px solid rgba(84,199,248,0.06); flex-wrap:wrap; }
       .log-action { font-size:10px; font-weight:700; color:rgba(84,199,248,0.7); text-transform:capitalize; }
       .log-target { font-size:11px; color:rgba(180,215,240,0.65); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .log-detail { font-size:10px; color:rgba(180,215,240,0.35); }
       .log-time   { font-size:9px; color:rgba(180,215,240,0.25); flex-shrink:0; }
 
-      /* ── CREATE ROOM MODAL ── */
+      /* ── Create room modal (sin cambios) ── */
       .crm-overlay { position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.65); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:16px; animation:dr-fadein 0.2s ease; }
       .crm-sheet { width:100%; max-width:520px; border-radius:24px; background:rgba(4,12,24,0.98); border:1px solid rgba(84,199,248,0.12); box-shadow:0 24px 80px rgba(0,0,0,0.6); overflow:hidden; position:relative; animation:crm-up 0.3s cubic-bezier(0.16,1,0.3,1) both; }
       @keyframes crm-up { from{opacity:0;transform:translateY(20px) scale(0.97);} to{opacity:1;transform:none;} }
@@ -1861,20 +2775,25 @@ function GlobalStyles() {
       .crm-locked-vip { background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.3); color:#fbbf24; }
       .crm-locked-streamer { background:rgba(84,199,248,0.08); border:1px solid rgba(84,199,248,0.25); color:var(--sky); }
 
-      /* ── SCROLLBARS ── */
+      /* ── Scrollbars ── */
       ::-webkit-scrollbar { width:3px; height:3px; }
       ::-webkit-scrollbar-track { background:transparent; }
       ::-webkit-scrollbar-thumb { background:rgba(84,199,248,0.18); border-radius:2px; }
 
-      @keyframes dr-fadein { from{opacity:0;} to{opacity:1;} }
-
+      /* ── Responsive ── */
       @media (max-width:900px) {
         .dr-header{padding:12px 18px;} .dr-filters{padding:12px 18px 6px;} .dr-main{padding:12px 18px 30px;}
         .host-panel{width:260px;}
       }
       @media (max-width:680px) {
         .host-panel{position:fixed;right:0;top:0;bottom:0;z-index:100;width:260px;box-shadow:-8px 0 32px rgba(0,0,0,0.5);}
-        .dr-self-pip{width:100px;}
+        .rv-title{max-width:140px;}
+      }
+      @media (max-width:600px) {
+        .rv-controls{gap:2px;padding:8px 10px;}
+        .rv-ctrl-btn{padding:6px 8px;min-width:44px;}
+        .rv-ctrl-icon-wrap{width:32px;height:32px;border-radius:10px;}
+        .rv-ctrl-label{font-size:9px;}
       }
       @media (max-width:560px) {
         .dr-logo-wordmark{font-size:16px;} .dr-logo-section-tag{display:none;}
