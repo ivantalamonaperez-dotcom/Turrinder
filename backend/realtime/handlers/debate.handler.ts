@@ -667,9 +667,7 @@ export const debateHandler = {
     broadcastState(io, roomId);
   },
 
-  transferHost(
-    io: Server, roomId: string, by: string, target: string
-  ): void {
+  transferHost(io, roomId, by, target): void {
     const room = getRoom(roomId);
     if (!room || room.hostId !== by) return;
 
@@ -682,6 +680,11 @@ export const debateHandler = {
     next.role   = "host";
     room.hostId = target;
     room.cohosts.delete(target);
+
+    // ✅ NUEVO: notificar al nuevo host directamente
+    if (next.socketId) {
+      io.to(next.socketId).emit("debate-host-transferred", { newHostId: target });
+    }
 
     broadcastState(io, roomId);
   },

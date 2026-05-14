@@ -890,9 +890,8 @@ function RoomCard({ room, userId, onJoin }: { room: Room; userId: string; onJoin
 function RoomView({
   room, currentUserId, currentUserName, currentUserAvatarUrl,
   currentUserRole, onLeave, closeRoom, setCount,
-  // socket eliminado
 }: {
-   room: Room;
+  room: Room;
   currentUserId: string;
   currentUserName: string;
   currentUserAvatarUrl: string | null;
@@ -901,93 +900,102 @@ function RoomView({
   closeRoom: (id: string) => Promise<void>;
   setCount: (id: string, n: number) => Promise<void>;
 }) {
-  const { socket } = useSocket(); 
-  const isHost = room.host_id === currentUserId;
+  const { socket } = useSocket();
+
+  // ── FIX: valor inicial solo para bootstrapping del hook ──────────────────────
+  const initialIsHost = room.host_id === currentUserId;
 
   const [toasts, setToasts] = useState<
     { id: string; msg: string; type: "info" | "warn" | "error" }[]
   >([]);
 
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [hostPanelOpen, setHostPanelOpen] = useState(isHost);
-  const [handRaised, setHandRaised] = useState(false);
+  const [pinnedId, setPinnedId]       = useState<string | null>(null);
+  const [chatOpen, setChatOpen]       = useState(false);
+  const [hostPanelOpen, setHostPanelOpen] = useState(initialIsHost);
+  const [handRaised, setHandRaised]   = useState(false);
 
   const selfVideoRef = useRef<HTMLVideoElement>(null);
 
   const toast = useCallback(
-    (
-      msg: string,
-      type: "info" | "warn" | "error" = "info"
-    ) => {
+    (msg: string, type: "info" | "warn" | "error" = "info") => {
       const id = Date.now().toString();
       setToasts((p) => [...p, { id, msg, type }]);
     },
     []
   );
 
-const {
-  participants,
-  localStream,
-  videoOn,
-  audioOn,
-  blockedByHost,
-  presenceCount,
-  chatMessages,
-  stopMedia,
-  toggleVideo,
-  toggleAudio,
-  sendChat,
-  notifyRoomClosed,
-  muteParticipant,
-  unmuteParticipant,
-  camOffParticipant,
-  camOnParticipant,
-  kickParticipant,
-  banParticipant,
-  muteAll,
-  tempMuteParticipant,
-  shadowMuteParticipant,
-  cohosts,
-  hostId,
-  assignCohost,
-  transferHost,
-  roomSettings,
-  updateSettings,
-  setRoomMode,
-  speakQueue,
-  currentSpeaker,
-  speakEndsAt,
-  requestSpeak,
-  approveSpeak,
-  rejectSpeak,
-  cutSpeaker,
-  extendSpeakTime,
-  raisedHands,
-  raiseHand,
-  activeVote,
-  startVote,
-  castVote,
-  modLogs,
-  tempMutes,
-} = useDebateMedia(
-  room.id,
-  isHost,
-  currentUserId,
-  currentUserName,
-  currentUserAvatarUrl,
-  currentUserRole,
-  toast,
-  // FIX 1: onForceLeave — se llama cuando el servidor expulsa/banea/cierra.
-  // stopMedia no está disponible aquí todavía (viene del hook), así que
-  // el hook ya lo maneja internamente. Acá solo necesitamos salir de la UI.
-  useCallback(() => {
-    onLeave();
-  }, [onLeave])
-);
+  // ── Hook (recibe initialIsHost para la conexión inicial) ─────────────────────
+  const {
+    participants,
+    localStream,
+    videoOn,
+    audioOn,
+    blockedByHost,
+    presenceCount,
+    chatMessages,
+    stopMedia,
+    toggleVideo,
+    toggleAudio,
+    sendChat,
+    notifyRoomClosed,
+    muteParticipant,
+    unmuteParticipant,
+    camOffParticipant,
+    camOnParticipant,
+    kickParticipant,
+    banParticipant,
+    muteAll,
+    tempMuteParticipant,
+    shadowMuteParticipant,
+    cohosts,
+    hostId,
+    assignCohost,
+    transferHost,
+    roomSettings,
+    updateSettings,
+    setRoomMode,
+    speakQueue,
+    currentSpeaker,
+    speakEndsAt,
+    requestSpeak,
+    approveSpeak,
+    rejectSpeak,
+    cutSpeaker,
+    extendSpeakTime,
+    raisedHands,
+    raiseHand,
+    activeVote,
+    startVote,
+    castVote,
+    modLogs,
+    tempMutes,
+  } = useDebateMedia(
+    room.id,
+    initialIsHost,
+    currentUserId,
+    currentUserName,
+    currentUserAvatarUrl,
+    currentUserRole,
+    toast,
+    useCallback(() => {
+      onLeave();
+    }, [onLeave])
+  );
 
-  const canModerate =
-    isHost || cohosts.has(currentUserId);
+  // ── FIX: isHost reactivo derivado del hostId que devuelve el socket ──────────
+  // Mientras hostId === "" (antes del primer debate-room-state), usa room.host_id
+  const isHost = hostId !== ""
+    ? hostId === currentUserId
+    : room.host_id === currentUserId;
+
+  const canModerate = isHost || cohosts.has(currentUserId);
+
+  // ── FIX: abrir el panel automáticamente cuando este usuario recibe el host ───
+  useEffect(() => {
+    if (isHost) {
+      setHostPanelOpen(true);
+    }
+  }, [isHost]);
 
   // ─────────────────────────
   // sync count
@@ -1000,7 +1008,7 @@ const {
   // create backend debate room
   // ─────────────────────────
   useEffect(() => {
-    if (!isHost || !socket?.connected) return;
+    if (!initialIsHost || !socket?.connected) return;
 
     socket.emit("debate-create-room", {
       roomId:    room.id,
@@ -1009,13 +1017,13 @@ const {
       maxPeople: room.max_people,
     });
   }, [
-    isHost,
+    initialIsHost,
     socket,
     room.id,
     room.max_people,
     currentUserId,
-    currentUserName,      // ← faltaba
-    currentUserAvatarUrl, // ← faltaba
+    currentUserName,
+    currentUserAvatarUrl,
   ]);
 
   // ─────────────────────────
@@ -1025,34 +1033,19 @@ const {
     if (!isHost) return;
 
     const unload = () => {
-      socket?.emit("debate-close-room", {
-        roomId: room.id,
-      });
+      socket?.emit("debate-close-room", { roomId: room.id });
     };
 
-    window.addEventListener(
-      "beforeunload",
-      unload
-    );
-
-    return () => {
-      window.removeEventListener(
-        "beforeunload",
-        unload
-      );
-    };
+    window.addEventListener("beforeunload", unload);
+    return () => window.removeEventListener("beforeunload", unload);
   }, [isHost, room.id, socket]);
 
   // ─────────────────────────
   // local stream preview
   // ─────────────────────────
   useEffect(() => {
-    if (
-      selfVideoRef.current &&
-      localStream
-    ) {
-      selfVideoRef.current.srcObject =
-        localStream;
+    if (selfVideoRef.current && localStream) {
+      selfVideoRef.current.srcObject = localStream;
     }
   }, [localStream]);
 
@@ -1063,179 +1056,76 @@ const {
     if (!canModerate) return;
 
     const key = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof
-          HTMLTextAreaElement
-      )
-        return;
-
-      if (e.ctrlKey && e.key === "m") {
-        muteAll(true);
-        e.preventDefault();
-      }
-
-      if (e.ctrlKey && e.key === "u") {
-        muteAll(false);
-        e.preventDefault();
-      }
-
-      if (e.ctrlKey && e.key === "p") {
-        setHostPanelOpen((p) => !p);
-        e.preventDefault();
-      }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.ctrlKey && e.key === "m") { muteAll(true);  e.preventDefault(); }
+      if (e.ctrlKey && e.key === "u") { muteAll(false); e.preventDefault(); }
+      if (e.ctrlKey && e.key === "p") { setHostPanelOpen((p) => !p); e.preventDefault(); }
     };
 
-    window.addEventListener(
-      "keydown",
-      key
-    );
-
-    return () =>
-      window.removeEventListener(
-        "keydown",
-        key
-      );
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
   }, [canModerate, muteAll]);
 
   // ─────────────────────────
   // leave
   // ─────────────────────────
-  const handleLeave =
-    useCallback(async () => {
-      if (isHost) {
-        notifyRoomClosed();
-        await closeRoom(room.id);
+  const handleLeave = useCallback(async () => {
+    if (isHost) {
+      notifyRoomClosed();
+      await closeRoom(room.id);
+      socket?.emit("debate-close-room", { roomId: room.id });
+    }
+    stopMedia();
+    onLeave();
+  }, [isHost, room.id, closeRoom, socket, stopMedia, onLeave, notifyRoomClosed]);
 
-        socket?.emit(
-          "debate-close-room",
-          {
-            roomId: room.id,
-          }
-        );
-      }
+  const togglePin = useCallback((id: string) => {
+    setPinnedId((p) => (p === id ? null : id));
+  }, []);
 
-      stopMedia();
-      onLeave();
-    }, [
-      isHost,
-      room.id,
-      closeRoom,
-      socket,
-      stopMedia,
-      onLeave,
-      notifyRoomClosed,
-    ]);
-
-  const togglePin =
-    useCallback((id: string) => {
-      setPinnedId((p) =>
-        p === id ? null : id
-      );
-    }, []);
-
-  const handleRaiseHand =
-    useCallback(() => {
-      const next = !handRaised;
-
-      setHandRaised(next);
-      raiseHand(next);
-
-      if (next && !canModerate) {
-        requestSpeak();
-      }
-    }, [
-      handRaised,
-      raiseHand,
-      canModerate,
-      requestSpeak,
-    ]);
+  const handleRaiseHand = useCallback(() => {
+    const next = !handRaised;
+    setHandRaised(next);
+    raiseHand(next);
+    if (next && !canModerate) requestSpeak();
+  }, [handRaised, raiseHand, canModerate, requestSpeak]);
 
   // ─────────────────────────
   // self participant
   // ─────────────────────────
-  const selfParticipant =
-    useMemo(
-      (): Participant => ({
-        id: currentUserId,
-        name: currentUserName,
-        avatarUrl:
-          currentUserAvatarUrl,
-        role: currentUserRole,
+  const selfParticipant = useMemo(
+    (): Participant => ({
+      id:             currentUserId,
+      name:           currentUserName,
+      avatarUrl:      currentUserAvatarUrl,
+      role:           currentUserRole,
+      hasVideo:       videoOn,
+      hasAudio:       audioOn,
+      mutedByHost:    blockedByHost.mic,
+      camOffByHost:   blockedByHost.cam,
+      isHost,
+      isCohost:       cohosts.has(currentUserId),
+      isSpeaking:     currentSpeaker === currentUserId,
+      handRaised,
+      shadowMuted:    false,
+      tempMutedUntil: null,
+      stream:         localStream ?? undefined,
+    }),
+    [
+      currentUserId, currentUserName, currentUserAvatarUrl, currentUserRole,
+      videoOn, audioOn, blockedByHost, isHost, cohosts,
+      currentSpeaker, handRaised, localStream,
+    ]
+  );
 
-        hasVideo: videoOn,
-        hasAudio: audioOn,
+  const allParticipants = useMemo(
+    () => [selfParticipant, ...participants],
+    [selfParticipant, participants]
+  );
 
-        mutedByHost:
-          blockedByHost.mic,
-        camOffByHost:
-          blockedByHost.cam,
-
-        isHost,
-        isCohost:
-          cohosts.has(
-            currentUserId
-          ),
-
-        isSpeaking:
-          currentSpeaker ===
-          currentUserId,
-
-        handRaised,
-
-        shadowMuted: false,
-        tempMutedUntil: null,
-
-        stream:
-          localStream ??
-          undefined,
-      }),
-      [
-        currentUserId,
-        currentUserName,
-        currentUserAvatarUrl,
-        currentUserRole,
-        videoOn,
-        audioOn,
-        blockedByHost,
-        isHost,
-        cohosts,
-        currentSpeaker,
-        handRaised,
-        localStream,
-      ]
-    );
-
-  const allParticipants =
-    useMemo(
-      () => [
-        selfParticipant,
-        ...participants,
-      ],
-      [
-        selfParticipant,
-        participants,
-      ]
-    );
-
-  const pinned =
-    pinnedId
-      ? allParticipants.find(
-          (p) =>
-            p.id === pinnedId
-        )
-      : null;
-
-  const visible =
-    pinned
-      ? allParticipants.filter(
-          (p) =>
-            p.id !== pinned.id
-        )
-      : allParticipants;
-
-  const { cols } =
-    gridLayout(visible.length);
+  const pinned  = pinnedId ? allParticipants.find((p) => p.id === pinnedId) : null;
+  const visible = pinned   ? allParticipants.filter((p) => p.id !== pinned.id) : allParticipants;
+  const { cols } = gridLayout(visible.length);
 
   // ─────────────────────────
   // render
@@ -1249,14 +1139,7 @@ const {
             key={t.id}
             message={t.msg}
             type={t.type}
-            onDone={() =>
-              setToasts((p) =>
-                p.filter(
-                  (x) =>
-                    x.id !== t.id
-                )
-              )
-            }
+            onDone={() => setToasts((p) => p.filter((x) => x.id !== t.id))}
           />
         ))}
       </div>
@@ -1265,375 +1148,137 @@ const {
       <div className="dr-room-header">
         <div className="dr-room-meta">
           <span className="dr-live-dot" />
-          <span>
-            {room.title}
-          </span>
+          <span>{room.title}</span>
         </div>
 
         <div className="dr-room-header-right">
-          <span>
-            {presenceCount}/
-            {room.max_people}
-          </span>
-
-          <button
-            onClick={() =>
-              setChatOpen(
-                (p) => !p
-              )
-            }
-          >
-            💬
-          </button>
-
-          <button
-            onClick={
-              handleLeave
-            }
-          >
-            {isHost
-              ? "Cerrar sala"
-              : "Salir"}
-          </button>
+          <span>{presenceCount}/{room.max_people}</span>
+          <button onClick={() => setChatOpen((p) => !p)}>💬</button>
+          <button onClick={handleLeave}>{isHost ? "Cerrar sala" : "Salir"}</button>
         </div>
       </div>
 
       {/* BODY */}
       <div className="dr-room-body">
-        <div
-          className={`dr-room-content ${
-            hostPanelOpen &&
-            canModerate
-              ? "with-panel"
-              : ""
-          }`}
-        >
+        <div className={`dr-room-content ${hostPanelOpen && canModerate ? "with-panel" : ""}`}>
+
           {/* VIDEO AREA */}
           <div className="dr-video-area">
             {pinned && (
               <div className="dr-pinned-stage">
                 <VideoTile
-                  participant={
-                    pinned
-                  }
+                  participant={pinned}
                   isPinned
-                  isLocalSelf={
-                    pinned.id ===
-                    currentUserId
-                  }
-                  canModerate={
-                    canModerate
-                  }
-                  isSpeakerHighlight={
-                    currentSpeaker ===
-                    pinned.id
-                  }
-                  onPin={() =>
-                    togglePin(
-                      pinned.id
-                    )
-                  }
-                  onMute={() =>
-                    muteParticipant(
-                      pinned.id
-                    )
-                  }
-                  onUnmute={() =>
-                    unmuteParticipant(
-                      pinned.id
-                    )
-                  }
-                  onCamOff={() =>
-                    camOffParticipant(
-                      pinned.id
-                    )
-                  }
-                  onCamOn={() =>
-                    camOnParticipant(
-                      pinned.id
-                    )
-                  }
-                  onKick={() =>
-                    kickParticipant(
-                      pinned.id
-                    )
-                  }
-                  onBan={() =>
-                    banParticipant(
-                      pinned.id
-                    )
-                  }
+                  isLocalSelf={pinned.id === currentUserId}
+                  canModerate={canModerate}
+                  isSpeakerHighlight={currentSpeaker === pinned.id}
+                  onPin={()    => togglePin(pinned.id)}
+                  onMute={()   => muteParticipant(pinned.id)}
+                  onUnmute={() => unmuteParticipant(pinned.id)}
+                  onCamOff={() => camOffParticipant(pinned.id)}
+                  onCamOn={()  => camOnParticipant(pinned.id)}
+                  onKick={()   => kickParticipant(pinned.id)}
+                  onBan={()    => banParticipant(pinned.id)}
                 />
               </div>
             )}
 
             <div
               className="dr-meet-grid"
-              style={
-                {
-                  "--grid-cols":
-                    cols,
-                } as React.CSSProperties
-              }
+              style={{ "--grid-cols": cols } as React.CSSProperties}
             >
               {visible.map((p) => (
                 <VideoTile
                   key={p.id}
-                  participant={
-                    p
-                  }
-                  isLocalSelf={
-                    p.id ===
-                    currentUserId
-                  }
-                  canModerate={
-                    canModerate
-                  }
-                  isSpeakerHighlight={
-                    currentSpeaker ===
-                    p.id
-                  }
-                  onPin={() =>
-                    togglePin(
-                      p.id
-                    )
-                  }
-                  onMute={() =>
-                    muteParticipant(
-                      p.id
-                    )
-                  }
-                  onUnmute={() =>
-                    unmuteParticipant(
-                      p.id
-                    )
-                  }
-                  onCamOff={() =>
-                    camOffParticipant(
-                      p.id
-                    )
-                  }
-                  onCamOn={() =>
-                    camOnParticipant(
-                      p.id
-                    )
-                  }
-                  onKick={() =>
-                    kickParticipant(
-                      p.id
-                    )
-                  }
-                  onBan={() =>
-                    banParticipant(
-                      p.id
-                    )
-                  }
+                  participant={p}
+                  isLocalSelf={p.id === currentUserId}
+                  canModerate={canModerate}
+                  isSpeakerHighlight={currentSpeaker === p.id}
+                  onPin={()    => togglePin(p.id)}
+                  onMute={()   => muteParticipant(p.id)}
+                  onUnmute={() => unmuteParticipant(p.id)}
+                  onCamOff={() => camOffParticipant(p.id)}
+                  onCamOn={()  => camOnParticipant(p.id)}
+                  onKick={()   => kickParticipant(p.id)}
+                  onBan={()    => banParticipant(p.id)}
                 />
               ))}
             </div>
           </div>
 
           {/* HOST PANEL */}
-          {hostPanelOpen &&
-            canModerate && (
-              <HostPanel
-                allParticipants={
-                  allParticipants
-                }
-                speakQueue={
-                  speakQueue
-                }
-                raisedHands={
-                  raisedHands
-                }
-                currentSpeaker={
-                  currentSpeaker
-                }
-                speakEndsAt={
-                  speakEndsAt
-                }
-                cohosts={
-                  cohosts
-                }
-                roomSettings={
-                  roomSettings
-                }
-                modLogs={
-                  modLogs
-                }
-                tempMutes={
-                  tempMutes
-                }
-                activeVote={
-                  activeVote
-                }
-                hostId={hostId}
-                userId={
-                  currentUserId
-                }
-                onMute={
-                  muteParticipant
-                }
-                onUnmute={
-                  unmuteParticipant
-                }
-                onCamOff={
-                  camOffParticipant
-                }
-                onCamOn={
-                  camOnParticipant
-                }
-                onKick={
-                  kickParticipant
-                }
-                onBan={
-                  banParticipant
-                }
-                onTempMute={
-                  tempMuteParticipant
-                }
-                onShadowMute={
-                  shadowMuteParticipant
-                }
-                onApprove={
-                  approveSpeak
-                }
-                onReject={
-                  rejectSpeak
-                }
-                onCut={
-                  cutSpeaker
-                }
-                onExtend={
-                  extendSpeakTime
-                }
-                onMuteAll={
-                  muteAll
-                }
-                onSetMode={
-                  setRoomMode
-                }
-                onUpdateSettings={
-                  updateSettings
-                }
-                onAssignCohost={
-                  assignCohost
-                }
-                onTransferHost={
-                  transferHost
-                }
-                onStartVote={
-                  startVote
-                }
-                onCastVote={
-                  castVote
-                }
-              />
-            )}
+          {hostPanelOpen && canModerate && (
+            <HostPanel
+              allParticipants={allParticipants}
+              speakQueue={speakQueue}
+              raisedHands={raisedHands}
+              currentSpeaker={currentSpeaker}
+              speakEndsAt={speakEndsAt}
+              cohosts={cohosts}
+              roomSettings={roomSettings}
+              modLogs={modLogs}
+              tempMutes={tempMutes}
+              activeVote={activeVote}
+              hostId={hostId}
+              userId={currentUserId}
+              onMute={muteParticipant}
+              onUnmute={unmuteParticipant}
+              onCamOff={camOffParticipant}
+              onCamOn={camOnParticipant}
+              onKick={kickParticipant}
+              onBan={banParticipant}
+              onTempMute={tempMuteParticipant}
+              onShadowMute={shadowMuteParticipant}
+              onApprove={approveSpeak}
+              onReject={rejectSpeak}
+              onCut={cutSpeaker}
+              onExtend={extendSpeakTime}
+              onMuteAll={muteAll}
+              onSetMode={setRoomMode}
+              onUpdateSettings={updateSettings}
+              onAssignCohost={assignCohost}
+              onTransferHost={transferHost}
+              onStartVote={startVote}
+              onCastVote={castVote}
+            />
+          )}
         </div>
 
         {/* CHAT */}
         {chatOpen && (
           <ChatPanel
-            messages={
-              chatMessages
-            }
-            onSend={
-              sendChat
-            }
-            onClose={() =>
-              setChatOpen(
-                false
-              )
-            }
-            userId={
-              currentUserId
-            }
-            enabled={
-              roomSettings.chatEnabled
-            }
+            messages={chatMessages}
+            onSend={sendChat}
+            onClose={() => setChatOpen(false)}
+            userId={currentUserId}
+            enabled={roomSettings.chatEnabled}
           />
         )}
       </div>
 
       {/* SELF PIP */}
       <div className="dr-self-pip">
-        <video
-          ref={selfVideoRef}
-          autoPlay
-          playsInline
-          muted
-        />
-
-        <span>
-          {currentUserName}
-        </span>
+        <video ref={selfVideoRef} autoPlay playsInline muted />
+        <span>{currentUserName}</span>
       </div>
 
       {/* CONTROLS */}
       <div className="dr-controls">
-        <button
-          onClick={
-            toggleAudio
-          }
-        >
-          {audioOn
-            ? "🎙️"
-            : "🔇"}
-        </button>
-
-        <button
-          onClick={
-            toggleVideo
-          }
-        >
-          {videoOn
-            ? "📹"
-            : "📵"}
-        </button>
+        <button onClick={toggleAudio}>{audioOn  ? "🎙️" : "🔇"}</button>
+        <button onClick={toggleVideo}>{videoOn  ? "📹" : "📵"}</button>
 
         {!canModerate && (
-          <button
-            onClick={
-              handleRaiseHand
-            }
-          >
-            {handRaised
-              ? "✋"
-              : "🙋"}
-          </button>
+          <button onClick={handleRaiseHand}>{handRaised ? "✋" : "🙋"}</button>
         )}
 
-        {currentSpeaker ===
-          currentUserId &&
-          speakEndsAt && (
-            <SpeakTimer
-              endsAt={
-                speakEndsAt
-              }
-            />
-          )}
+        {currentSpeaker === currentUserId && speakEndsAt && (
+          <SpeakTimer endsAt={speakEndsAt} />
+        )}
 
-        <button
-          onClick={() =>
-            setChatOpen(
-              (p) => !p
-            )
-          }
-        >
-          💬
-        </button>
+        <button onClick={() => setChatOpen((p) => !p)}>💬</button>
 
         {canModerate && (
-          <button
-            onClick={() =>
-              setHostPanelOpen(
-                (p) => !p
-              )
-            }
-          >
-            👑
-          </button>
+          <button onClick={() => setHostPanelOpen((p) => !p)}>👑</button>
         )}
       </div>
     </div>

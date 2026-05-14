@@ -578,6 +578,12 @@ export function useDebateMedia(
       }
     };
 
+    const onHostTransferred = ({ newHostId }: { newHostId: string }) => {
+      if (newHostId === currentUserId) {
+        toast("👑 Ahora sos el host de esta sala", "info");
+      }
+    };
+
     /* ── Registro de listeners ───────────────────────────────────────────── */
     socket.on("debate-room-state",   onState);
     socket.on("debate-user-joined",  onUserJoined);
@@ -588,6 +594,7 @@ export function useDebateMedia(
     socket.on("debate-you-kicked",   onKicked);
     socket.on("debate-you-banned",   onBanned);
     socket.on("debate-error",        onError);
+    socket.on("debate-host-transferred", onHostTransferred);
 
     return () => {
       if (retryTimer) clearTimeout(retryTimer);
@@ -600,6 +607,7 @@ export function useDebateMedia(
       socket.off("debate-you-kicked",   onKicked);
       socket.off("debate-you-banned",   onBanned);
       socket.off("debate-error",        onError);
+      socket.off("debate-host-transferred", onHostTransferred);
     };
   }, [
     socket,
