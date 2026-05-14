@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "../styles/globals.css";
-import logoImg from "../Images/logoweb.png";
 
 export const metadata: Metadata = {
   title: {
@@ -27,6 +26,12 @@ export const metadata: Metadata = {
     "omegle español",
     "ometv español",
   ],
+
+  // ✅ Favicon via metadata API (Next.js lo inyecta automáticamente)
+  icons: {
+    icon: "/favicon.png",
+    apple: "/favicon.png",
+  },
 
   openGraph: {
     title: "Turrinder — Debates, Ligues y Chat en Vivo",
@@ -76,10 +81,6 @@ export default function RootLayout({
   return (
     <html lang="es">
       <head>
-        {/* Favicon */}
-        <link rel="icon" href={logoImg.src} type="image/png" />
-        <link rel="apple-touch-icon" href={logoImg.src} />
-
         {/* Monetag */}
         <meta name="monetag" content="c6d46c91cf1717e2d3fce1ccb12559a8" />
 
