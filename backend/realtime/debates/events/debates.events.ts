@@ -383,4 +383,66 @@ export default function registerDebatesEvents(
       }
     });
   });
+
+  // ── VOTES (broadcast a toda la sala) ──────────────────────────────────────
+  // FIX: las votaciones antes solo actualizaban el estado local del host.
+  // Ahora se broadcastean a todos los miembros de la sala.
+  socket.on("debate-start-vote", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const p      = payload as Record<string, unknown>;
+    const roomId = safeStr(p.roomId);
+    if (!roomId || !validRoomId(roomId)) return;
+    if (!isModerator(roomId, myUserId)) return;
+
+    const vote = p.vote;
+    if (!vote || typeof vote !== "object") return;
+
+    // Broadcast a todos los miembros de la sala (incluido el que inició)
+    const room = debateState.get(roomId);
+    if (!room) return;
+
+    room.members.forEach((uid) => {
+      const { userSocketMap } = require("../../webrtc/webrtc.events");
+      const sid = userSocketMap.get(uid);
+      if (sid) io.to(sid).emit("debate-vote-started", vote);
+    });
+
+    // Auto-cerrar la votación cuando expire
+    const voteObj = vote as Record<string, unknown>;
+    const endsAt  = typeof voteObj.endsAt === "number" ? voteObj.endsAt : 0;
+    const voteId  = typeof voteObj.id    === "string"  ? voteObj.id    : "";
+    const msLeft  = endsAt - Date.now();
+    if (msLeft > 0 && voteId) {
+      setTimeout(() => {
+        room.members.forEach((uid) => {
+          const { userSocketMap } = require("../../webrtc/webrtc.events");
+          const sid = userSocketMap.get(uid);
+          if (sid) io.to(sid).emit("debate-vote-ended", { voteId });
+        });
+      }, msLeft);
+    }
+  });
+
+  socket.on("debate-cast-vote", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const p      = payload as Record<string, unknown>;
+    const roomId = safeStr(p.roomId);
+    const voteId = safeStr(p.voteId);
+    const choice = safeStr(p.choice, 20);
+
+    if (!roomId || !validRoomId(roomId)) return;
+    if (!voteId || !choice) return;
+
+    const room = debateState.get(roomId);
+    if (!room || !room.members.has(myUserId)) return;
+
+    // Broadcast el voto a todos para que actualicen los contadores
+    room.members.forEach((uid) => {
+      const { userSocketMap } = require("../../webrtc/webrtc.events");
+      const sid = userSocketMap.get(uid);
+      if (sid) io.to(sid).emit("debate-vote-cast", { voteId, userId: myUserId, choice });
+    });
+  });
 }

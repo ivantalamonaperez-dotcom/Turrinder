@@ -534,20 +534,22 @@ function VideoTile({
     (videoRef as any).current = el;
     if (el && participant.stream) {
       el.srcObject = participant.stream;
-      el.muted = true;
+      // BUG FIX: only mute self-tile to avoid echo; remote tiles must NOT be muted
+      el.muted = !!isLocalSelf;
       el.play().catch(() => {});
     }
-  }, [participant.stream]);
+  }, [participant.stream, isLocalSelf]);
 
   useEffect(() => {
     if (videoRef.current && participant.stream) {
       if (videoRef.current.srcObject !== participant.stream) {
         videoRef.current.srcObject = participant.stream;
-        videoRef.current.muted = true;
+        // BUG FIX: only mute self-tile to avoid echo; remote tiles must NOT be muted
+        videoRef.current.muted = !!isLocalSelf;
         videoRef.current.play().catch(() => {});
       }
     }
-  }, [participant.stream]);
+  }, [participant.stream, isLocalSelf]);
 
   const initials = participant.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const micOff   = participant.mutedByHost || !participant.hasAudio;
@@ -555,7 +557,8 @@ function VideoTile({
 
   return (
     <div className={`dr-tile ${isPinned ? "dr-tile-pinned" : ""} ${isLocalSelf ? "dr-tile-self" : ""} ${isSpeakerHighlight ? "dr-tile-speaking" : ""} ${participant.handRaised ? "dr-tile-hand" : ""}`}>
-      <video ref={setVideoRef} autoPlay playsInline muted className="dr-tile-video"
+      {/* BUG FIX: muted is set dynamically in setVideoRef — do NOT add muted here */}
+      <video ref={setVideoRef} autoPlay playsInline className="dr-tile-video"
         data-self={isLocalSelf ? "true" : undefined}
         style={{ display: camOff ? "none" : "block" }} />
 
@@ -1668,6 +1671,21 @@ function RoomView({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── FIX BUG 3: VOTE OVERLAY — visible para TODOS los participantes ── */}
+      {activeVote && (
+        <div style={{
+          position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)",
+          zIndex: 200, width: "100%", maxWidth: 420, padding: "0 16px",
+          animation: "rv-banner-in 0.35s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>
+          <VotePanel
+            vote={activeVote}
+            userId={currentUserId}
+            onCast={castVote}
+          />
         </div>
       )}
 
