@@ -970,12 +970,19 @@ function RoomView({
   }, [presenceCount, room.id, setCount]);
 
   // ── create backend debate room (solo creador original) ───────────────────────
+  // FIX StrictMode: wrap in setTimeout so the double-mount cleanup cancels the
+  // first call before it fires. Without this, StrictMode unmount+remount causes
+  // debate-create-room to fire twice, but more critically the join effect cleanup
+  // fires debate-leave-room before the server acks the join, destroying the room.
   useEffect(() => {
     if (!initialIsHost || !socket?.connected) return;
-    socket.emit("debate-create-room", {
-      roomId: room.id, hostName: currentUserName,
-      avatarUrl: currentUserAvatarUrl, maxPeople: room.max_people,
-    });
+    const t = setTimeout(() => {
+      socket.emit("debate-create-room", {
+        roomId: room.id, hostName: currentUserName,
+        avatarUrl: currentUserAvatarUrl, maxPeople: room.max_people,
+      });
+    }, 50);
+    return () => clearTimeout(t);
   }, [initialIsHost, socket, room.id, room.max_people, currentUserId, currentUserName, currentUserAvatarUrl]);
 
   // ── host unload cleanup ──────────────────────────────────────────────────────

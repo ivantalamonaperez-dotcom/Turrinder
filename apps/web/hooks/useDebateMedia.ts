@@ -370,14 +370,32 @@ export function useDebateMedia(
      ROOM JOIN
   ========================================================= */
 
+  // FIX StrictMode: tracks whether this mount's join was acknowledged by the server.
+  // The cleanup ONLY emits debate-leave-room if the server confirmed our join.
+  // This prevents React StrictMode's double-mount from sending a spurious leave
+  // that destroys the room before the real mount can join.
+  const joinAckedRef = useRef(false);
+
   useEffect(() => {
     if (!socket?.connected) return;
 
     roomConfirmedRef.current = false;
+    joinAckedRef.current     = false;
+
     socket.emit("debate-join-room", joinPayloadRef.current);
 
+    // Mark join as acked on the first state broadcast we receive
+    const onJoinAck = () => { joinAckedRef.current = true; };
+    socket.once("debate-room-state", onJoinAck);
+
     return () => {
-      socket.emit("debate-leave-room", { roomId });
+      socket.off("debate-room-state", onJoinAck);
+      // Only leave if the server actually confirmed our join.
+      // Skipping the leave on StrictMode synthetic unmount avoids
+      // destroying the room when the real mount re-joins immediately after.
+      if (joinAckedRef.current) {
+        socket.emit("debate-leave-room", { roomId });
+      }
       closeAllPeers();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
