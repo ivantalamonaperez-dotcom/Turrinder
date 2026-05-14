@@ -534,20 +534,20 @@ function VideoTile({
     (videoRef as any).current = el;
     if (el && participant.stream) {
       el.srcObject = participant.stream;
-      el.muted = !!isLocalSelf;
+      el.muted = true;
       el.play().catch(() => {});
     }
-  }, [participant.stream, isLocalSelf]);
+  }, [participant.stream]);
 
   useEffect(() => {
     if (videoRef.current && participant.stream) {
       if (videoRef.current.srcObject !== participant.stream) {
         videoRef.current.srcObject = participant.stream;
-        videoRef.current.muted = !!isLocalSelf;
+        videoRef.current.muted = true;
         videoRef.current.play().catch(() => {});
       }
     }
-  }, [participant.stream, isLocalSelf]);
+  }, [participant.stream]);
 
   const initials = participant.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const micOff   = participant.mutedByHost || !participant.hasAudio;
@@ -555,7 +555,7 @@ function VideoTile({
 
   return (
     <div className={`dr-tile ${isPinned ? "dr-tile-pinned" : ""} ${isLocalSelf ? "dr-tile-self" : ""} ${isSpeakerHighlight ? "dr-tile-speaking" : ""} ${participant.handRaised ? "dr-tile-hand" : ""}`}>
-      <video ref={setVideoRef} autoPlay playsInline className="dr-tile-video"
+      <video ref={setVideoRef} autoPlay playsInline muted className="dr-tile-video"
         data-self={isLocalSelf ? "true" : undefined}
         style={{ display: camOff ? "none" : "block" }} />
 
@@ -2003,16 +2003,6 @@ function RoomView({
           )}
         </div>
       </div>
-
-      {/* VotePanel overlay — visible para TODOS los participantes */}
-      {activeVote && (
-        <div style={{
-          position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)",
-          zIndex: 200, width: "100%", maxWidth: 420, padding: "0 16px",
-        }}>
-          <VotePanel vote={activeVote} userId={currentUserId} onCast={castVote} />
-        </div>
-      )}
     </>
   );
 }

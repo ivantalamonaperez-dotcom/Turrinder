@@ -585,21 +585,6 @@ export function useDebateMedia(
     };
 
     /* ── Registro de listeners ───────────────────────────────────────────── */
-    /* Votaciones en tiempo real */
-    const onVoteStarted = (vote: ActiveVote) => {
-      setActiveVote(vote);
-      toast(`🗳️ Nueva votación: ${vote.question}`, "info");
-    };
-    const onVoteCast = ({ voteId, userId: voterId, choice }: { voteId: string; userId: string; choice: string }) => {
-      setActiveVote((v) => {
-        if (!v || v.id !== voteId) return v;
-        return { ...v, votes: { ...v.votes, [voterId]: choice } };
-      });
-    };
-    const onVoteEnded = ({ voteId }: { voteId: string }) => {
-      setActiveVote((v) => (v?.id === voteId ? null : v));
-    };
-
     socket.on("debate-room-state",   onState);
     socket.on("debate-user-joined",  onUserJoined);
     socket.on("debate-user-left",    onUserLeft);
@@ -610,9 +595,6 @@ export function useDebateMedia(
     socket.on("debate-you-banned",   onBanned);
     socket.on("debate-error",        onError);
     socket.on("debate-host-transferred", onHostTransferred);
-    socket.on("debate-vote-started", onVoteStarted);
-    socket.on("debate-vote-cast",    onVoteCast);
-    socket.on("debate-vote-ended",   onVoteEnded);
 
     return () => {
       if (retryTimer) clearTimeout(retryTimer);
@@ -626,9 +608,6 @@ export function useDebateMedia(
       socket.off("debate-you-banned",   onBanned);
       socket.off("debate-error",        onError);
       socket.off("debate-host-transferred", onHostTransferred);
-      socket.off("debate-vote-started", onVoteStarted);
-      socket.off("debate-vote-cast",    onVoteCast);
-      socket.off("debate-vote-ended",   onVoteEnded);
     };
   }, [
     socket,
@@ -828,8 +807,8 @@ export function useDebateMedia(
       ms: number,
       tid?: string,
       tn?: string
-    ) => {
-      const vote: ActiveVote = {
+    ) =>
+      setActiveVote({
         id:         crypto.randomUUID?.() || String(Date.now()),
         type,
         question:   q,
@@ -838,17 +817,12 @@ export function useDebateMedia(
         endsAt:     Date.now() + ms,
         targetId:   tid,
         targetName: tn,
-      };
-      socket?.emit("debate-start-vote", { roomId, vote });
-      setActiveVote(vote);
-    },
+      }),
 
-    castVote: (id: string, choice: string) => {
-      socket?.emit("debate-cast-vote", { roomId, voteId: id, choice });
+    castVote: (id: string, choice: string) =>
       setActiveVote((v) =>
-        v ? { ...v, votes: { ...v.votes, [currentUserId]: choice } } : v
-      );
-    },
+        v ? { ...v, votes: { ...v.votes, [id]: choice } } : v
+      ),
 
     modLogs,
     tempMutes,
