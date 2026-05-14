@@ -370,32 +370,14 @@ export function useDebateMedia(
      ROOM JOIN
   ========================================================= */
 
-  // FIX StrictMode: tracks whether this mount's join was acknowledged by the server.
-  // The cleanup ONLY emits debate-leave-room if the server confirmed our join.
-  // This prevents React StrictMode's double-mount from sending a spurious leave
-  // that destroys the room before the real mount can join.
-  const joinAckedRef = useRef(false);
-
   useEffect(() => {
     if (!socket?.connected) return;
 
     roomConfirmedRef.current = false;
-    joinAckedRef.current     = false;
-
     socket.emit("debate-join-room", joinPayloadRef.current);
 
-    // Mark join as acked on the first state broadcast we receive
-    const onJoinAck = () => { joinAckedRef.current = true; };
-    socket.once("debate-room-state", onJoinAck);
-
     return () => {
-      socket.off("debate-room-state", onJoinAck);
-      // Only leave if the server actually confirmed our join.
-      // Skipping the leave on StrictMode synthetic unmount avoids
-      // destroying the room when the real mount re-joins immediately after.
-      if (joinAckedRef.current) {
-        socket.emit("debate-leave-room", { roomId });
-      }
+      socket.emit("debate-leave-room", { roomId });
       closeAllPeers();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -602,24 +584,22 @@ export function useDebateMedia(
       }
     };
 
-    /* ── FIX: Votaciones en tiempo real ─────────────────────────────────────── */
+    /* ── Registro de listeners ───────────────────────────────────────────── */
+    /* Votaciones en tiempo real */
     const onVoteStarted = (vote: ActiveVote) => {
       setActiveVote(vote);
       toast(`🗳️ Nueva votación: ${vote.question}`, "info");
     };
-
     const onVoteCast = ({ voteId, userId: voterId, choice }: { voteId: string; userId: string; choice: string }) => {
       setActiveVote((v) => {
         if (!v || v.id !== voteId) return v;
         return { ...v, votes: { ...v.votes, [voterId]: choice } };
       });
     };
-
     const onVoteEnded = ({ voteId }: { voteId: string }) => {
       setActiveVote((v) => (v?.id === voteId ? null : v));
     };
 
-    /* ── Registro de listeners ───────────────────────────────────────────── */
     socket.on("debate-room-state",   onState);
     socket.on("debate-user-joined",  onUserJoined);
     socket.on("debate-user-left",    onUserLeft);
@@ -630,7 +610,6 @@ export function useDebateMedia(
     socket.on("debate-you-banned",   onBanned);
     socket.on("debate-error",        onError);
     socket.on("debate-host-transferred", onHostTransferred);
-    // FIX: vote events
     socket.on("debate-vote-started", onVoteStarted);
     socket.on("debate-vote-cast",    onVoteCast);
     socket.on("debate-vote-ended",   onVoteEnded);
@@ -647,7 +626,6 @@ export function useDebateMedia(
       socket.off("debate-you-banned",   onBanned);
       socket.off("debate-error",        onError);
       socket.off("debate-host-transferred", onHostTransferred);
-      // FIX: vote events
       socket.off("debate-vote-started", onVoteStarted);
       socket.off("debate-vote-cast",    onVoteCast);
       socket.off("debate-vote-ended",   onVoteEnded);
@@ -861,13 +839,11 @@ export function useDebateMedia(
         targetId:   tid,
         targetName: tn,
       };
-      // FIX: broadcast to all room members via socket, not just local state
       socket?.emit("debate-start-vote", { roomId, vote });
       setActiveVote(vote);
     },
 
     castVote: (id: string, choice: string) => {
-      // FIX: broadcast vote to all room members via socket
       socket?.emit("debate-cast-vote", { roomId, voteId: id, choice });
       setActiveVote((v) =>
         v ? { ...v, votes: { ...v.votes, [currentUserId]: choice } } : v

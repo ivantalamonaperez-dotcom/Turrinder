@@ -534,7 +534,6 @@ function VideoTile({
     (videoRef as any).current = el;
     if (el && participant.stream) {
       el.srcObject = participant.stream;
-      // BUG FIX: only mute self-tile to avoid echo; remote tiles must NOT be muted
       el.muted = !!isLocalSelf;
       el.play().catch(() => {});
     }
@@ -544,7 +543,6 @@ function VideoTile({
     if (videoRef.current && participant.stream) {
       if (videoRef.current.srcObject !== participant.stream) {
         videoRef.current.srcObject = participant.stream;
-        // BUG FIX: only mute self-tile to avoid echo; remote tiles must NOT be muted
         videoRef.current.muted = !!isLocalSelf;
         videoRef.current.play().catch(() => {});
       }
@@ -557,7 +555,6 @@ function VideoTile({
 
   return (
     <div className={`dr-tile ${isPinned ? "dr-tile-pinned" : ""} ${isLocalSelf ? "dr-tile-self" : ""} ${isSpeakerHighlight ? "dr-tile-speaking" : ""} ${participant.handRaised ? "dr-tile-hand" : ""}`}>
-      {/* BUG FIX: muted is set dynamically in setVideoRef — do NOT add muted here */}
       <video ref={setVideoRef} autoPlay playsInline className="dr-tile-video"
         data-self={isLocalSelf ? "true" : undefined}
         style={{ display: camOff ? "none" : "block" }} />
@@ -970,19 +967,12 @@ function RoomView({
   }, [presenceCount, room.id, setCount]);
 
   // ── create backend debate room (solo creador original) ───────────────────────
-  // FIX StrictMode: wrap in setTimeout so the double-mount cleanup cancels the
-  // first call before it fires. Without this, StrictMode unmount+remount causes
-  // debate-create-room to fire twice, but more critically the join effect cleanup
-  // fires debate-leave-room before the server acks the join, destroying the room.
   useEffect(() => {
     if (!initialIsHost || !socket?.connected) return;
-    const t = setTimeout(() => {
-      socket.emit("debate-create-room", {
-        roomId: room.id, hostName: currentUserName,
-        avatarUrl: currentUserAvatarUrl, maxPeople: room.max_people,
-      });
-    }, 50);
-    return () => clearTimeout(t);
+    socket.emit("debate-create-room", {
+      roomId: room.id, hostName: currentUserName,
+      avatarUrl: currentUserAvatarUrl, maxPeople: room.max_people,
+    });
   }, [initialIsHost, socket, room.id, room.max_people, currentUserId, currentUserName, currentUserAvatarUrl]);
 
   // ── host unload cleanup ──────────────────────────────────────────────────────
@@ -1681,21 +1671,6 @@ function RoomView({
         </div>
       )}
 
-      {/* ── FIX BUG 3: VOTE OVERLAY — visible para TODOS los participantes ── */}
-      {activeVote && (
-        <div style={{
-          position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)",
-          zIndex: 200, width: "100%", maxWidth: 420, padding: "0 16px",
-          animation: "rv-banner-in 0.35s cubic-bezier(0.34,1.56,0.64,1)",
-        }}>
-          <VotePanel
-            vote={activeVote}
-            userId={currentUserId}
-            onCast={castVote}
-          />
-        </div>
-      )}
-
       <div className="rv-root">
         {/* ── TOASTS ── */}
         <div className="rv-toasts-stack">
@@ -2028,6 +2003,16 @@ function RoomView({
           )}
         </div>
       </div>
+
+      {/* VotePanel overlay — visible para TODOS los participantes */}
+      {activeVote && (
+        <div style={{
+          position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)",
+          zIndex: 200, width: "100%", maxWidth: 420, padding: "0 16px",
+        }}>
+          <VotePanel vote={activeVote} userId={currentUserId} onCast={castVote} />
+        </div>
+      )}
     </>
   );
 }
