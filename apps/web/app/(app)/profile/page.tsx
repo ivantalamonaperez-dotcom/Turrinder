@@ -152,11 +152,9 @@ export default function ProfilePage() {
 
   /* ── Drag & drop handlers ── */
   const handleDragStart = (e: React.DragEvent, idx: number) => {
-    // Only allow dragging filled slots
     if (!photos[idx]) return;
     setDragIdx(idx);
     e.dataTransfer.effectAllowed = "move";
-    // Transparent ghost on some browsers
     const ghost = document.createElement("div");
     ghost.style.position = "absolute";
     ghost.style.top = "-9999px";
@@ -171,46 +169,29 @@ export default function ProfilePage() {
     setOverIdx(idx);
   };
 
-  const handleDragLeave = () => {
-    setOverIdx(null);
-  };
+  const handleDragLeave = () => { setOverIdx(null); };
 
   const handleDrop = (e: React.DragEvent, targetIdx: number) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === targetIdx) {
-      setDragIdx(null);
-      setOverIdx(null);
-      return;
+      setDragIdx(null); setOverIdx(null); return;
     }
-    // Swap the two slots
     setPhotos(prev => {
       const next = [...prev];
       const dragPhoto   = next[dragIdx]   ?? null;
       const targetPhoto = next[targetIdx] ?? null;
-      // Place target photo in drag origin slot
-      if (targetPhoto) {
-        next[dragIdx] = targetPhoto;
-      } else {
-        // If target was empty, remove from original position
-        next.splice(dragIdx, 1);
-      }
-      // Place drag photo in target slot
-      if (dragPhoto) {
-        next[targetIdx] = dragPhoto;
-      }
-      return next.filter(Boolean); // clean any undefined gaps
+      if (targetPhoto) next[dragIdx] = targetPhoto;
+      else next.splice(dragIdx, 1);
+      if (dragPhoto) next[targetIdx] = dragPhoto;
+      return next.filter(Boolean);
     });
-    setDragIdx(null);
-    setOverIdx(null);
+    setDragIdx(null); setOverIdx(null);
   };
 
-  const handleDragEnd = () => {
-    setDragIdx(null);
-    setOverIdx(null);
-  };
+  const handleDragEnd = () => { setDragIdx(null); setOverIdx(null); };
 
   /* ── Touch drag (mobile) ── */
-  const touchOriginIdx = useRef<number | null>(null);
+  const touchOriginIdx  = useRef<number | null>(null);
   const touchOverIdxRef = useRef<number | null>(null);
 
   const handleTouchStart = (idx: number) => {
@@ -220,9 +201,9 @@ export default function ProfilePage() {
 
   const handleTouchMove = (e: React.TouchEvent) => {
     const touch = e.touches[0];
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    const slot = el?.closest("[data-slot-idx]") as HTMLElement | null;
-    const idx = slot ? parseInt(slot.dataset.slotIdx!) : null;
+    const el    = document.elementFromPoint(touch.clientX, touch.clientY);
+    const slot  = el?.closest("[data-slot-idx]") as HTMLElement | null;
+    const idx   = slot ? parseInt(slot.dataset.slotIdx!) : null;
     touchOverIdxRef.current = idx;
     setOverIdx(idx);
   };
@@ -241,10 +222,9 @@ export default function ProfilePage() {
         return next.filter(Boolean);
       });
     }
-    touchOriginIdx.current = null;
+    touchOriginIdx.current  = null;
     touchOverIdxRef.current = null;
-    setDragIdx(null);
-    setOverIdx(null);
+    setDragIdx(null); setOverIdx(null);
   };
 
   /* ── Save ── */
@@ -384,11 +364,13 @@ export default function ProfilePage() {
 
         .pf-wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
 
-        /* ═══════════ HERO REDESIGN ═══════════ */
+        /* ═══════════ HERO ═══════════ */
 
         :root {
           --vip-a: #fbbf24; --vip-b: #f59e0b; --vip-c: #92400e;
           --str-a: #4ade80; --str-b: #22c55e; --str-c: #14532d;
+          /* ── OWNER — rojo carmesí ── */
+          --own-a: #dc143c; --own-b: #a50e2d; --own-c: #5a0618;
         }
 
         .pf-hero {
@@ -412,6 +394,11 @@ export default function ProfilePage() {
           content: ''; position: absolute; inset: 0; pointer-events: none;
           background: radial-gradient(ellipse 70% 60% at 50% -10%, rgba(74,222,128,0.09) 0%, transparent 70%);
         }
+        /* OWNER — tint carmesí */
+        .pf-hero.hero-owner::after {
+          content: ''; position: absolute; inset: 0; pointer-events: none;
+          background: radial-gradient(ellipse 70% 60% at 50% -10%, rgba(220,20,60,0.11) 0%, transparent 70%);
+        }
 
         .pf-hero-card {
           position: relative; z-index: 2;
@@ -429,6 +416,11 @@ export default function ProfilePage() {
         .pf-hero-card.card-streamer {
           border-color: rgba(74,222,128,0.20);
           background: linear-gradient(180deg, rgba(74,222,128,0.07) 0%, rgba(74,222,128,0.02) 100%);
+        }
+        /* OWNER — card carmesí */
+        .pf-hero-card.card-owner {
+          border-color: rgba(220,20,60,0.22);
+          background: linear-gradient(180deg, rgba(220,20,60,0.08) 0%, rgba(220,20,60,0.02) 100%);
         }
 
         .pf-hero-inner {
@@ -464,6 +456,15 @@ export default function ProfilePage() {
         @keyframes ringGlowStreamer {
           from { box-shadow: 0 0 22px rgba(74,222,128,0.28), 0 16px 48px rgba(0,0,0,0.6); }
           to   { box-shadow: 0 0 58px rgba(74,222,128,0.62), 0 20px 60px rgba(0,0,0,0.6); }
+        }
+        /* OWNER — ring carmesí, más glow que los demás */
+        .pf-avatar-ring.ring-owner {
+          background: linear-gradient(145deg, var(--own-a) 0%, var(--own-b) 50%, var(--own-c) 100%);
+          animation: ringGlowOwner 5s ease-in-out infinite alternate;
+        }
+        @keyframes ringGlowOwner {
+          from { box-shadow: 0 0 22px rgba(220,20,60,0.32), 0 16px 48px rgba(0,0,0,0.6); }
+          to   { box-shadow: 0 0 64px rgba(220,20,60,0.70), 0 20px 60px rgba(0,0,0,0.6); }
         }
 
         .pf-avatar-inner {
@@ -504,6 +505,11 @@ export default function ProfilePage() {
           background: linear-gradient(135deg, var(--str-a), var(--str-b));
           box-shadow: 0 4px 16px rgba(74,222,128,0.6);
         }
+        /* OWNER — badge carmesí con glow intenso */
+        .pf-role-badge.badge-owner {
+          background: linear-gradient(135deg, var(--own-a), var(--own-b));
+          box-shadow: 0 4px 16px rgba(220,20,60,0.65);
+        }
         .pf-role-badge img { width: 18px; height: 18px; object-fit: contain; filter: brightness(0) invert(1); }
 
         /* ── ROLE TIER BANNER ── */
@@ -539,13 +545,28 @@ export default function ProfilePage() {
           0%,100% { box-shadow: 0 0 12px rgba(74,222,128,0.13); }
           50%      { box-shadow: 0 0 26px rgba(74,222,128,0.27); }
         }
+        /* OWNER — tier pill carmesí, el más prominente */
+        .pf-role-tier.tier-owner {
+          background: linear-gradient(90deg, rgba(220,20,60,0.15), rgba(165,14,45,0.08));
+          border-color: rgba(220,20,60,0.42); color: var(--own-a);
+          box-shadow: 0 0 18px rgba(220,20,60,0.16), inset 0 1px 0 rgba(255,255,255,0.05);
+          animation: ownPulse 3s ease-in-out infinite;
+        }
+        @keyframes ownPulse {
+          0%,100% { box-shadow: 0 0 14px rgba(220,20,60,0.16); }
+          50%      { box-shadow: 0 0 32px rgba(220,20,60,0.34); }
+        }
+
         .pf-role-tier-dot {
           width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
           animation: dotBlink 2s ease-in-out infinite;
         }
-        .tier-viewer .pf-role-tier-dot  { background: rgba(84,199,248,0.6); animation: none; }
-        .tier-vip    .pf-role-tier-dot  { background: var(--vip-a); box-shadow: 0 0 6px var(--vip-a); }
+        .tier-viewer  .pf-role-tier-dot { background: rgba(84,199,248,0.6);  animation: none; }
+        .tier-vip     .pf-role-tier-dot { background: var(--vip-a); box-shadow: 0 0 6px var(--vip-a); }
+        .tier-streamer.pf-role-tier-dot { background: var(--str-a); box-shadow: 0 0 6px var(--str-a); }
         .tier-streamer .pf-role-tier-dot { background: var(--str-a); box-shadow: 0 0 6px var(--str-a); }
+        /* OWNER dot — rojo carmesí con glow más fuerte */
+        .tier-owner .pf-role-tier-dot   { background: var(--own-a); box-shadow: 0 0 8px var(--own-a); }
         @keyframes dotBlink { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
         /* ── HERO INFO ── */
@@ -558,13 +579,13 @@ export default function ProfilePage() {
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .pf-hero-uid {
-  font-size: 10px;
-  color: rgba(84,199,248,0.35);
-  letter-spacing: 0.8px;
-  font-family: 'DM Sans', monospace;
-  user-select: all;
-  cursor: text;
-}
+          font-size: 10px;
+          color: rgba(84,199,248,0.35);
+          letter-spacing: 0.8px;
+          font-family: 'DM Sans', monospace;
+          user-select: all;
+          cursor: text;
+        }
 
         .pf-hero-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
         .pf-badge {
@@ -577,11 +598,9 @@ export default function ProfilePage() {
         .pf-badge-loc    { background: rgba(26,111,168,0.10);  border-color: rgba(26,111,168,0.28);  color: #7ec8f0; }
         .pf-badge-occ    { background: rgba(84,199,248,0.06);  border-color: rgba(84,199,248,0.16);  color: var(--muted); }
 
-        /* Bio — NUNCA cortada, altura libre */
         .pf-hero-bio-preview {
           font-size: 13px; color: var(--muted); line-height: 1.6;
           margin-top: 6px; width: 100%;
-          /* Sin clamp, sin overflow hidden, sin -webkit-line-clamp */
           word-break: break-word; white-space: pre-wrap;
         }
 
@@ -701,54 +720,42 @@ export default function ProfilePage() {
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
           user-select: none;
         }
-        /* Empty slot hover */
         .pf-photo-slot.empty:hover {
           border-color: rgba(84,199,248,0.4);
           background: rgba(84,199,248,0.07);
           transform: scale(1.02);
         }
-        /* Filled slot: solid border */
         .pf-photo-slot.filled {
           border-style: solid;
           border-color: rgba(84,199,248,0.15);
           cursor: grab;
         }
         .pf-photo-slot.filled:active { cursor: grabbing; }
-
-        /* Dragging source: dimmed */
         .pf-photo-slot.dragging-source {
-          opacity: 0.38;
-          transform: scale(0.96);
+          opacity: 0.38; transform: scale(0.96);
           border-color: rgba(84,199,248,0.35);
           transition: opacity 0.15s, transform 0.15s;
         }
-
-        /* Drop target highlight */
         .pf-photo-slot.drop-target {
-          border-color: var(--sky) !important;
-          border-style: solid !important;
+          border-color: var(--sky) !important; border-style: solid !important;
           background: rgba(84,199,248,0.10) !important;
           box-shadow: 0 0 0 2px rgba(84,199,248,0.28), inset 0 0 20px rgba(84,199,248,0.08);
           transform: scale(1.03);
         }
-        /* Special glow for slot 0 (will become principal) */
         .pf-photo-slot.drop-target.slot-0 {
           border-color: #fbbf24 !important;
           box-shadow: 0 0 0 2px rgba(251,191,36,0.4), inset 0 0 20px rgba(251,191,36,0.07);
         }
-
         .pf-photo-slot img.photo-img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
         .pf-photo-add-icon { width: 36px; height: 36px; opacity: 0.2; transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
         .pf-photo-slot.empty:hover .pf-photo-add-icon { opacity: 0.45; transform: scale(1.1); }
         .pf-photo-add-text { font-size: 10px; color: var(--muted); text-align: center; padding: 0 8px; pointer-events: none; }
-
         .pf-photo-main {
           position: absolute; top: 7px; left: 7px;
           background: linear-gradient(135deg, var(--sky), var(--sky3));
           color: #020d18; font-size: 9px; font-weight: 700;
           letter-spacing: 1px; text-transform: uppercase;
-          padding: 3px 7px; border-radius: 6px; z-index: 2;
-          pointer-events: none;
+          padding: 3px 7px; border-radius: 6px; z-index: 2; pointer-events: none;
         }
         .pf-photo-rm {
           position: absolute; top: 7px; right: 7px;
@@ -759,8 +766,6 @@ export default function ProfilePage() {
           z-index: 2; transition: background 0.15s;
         }
         .pf-photo-rm:hover { background: rgba(239,68,68,0.8); }
-
-        /* Drag handle icon overlay on filled slots */
         .pf-drag-handle {
           position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%);
           display: flex; align-items: center; gap: 2px;
@@ -771,8 +776,6 @@ export default function ProfilePage() {
           display: block; width: 3px; height: 3px; border-radius: 50%;
           background: rgba(255,255,255,0.6);
         }
-
-        /* Drop hint overlay on slot 0 when dragging */
         .pf-photo-slot.drop-target.slot-0::after {
           content: '★ Principal';
           position: absolute; bottom: 0; left: 0; right: 0;
@@ -782,7 +785,6 @@ export default function ProfilePage() {
           padding: 16px 0 8px; text-align: center;
           pointer-events: none; z-index: 4;
         }
-
         .pf-drag-hint {
           display: flex; align-items: center; gap: 7px;
           font-size: 11px; color: var(--muted);
@@ -792,7 +794,6 @@ export default function ProfilePage() {
           border-radius: 10px; margin-bottom: 4px;
         }
         .pf-drag-hint-icon { font-size: 14px; flex-shrink: 0; }
-
         .pf-photos-hint { font-size: 12px; color: var(--muted); line-height: 1.6; text-align: center; padding: 8px 0; }
 
         .pf-lf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -876,86 +877,121 @@ export default function ProfilePage() {
       <div className="pf">
 
         {/* ════ HERO ════ */}
-        <div className={`pf-hero${role === "vip" ? " hero-vip" : role === "streamer" ? " hero-streamer" : ""}`}>
+        <div className={`pf-hero${
+          role === "vip"      ? " hero-vip"      :
+          role === "streamer" ? " hero-streamer" :
+          role === "owner"    ? " hero-owner"    :
+          ""
+        }`}>
           <div className="pf-wrap">
-            <div className={`pf-hero-card${role === "vip" ? " card-vip" : role === "streamer" ? " card-streamer" : ""}`}>
-            <div className="pf-hero-inner">
+            <div className={`pf-hero-card${
+              role === "vip"      ? " card-vip"      :
+              role === "streamer" ? " card-streamer" :
+              role === "owner"    ? " card-owner"    :
+              ""
+            }`}>
+              <div className="pf-hero-inner">
 
-              <div className="pf-avatar-col" style={{ animation: "fadeUp 0.5s 0.05s both" }}>
-                <div className={`pf-avatar-ring ${role === "vip" ? "ring-vip" : role === "streamer" ? "ring-streamer" : ""}`}>
-                  <div className="pf-avatar-inner">
-                    {photos[0]
-                      ? <img src={photos[0].url} alt={name || "Avatar"} className="photo-img" />
-                      : <img src={imgPerfil.src} alt="" className="pf-avatar-placeholder" aria-hidden="true" />
-                    }
+                {/* ── Avatar ── */}
+                <div className="pf-avatar-col" style={{ animation: "fadeUp 0.5s 0.05s both" }}>
+                  <div className={`pf-avatar-ring${
+                    role === "vip"      ? " ring-vip"      :
+                    role === "streamer" ? " ring-streamer" :
+                    role === "owner"    ? " ring-owner"    :
+                    ""
+                  }`}>
+                    <div className="pf-avatar-inner">
+                      {photos[0]
+                        ? <img src={photos[0].url} alt={name || "Avatar"} className="photo-img" />
+                        : <img src={imgPerfil.src} alt="" className="pf-avatar-placeholder" aria-hidden="true" />
+                      }
+                    </div>
                   </div>
+
+                  {/* Edit button */}
+                  <button
+                    type="button"
+                    className="pf-avatar-edit-btn"
+                    onClick={() => setActiveTab("fotos")}
+                    aria-label="Ir a editar fotos"
+                  >
+                    <img src={imgCamara.src} alt="" aria-hidden="true" />
+                  </button>
+
+                  {/* Role badge */}
+                  {role === "vip" && (
+                    <div className="pf-role-badge badge-vip" title="VIP">
+                      <img src={imgVip.src} alt="VIP" />
+                    </div>
+                  )}
+                  {role === "streamer" && (
+                    <div className="pf-role-badge badge-streamer" title="Streamer">
+                      <img src={imgStreamer.src} alt="Streamer" />
+                    </div>
+                  )}
+                  {/* OWNER badge — corona carmesí */}
+                  {role === "owner" && (
+                    <div className="pf-role-badge badge-owner" title="Owner">
+                      <span style={{ fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>♛</span>
+                    </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className="pf-avatar-edit-btn"
-                  onClick={() => setActiveTab("fotos")}
-                  aria-label="Ir a editar fotos"
-                >
-                  <img src={imgCamara.src} alt="" aria-hidden="true" />
-                </button>
-                {role === "vip" && (
-                  <div className="pf-role-badge badge-vip" title="VIP">
-                    <img src={imgVip.src} alt="VIP" />
-                  </div>
-                )}
-                {role === "streamer" && (
-                  <div className="pf-role-badge badge-streamer" title="Streamer">
-                    <img src={imgStreamer.src} alt="Streamer" />
+
+                {/* ── Hero info ── */}
+                <div className="pf-hero-info">
+                  <div className="pf-hero-name">{name || "Tu perfil"}</div>
+                  <div className="pf-hero-email">{email}</div>
+                  {userId && (
+                    <div className="pf-hero-uid" title="Tu ID único">ID: {userId}</div>
+                  )}
+
+                  {/* Role tier pill */}
+                  {!loading && (
+                    <div className={`pf-role-tier ${
+                      role === "vip"      ? "tier-vip"      :
+                      role === "streamer" ? "tier-streamer" :
+                      role === "owner"    ? "tier-owner"    :
+                      "tier-viewer"
+                    }`}>
+                      <span className="pf-role-tier-dot" />
+                      {role === "vip"      ? "✦ VIP"      :
+                       role === "streamer" ? "◉ Streamer" :
+                       role === "owner"    ? "♛ Owner"    :
+                       "Viewer"}
+                    </div>
+                  )}
+
+                  {!loading && (
+                    <div className="pf-hero-badges">
+                      {gender     && <span className="pf-badge pf-badge-gender">{gender}</span>}
+                      {age        && <span className="pf-badge pf-badge-age">{age} años</span>}
+                      {location   && <span className="pf-badge pf-badge-loc">📍 {location}</span>}
+                      {occupation && <span className="pf-badge pf-badge-occ">{occupation}</span>}
+                    </div>
+                  )}
+                  {bio && <div className="pf-hero-bio-preview">{bio}</div>}
+                </div>
+
+                {/* ── Stats ── */}
+                {!loading && (
+                  <div className="pf-hero-stats">
+                    <div className="pf-stat-card">
+                      <img src={imgCamara.src} className="pf-stat-icon" alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
+                      <div className="pf-stat-info">
+                        <div className="pf-stat-val">{photos.length}</div>
+                        <div className="pf-stat-key">Fotos</div>
+                      </div>
+                    </div>
+                    <div className="pf-stat-card">
+                      <img src={imgDiamante.src} className="pf-stat-icon" alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
+                      <div className="pf-stat-info">
+                        <div className="pf-stat-val">{interests.length}</div>
+                        <div className="pf-stat-key">Intereses</div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
-
-              <div className="pf-hero-info">
-                <div className="pf-hero-name">{name || "Tu perfil"}</div>
-                <div className="pf-hero-email">{email}</div>
-                {/* ← NUEVO */}
-{userId && (
-  <div className="pf-hero-uid" title="Tu ID único">ID: {userId}</div>
-)}
-
-                {/* Role tier pill */}
-                {!loading && (
-                  <div className={`pf-role-tier ${role === "vip" ? "tier-vip" : role === "streamer" ? "tier-streamer" : "tier-viewer"}`}>
-                    <span className="pf-role-tier-dot" />
-                    {role === "vip" ? "✦ VIP" : role === "streamer" ? "◉ Streamer" : "Viewer"}
-                  </div>
-                )}
-
-                {!loading && (
-                  <div className="pf-hero-badges">
-                    {gender     && <span className="pf-badge pf-badge-gender">{gender}</span>}
-                    {age        && <span className="pf-badge pf-badge-age">{age} años</span>}
-                    {location   && <span className="pf-badge pf-badge-loc">📍 {location}</span>}
-                    {occupation && <span className="pf-badge pf-badge-occ">{occupation}</span>}
-                  </div>
-                )}
-                {bio && <div className="pf-hero-bio-preview">{bio}</div>}
-              </div>
-
-              {!loading && (
-                <div className="pf-hero-stats">
-                  <div className="pf-stat-card">
-                    <img src={imgCamara.src} className="pf-stat-icon" alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
-                    <div className="pf-stat-info">
-                      <div className="pf-stat-val">{photos.length}</div>
-                      <div className="pf-stat-key">Fotos</div>
-                    </div>
-                  </div>
-                  <div className="pf-stat-card">
-                    <img src={imgDiamante.src} className="pf-stat-icon" alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
-                    <div className="pf-stat-info">
-                      <div className="pf-stat-val">{interests.length}</div>
-                      <div className="pf-stat-key">Intereses</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
             </div>
           </div>
         </div>
@@ -1195,7 +1231,6 @@ export default function ProfilePage() {
                       </span>
                     </div>
 
-                    {/* Drag hint — solo cuando hay más de 1 foto */}
                     {photos.length > 1 && (
                       <div className="pf-drag-hint" style={{ marginBottom: 14 }}>
                         <span className="pf-drag-hint-icon">⇄</span>
@@ -1205,7 +1240,7 @@ export default function ProfilePage() {
 
                     <div className="pf-photos-grid">
                       {[0, 1, 2, 3, 4, 5].map(idx => {
-                        const hasPhoto    = !!photos[idx];
+                        const hasPhoto      = !!photos[idx];
                         const isDraggingSrc = dragIdx === idx;
                         const isDropTarget  = dragIdx !== null && dragIdx !== idx && overIdx === idx;
 
@@ -1219,25 +1254,22 @@ export default function ProfilePage() {
                               isDraggingSrc ? "dragging-source" : "",
                               isDropTarget  ? `drop-target slot-${idx}` : "",
                             ].filter(Boolean).join(" ")}
-                            /* ── Desktop drag ── */
                             draggable={hasPhoto}
-                            onDragStart={e  => handleDragStart(e, idx)}
-                            onDragOver={e   => handleDragOver(e, idx)}
-                            onDragLeave={   () => handleDragLeave()}
-                            onDrop={e       => handleDrop(e, idx)}
-                            onDragEnd={     () => handleDragEnd()}
-                            /* ── Mobile touch ── */
-                            onTouchStart={  () => handleTouchStart(idx)}
-                            onTouchMove={e  => handleTouchMove(e)}
-                            onTouchEnd={    () => handleTouchEnd()}
-                            /* ── Click to add (empty slots) ── */
+                            onDragStart={e => handleDragStart(e, idx)}
+                            onDragOver={e  => handleDragOver(e, idx)}
+                            onDragLeave={  () => handleDragLeave()}
+                            onDrop={e      => handleDrop(e, idx)}
+                            onDragEnd={    () => handleDragEnd()}
+                            onTouchStart={ () => handleTouchStart(idx)}
+                            onTouchMove={e => handleTouchMove(e)}
+                            onTouchEnd={   () => handleTouchEnd()}
                             onClick={() => !hasPhoto && fileRef.current?.click()}
                             role={!hasPhoto ? "button" : undefined}
                             tabIndex={!hasPhoto ? 0 : undefined}
                             aria-label={
                               !hasPhoto
                                 ? idx === 0 ? "Agregar foto principal" : `Agregar foto ${idx + 1}`
-                                : idx === 0 ? "Foto principal (arrastrá para reorganizar)" : `Foto ${idx + 1} (arrastrá para reorganizar)`
+                                : idx === 0 ? "Foto principal" : `Foto ${idx + 1}`
                             }
                             onKeyDown={e => !hasPhoto && e.key === "Enter" && fileRef.current?.click()}
                           >
@@ -1253,7 +1285,6 @@ export default function ProfilePage() {
                                 >
                                   ✕
                                 </button>
-                                {/* Drag handle dots */}
                                 <div className="pf-drag-handle" aria-hidden="true">
                                   {[0,1,2,3,4,5].map(d => <span key={d} />)}
                                 </div>

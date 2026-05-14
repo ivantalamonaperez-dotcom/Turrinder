@@ -534,20 +534,20 @@ function VideoTile({
     (videoRef as any).current = el;
     if (el && participant.stream) {
       el.srcObject = participant.stream;
-      el.muted = true;
+      el.muted = !!isLocalSelf;  // ← solo muteado si es uno mismo
       el.play().catch(() => {});
     }
-  }, [participant.stream]);
+  }, [participant.stream, isLocalSelf]);
 
   useEffect(() => {
     if (videoRef.current && participant.stream) {
       if (videoRef.current.srcObject !== participant.stream) {
         videoRef.current.srcObject = participant.stream;
-        videoRef.current.muted = true;
+        videoRef.current.muted = !!isLocalSelf;  // ← ídem
         videoRef.current.play().catch(() => {});
       }
     }
-  }, [participant.stream]);
+  }, [participant.stream, isLocalSelf]);
 
   const initials = participant.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const micOff   = participant.mutedByHost || !participant.hasAudio;
@@ -555,7 +555,7 @@ function VideoTile({
 
   return (
     <div className={`dr-tile ${isPinned ? "dr-tile-pinned" : ""} ${isLocalSelf ? "dr-tile-self" : ""} ${isSpeakerHighlight ? "dr-tile-speaking" : ""} ${participant.handRaised ? "dr-tile-hand" : ""}`}>
-      <video ref={setVideoRef} autoPlay playsInline muted className="dr-tile-video"
+      <video ref={setVideoRef} autoPlay playsInline className="dr-tile-video"
         data-self={isLocalSelf ? "true" : undefined}
         style={{ display: camOff ? "none" : "block" }} />
 
