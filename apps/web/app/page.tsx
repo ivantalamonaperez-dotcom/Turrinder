@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/services/supabase.client";
+
 
 import img from "../Images/logo.png";
 import imgLigues      from "../Images/ligues.png";
@@ -598,10 +600,10 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
     );
   };
 
-  const handleLogin = async () => {
+    const handleLogin = async () => {
     if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
     setLoading(true);
-    const supabase = await getSupabase();
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
 
     if (error) {
@@ -645,9 +647,8 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
     }
   };
 
-  const handleGoogleLogin = async () => {
+ const handleGoogleLogin = async () => {
     setGoogleLoading(true);
-    const supabase = await getSupabase();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },

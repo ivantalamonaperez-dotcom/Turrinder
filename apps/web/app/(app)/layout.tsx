@@ -15,12 +15,10 @@ function AuthGuard() {
     let cancelled = false;
 
     const check = async () => {
-      // Intento 1
       let { data: { session } } = await supabase.auth.getSession();
 
-      // Si no hay sesión, esperar 1.5s y reintentar (el callback puede estar procesando)
       if (!session) {
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 3000)); // 3s en vez de 1.5s
         const retry = await supabase.auth.getSession();
         session = retry.data.session;
       }
