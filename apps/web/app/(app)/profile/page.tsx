@@ -308,11 +308,16 @@ export default function ProfilePage() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log("🟡 ProfilePage onAuthStateChange:", event, !!session);
         if (event === "SIGNED_OUT") {
+          console.log("🔴 ProfilePage: SIGNED_OUT → redirigiendo a /");
           router.push("/");
           return;
         }
-        if (!session) return;
+        if (!session) {
+        console.log("🟠 ProfilePage: no session, event:", event, "→ ignorando");
+        return;
+      }
 
         subscription.unsubscribe();
         setUserId(session.user.id);

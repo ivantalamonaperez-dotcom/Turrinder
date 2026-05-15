@@ -1,66 +1,61 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/services/supabase.client";
 
 export type UserGender = "male" | "female" | "other" | undefined;
 
-/** Normaliza el valor de `gender` guardado en español a los valores internos del servidor */
 function normalizeGender(raw?: string | null): UserGender {
   if (!raw) return undefined;
   const v = raw.toLowerCase().trim();
-  if (v === "hombre")  return "male";
-  if (v === "mujer")   return "female";
-  // "no binario", "prefiero no decir", cualquier otro valor
+  if (v === "hombre") return "male";
+  if (v === "mujer")  return "female";
   return "other";
 }
 
 export const useProfile = () => {
-  const router = useRouter();
-
   const [profile, setProfile] = useState<{
     id:     string;
     role:   string;
     gender: UserGender;
   } | null>(null);
 
-  /**
-   * profileReady: true en cuanto el fetch de Supabase terminó (con o sin gender).
-   * Mientras sea false, useMatchmaking NO emite find-match para evitar que el
-   * usuario entre a la cola con myGender=undefined y rompa el filtro de género.
-   */
   const [profileReady, setProfileReady] = useState(false);
 
   useEffect(() => {
     const checkProfile = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) return;
+      // Reintentar hasta 3 veces si no hay sesión todavía
+      let user = null;
+      for (let i = 0; i < 3; i++) {
+        const { data } = await supabase.auth.getUser();
+        if (data.user) { user = data.user; break; }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      if (!user) {
+        setProfileReady(true); // marcar como listo aunque no haya usuario
+        return;
+      }
 
       const { data: p } = await supabase
         .from("profiles")
         .select("id, role, gender")
-        .eq("id", data.user.id)
+        .eq("id", user.id)
         .single();
 
-      if (!p) {
-        router.push("/auth/register");
-        return;
+      if (p) {
+        setProfile({
+          id:     p.id,
+          role:   p.role,
+          gender: normalizeGender(p.gender),
+        });
       }
 
-      setProfile({
-        id:     p.id,
-        role:   p.role,
-        gender: normalizeGender(p.gender),
-      });
-
-      // Marcar como listo DESPUÉS de setProfile para que ambos estados
-      // se vean juntos en el siguiente render
+      // Siempre marcar como listo, con o sin perfil
       setProfileReady(true);
     };
 
     checkProfile();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { profile, profileReady };
