@@ -35,7 +35,7 @@ export default function LoginPage() {
 
     console.log("🔴 llamando logLogin..."); // ← y esto
     await logLogin(data.user.id, "email");
-    router.push("/discover");
+    router.push("/profile");
   } catch (e) {
     console.error("🔴 error catch:", e);
     setError("Error inesperado. Revisá tu conexión.");

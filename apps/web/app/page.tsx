@@ -641,7 +641,7 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       setTimeout(() => router.push("/auth/register?from=google"), 1000);
     } else {
       onToast("¡Bienvenido/a! Redirigiendo... 🚀");
-      setTimeout(() => router.push("/discover"), 1200);
+      setTimeout(() => router.push("/profile"), 1200);
     }
   };
 

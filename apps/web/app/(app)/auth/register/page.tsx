@@ -363,7 +363,7 @@ function RegisterPageInner() {
 
       if (profileError) return err("Error al guardar el perfil: " + profileError.message);
 
-      router.push("/discover");
+      router.push("/profile");
     } catch {
       err("Error inesperado al guardar el perfil.");
     } finally {
