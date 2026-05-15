@@ -9,22 +9,25 @@ export const metadata: Metadata = {
   description:
     "Turrinder es la alternativa a Omegle, OmeTV y Chatroulette en español. Conocé personas reales, debatí ideas, encontrá tu ligue y chateá en vivo con streamers y gente de todo el mundo.",
   keywords: [
-    "turrinder",
-    "chat con desconocidos",
-    "omegle alternativa",
-    "ometv alternativa",
-    "chatroulette alternativa",
-    "chat en vivo",
-    "debates online",
-    "ligues",
-    "conocer personas",
-    "streamers",
-    "videochat aleatorio",
-    "chat random",
-    "hablar con desconocidos",
-    "chat español",
-    "omegle español",
-    "ometv español",
+    // Competencia directa
+    "omegle alternativa", "ometv alternativa", "chatroulette alternativa",
+    "omegle en español", "ometv en español", "alternativa omegle 2025",
+    "sitios como omegle", "paginas como omegle", "omegle no funciona",
+    // Citas y conocer gente  
+    "pagina de citas", "app de citas", "conocer personas online",
+    "chat con desconocidos", "hablar con desconocidos",
+    "conocer gente por video", "ligar por internet",
+    "encontrar pareja online", "chat para ligar",
+    // Videochat
+    "videochat aleatorio", "chat de video gratis",
+    "videollamada con desconocidos", "random video chat",
+    "chat por camara", "video chat en vivo",
+    // Por país
+    "omegle argentina", "ometv argentina", "chat argentina",
+    "omegle mexico", "chat mexico", "conocer gente argentina",
+    // Plataforma
+    "turrinder", "debates online", "chat en vivo gratis",
+    "streamers en vivo", "chat con camara",
   ],
 
   // ✅ Favicon via metadata API (Next.js lo inyecta automáticamente)
@@ -89,6 +92,24 @@ export default function RootLayout({
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9125937573344053"
           crossOrigin="anonymous"
+        />
+        
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              "name": "Turrinder",
+              "url": "https://www.turrinder.com",
+              "description": "Plataforma de videochat aleatorio y citas online en español. Alternativa a Omegle y OmeTV.",
+              "applicationCategory": "SocialNetworkingApplication",
+              "operatingSystem": "Web",
+              "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+              "inLanguage": "es",
+              "audience": { "@type": "Audience", "audienceType": "Adults" },
+            })
+          }}
         />
       </head>
       <body
