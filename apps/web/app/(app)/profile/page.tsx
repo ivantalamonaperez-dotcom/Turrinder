@@ -90,7 +90,6 @@ function UsernameModal({
     if (!available) { setError("Ese @ ya está en uso."); return; }
     setSaving(true);
 
-    // Doble-check antes de guardar (race condition)
     const { data: existing } = await supabase
       .from("profiles")
       .select("id")
@@ -150,7 +149,6 @@ function UsernameModal({
         boxShadow: "0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(84,199,248,0.06)",
         animation: "pfSlideUp 0.4s cubic-bezier(0.16,1,0.3,1)",
       }}>
-        {/* Icon */}
         <div style={{
           width: 56, height: 56, borderRadius: 16,
           background: "linear-gradient(135deg, rgba(84,199,248,0.18), rgba(59,158,218,0.08))",
@@ -172,10 +170,10 @@ function UsernameModal({
           fontSize: 13, color: "rgba(180,215,240,0.5)",
           lineHeight: 1.6, marginBottom: 28,
         }}>
-          Es tu identidad única en Turrinder. Una vez elegido <strong style={{ color: "rgba(180,215,240,0.75)" }}>no se puede cambiar</strong>, así que pensalo bien.
+          Es tu identidad única en Turrinder. Una vez elegido{" "}
+          <strong style={{ color: "rgba(180,215,240,0.75)" }}>no se puede cambiar</strong>, así que pensalo bien.
         </div>
 
-        {/* Input */}
         <div style={{ position: "relative", marginBottom: 8 }}>
           <div style={{
             position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
@@ -193,8 +191,8 @@ function UsernameModal({
               width: "100%",
               background: "rgba(84,199,248,0.05)",
               border: `1px solid ${
-                available === true  ? "rgba(74,222,128,0.4)"   :
-                available === false ? "rgba(248,113,113,0.4)"  :
+                available === true  ? "rgba(74,222,128,0.4)"  :
+                available === false ? "rgba(248,113,113,0.4)" :
                 "rgba(84,199,248,0.16)"
               }`,
               borderRadius: 13,
@@ -206,7 +204,6 @@ function UsernameModal({
               transition: "border-color 0.2s",
             }}
           />
-          {/* Status indicator */}
           {statusMsg && (
             <div style={{
               position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
@@ -218,7 +215,6 @@ function UsernameModal({
           )}
         </div>
 
-        {/* Char count + hint */}
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
           marginBottom: 20,
@@ -231,7 +227,6 @@ function UsernameModal({
           </div>
         </div>
 
-        {/* Error */}
         {error && (
           <div style={{
             background: "rgba(248,113,113,0.08)",
@@ -244,7 +239,6 @@ function UsernameModal({
           </div>
         )}
 
-        {/* Confirm button */}
         <button
           onClick={handleConfirm}
           disabled={saving || checking || !clean || clean.length < 3 || available !== true}
@@ -284,7 +278,6 @@ export default function ProfilePage() {
   const router  = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  /* — UI state — */
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
@@ -292,15 +285,12 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<Tab>("info");
   const [errors,    setErrors]    = useState<ValidationErrors>({});
 
-  /* — Username modal — */
   const [showUsernameModal, setShowUsernameModal] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
 
-  /* — Drag state — */
   const [dragIdx,   setDragIdx]   = useState<number | null>(null);
   const [overIdx,   setOverIdx]   = useState<number | null>(null);
 
-  /* — User data — */
   const [userId,     setUserId]     = useState("");
   const [name,       setName]       = useState("");
   const [age,        setAge]        = useState("");
@@ -314,46 +304,52 @@ export default function ProfilePage() {
   const [photos,     setPhotos]     = useState<Photo[]>([]);
   const [role,       setRole]       = useState<string>("viewer");
 
-  /* ── Load profile ── */
+  /* ── Load profile con onAuthStateChange ── */
   useEffect(() => {
-    const load = async () => {
-      const { data: me } = await supabase.auth.getUser();
-      if (!me.user) { router.push("/"); return; }
-      setUserId(me.user.id);
-
-      const { data: p } = await supabase
-        .from("profiles")
-        .select("name, age, bio, gender, location, occupation, languages, avatar_url, photos, interests, looking_for, role, username")
-        .eq("id", me.user.id)
-        .single();
-
-      if (p) {
-        setName(p.name || "");
-        setAge(p.age?.toString() || "");
-        setBio(p.bio || "");
-        setGender(p.gender || "");
-        setLocation(p.location || "");
-        setOccupation(p.occupation || "");
-        setLanguages(p.languages || []);
-        setInterests(p.interests || []);
-        setLookingFor(p.looking_for || []);
-        setRole(p.role || "viewer");
-        setUsername(p.username || null);
-
-        // Si no tiene username → mostrar modal obligatorio
-        if (!p.username) setShowUsernameModal(true);
-
-        const urls: Photo[] = [];
-        if (p.photos?.length) {
-          p.photos.forEach((url: string) => urls.push({ url }));
-        } else if (p.avatar_url) {
-          urls.push({ url: p.avatar_url });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === "SIGNED_OUT") {
+          router.push("/");
+          return;
         }
-        setPhotos(urls);
+        if (!session) return;
+
+        subscription.unsubscribe();
+        setUserId(session.user.id);
+
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("name, age, bio, gender, location, occupation, languages, avatar_url, photos, interests, looking_for, role, username")
+          .eq("id", session.user.id)
+          .single();
+
+        if (p) {
+          setName(p.name || "");
+          setAge(p.age?.toString() || "");
+          setBio(p.bio || "");
+          setGender(p.gender || "");
+          setLocation(p.location || "");
+          setOccupation(p.occupation || "");
+          setLanguages(p.languages || []);
+          setInterests(p.interests || []);
+          setLookingFor(p.looking_for || []);
+          setRole(p.role || "viewer");
+          setUsername(p.username || null);
+          if (!p.username) setShowUsernameModal(true);
+
+          const urls: Photo[] = [];
+          if (p.photos?.length) {
+            p.photos.forEach((url: string) => urls.push({ url }));
+          } else if (p.avatar_url) {
+            urls.push({ url: p.avatar_url });
+          }
+          setPhotos(urls);
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    };
-    load();
+    );
+
+    return () => subscription.unsubscribe();
   }, [router]);
 
   /* ── Validation ── */
@@ -497,7 +493,6 @@ export default function ProfilePage() {
     { id: "vibe",  label: "Vibe",  imgSrc: imgDiamante.src },
   ];
 
-  /* ── Role helpers ── */
   const roleClass = role === "vip" ? "vip" : role === "streamer" ? "streamer" : role === "owner" ? "owner" : "";
 
   /* ─────────────────────────── RENDER ─────────────────────────── */
@@ -522,7 +517,6 @@ export default function ProfilePage() {
         @keyframes pfOwnPulse     { 0%,100% { box-shadow: 0 0 14px rgba(220,20,60,0.16); }  50% { box-shadow: 0 0 32px rgba(220,20,60,0.34); } }
         @keyframes pfOrb1         { from { transform: translate(0,0) scale(1); } to { transform: translate(-40px,60px) scale(1.15); } }
         @keyframes pfOrb2         { from { transform: translate(0,0) scale(1); } to { transform: translate(50px,-40px) scale(1.1); } }
-        @keyframes pfTileGlow     { 0%,100%{box-shadow:0 0 16px rgba(74,222,128,0.15);} 50%{box-shadow:0 0 32px rgba(74,222,128,0.35);} }
 
         :root {
           --sky:#54c7f8; --sky2:#3b9eda; --sky3:#1a6fa8;
@@ -542,7 +536,6 @@ export default function ProfilePage() {
           overflow-x: hidden; padding-bottom: 120px;
         }
 
-        /* ── Ambient ── */
         .pf-ambient { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
         .pf-ambient::before { content:''; position:absolute; width:800px; height:800px; top:-200px; right:-200px; border-radius:50%; background:radial-gradient(circle,rgba(84,199,248,0.09) 0%,transparent 65%); animation:pfOrb1 12s ease-in-out infinite alternate; }
         .pf-ambient::after  { content:''; position:absolute; width:600px; height:600px; bottom:-150px; left:-150px; border-radius:50%; background:radial-gradient(circle,rgba(59,158,218,0.07) 0%,transparent 65%); animation:pfOrb2 16s ease-in-out infinite alternate; }
@@ -550,114 +543,40 @@ export default function ProfilePage() {
 
         .pf-wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
 
-        /* ══════════════════════════════════
-           HERO — rediseñado y prolijo
-        ══════════════════════════════════ */
-
-        .pf-hero {
-          position: relative; z-index: 1; width: 100%; padding: 52px 0 0; overflow: visible;
-        }
-        /* Role tints */
+        .pf-hero { position: relative; z-index: 1; width: 100%; padding: 52px 0 0; overflow: visible; }
         .pf-hero.hero-vip::after      { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse 70% 60% at 50% -10%,rgba(251,191,36,0.10) 0%,transparent 70%); }
         .pf-hero.hero-streamer::after { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse 70% 60% at 50% -10%,rgba(74,222,128,0.09) 0%,transparent 70%); }
         .pf-hero.hero-owner::after    { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse 70% 60% at 50% -10%,rgba(220,20,60,0.11) 0%,transparent 70%); }
 
-        .pf-hero-card {
-          position:relative; z-index:2;
-          border-radius:24px 24px 0 0;
-          border:1px solid var(--glass-b); border-bottom:none;
-          background:linear-gradient(180deg,rgba(84,199,248,0.055) 0%,rgba(84,199,248,0.02) 100%);
-          backdrop-filter:blur(2px); padding:28px 28px 0; overflow:visible;
-        }
+        .pf-hero-card { position:relative; z-index:2; border-radius:24px 24px 0 0; border:1px solid var(--glass-b); border-bottom:none; background:linear-gradient(180deg,rgba(84,199,248,0.055) 0%,rgba(84,199,248,0.02) 100%); backdrop-filter:blur(2px); padding:28px 28px 0; overflow:visible; }
         .pf-hero-card.card-vip      { border-color:rgba(251,191,36,0.22); background:linear-gradient(180deg,rgba(251,191,36,0.07) 0%,rgba(251,191,36,0.02) 100%); }
         .pf-hero-card.card-streamer { border-color:rgba(74,222,128,0.20); background:linear-gradient(180deg,rgba(74,222,128,0.07) 0%,rgba(74,222,128,0.02) 100%); }
         .pf-hero-card.card-owner    { border-color:rgba(220,20,60,0.22);  background:linear-gradient(180deg,rgba(220,20,60,0.08) 0%,rgba(220,20,60,0.02) 100%); }
 
-        /* ── Layout interno del hero: avatar | info ── */
-        .pf-hero-inner {
-          display: grid;
-          grid-template-columns: auto 1fr;
-          align-items: start;
-          gap: 0 24px;
-          padding-bottom: 24px;
-        }
+        .pf-hero-inner { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 0 24px; padding-bottom: 24px; }
 
-        /* ── Avatar ── */
         .pf-avatar-col { position:relative; flex-shrink:0; }
-
-        .pf-avatar-ring {
-          width:108px; height:108px; border-radius:28px; padding:3px;
-          background:linear-gradient(145deg,var(--sky) 0%,var(--sky3) 60%,rgba(84,199,248,0.15) 100%);
-          animation:pfRingGlow 6s ease-in-out infinite alternate;
-          flex-shrink:0; position:relative;
-        }
+        .pf-avatar-ring { width:108px; height:108px; border-radius:28px; padding:3px; background:linear-gradient(145deg,var(--sky) 0%,var(--sky3) 60%,rgba(84,199,248,0.15) 100%); animation:pfRingGlow 6s ease-in-out infinite alternate; flex-shrink:0; position:relative; }
         .pf-avatar-ring.ring-vip      { background:linear-gradient(145deg,var(--vip-a) 0%,var(--vip-b) 50%,var(--vip-c) 100%); animation:pfRingVip 5s ease-in-out infinite alternate; }
         .pf-avatar-ring.ring-streamer { background:linear-gradient(145deg,var(--str-a) 0%,var(--str-b) 50%,var(--str-c) 100%); animation:pfRingStreamer 5s ease-in-out infinite alternate; }
         .pf-avatar-ring.ring-owner    { background:linear-gradient(145deg,var(--own-a) 0%,var(--own-b) 50%,var(--own-c) 100%); animation:pfRingOwner 5s ease-in-out infinite alternate; }
-
         .pf-avatar-inner { width:100%; height:100%; border-radius:25px; overflow:hidden; background:var(--bg2); display:flex; align-items:center; justify-content:center; }
         .pf-avatar-inner img { width:100%; height:100%; object-fit:cover; }
         .pf-avatar-placeholder { width:48px; height:48px; opacity:0.3; filter:brightness(0) invert(1); }
-
-        .pf-avatar-edit-btn {
-          position:absolute; bottom:-7px; right:-7px; width:30px; height:30px; border-radius:50%;
-          background:linear-gradient(135deg,var(--sky),var(--sky3));
-          border:2.5px solid var(--bg); cursor:pointer;
-          display:flex; align-items:center; justify-content:center;
-          transition:transform 0.25s cubic-bezier(.34,1.56,.64,1);
-          box-shadow:0 4px 16px rgba(84,199,248,0.5); z-index:5;
-        }
+        .pf-avatar-edit-btn { position:absolute; bottom:-7px; right:-7px; width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,var(--sky),var(--sky3)); border:2.5px solid var(--bg); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform 0.25s cubic-bezier(.34,1.56,.64,1); box-shadow:0 4px 16px rgba(84,199,248,0.5); z-index:5; }
         .pf-avatar-edit-btn img { width:14px; height:14px; filter:brightness(0) invert(1); }
         .pf-avatar-edit-btn:hover { transform:scale(1.2) rotate(14deg); }
-
-        /* Badge role — bottom-left */
         .pf-role-badge { position:absolute; bottom:-7px; left:-7px; z-index:5; border:2.5px solid var(--bg); border-radius:50%; display:flex; align-items:center; justify-content:center; width:30px; height:30px; }
         .pf-role-badge.badge-vip      { background:linear-gradient(135deg,var(--vip-a),var(--vip-b)); box-shadow:0 4px 16px rgba(251,191,36,0.6); }
         .pf-role-badge.badge-streamer { background:linear-gradient(135deg,var(--str-a),var(--str-b)); box-shadow:0 4px 16px rgba(74,222,128,0.6); }
         .pf-role-badge.badge-owner    { background:linear-gradient(135deg,var(--own-a),var(--own-b)); box-shadow:0 4px 16px rgba(220,20,60,0.65); }
         .pf-role-badge img { width:16px; height:16px; object-fit:contain; filter:brightness(0) invert(1); }
 
-        /* ── Hero info: bloque de texto a la derecha del avatar ── */
-        .pf-hero-info {
-          display: flex;
-          flex-direction: column;
-          gap: 0;
-          animation: pfFadeUp 0.5s 0.1s both;
-          min-width: 0;
-          padding-top: 4px;
-        }
-
-        /* Nombre */
-        .pf-hero-name {
-          font-family: 'Syne', sans-serif;
-          font-size: clamp(20px, 3.5vw, 30px);
-          font-weight: 800; color: var(--w);
-          letter-spacing: -0.6px; line-height: 1.1;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          margin-bottom: 4px;
-        }
-
-        /* Username @handle */
-        .pf-hero-username {
-          display: inline-flex; align-items: center; gap: 4px;
-          font-family: 'DM Sans', monospace;
-          font-size: 13px; font-weight: 600;
-          color: rgba(84,199,248,0.65);
-          letter-spacing: 0.2px;
-          margin-bottom: 10px;
-          user-select: all; cursor: text;
-        }
+        .pf-hero-info { display: flex; flex-direction: column; gap: 0; animation: pfFadeUp 0.5s 0.1s both; min-width: 0; padding-top: 4px; }
+        .pf-hero-name { font-family: 'Syne', sans-serif; font-size: clamp(20px, 3.5vw, 30px); font-weight: 800; color: var(--w); letter-spacing: -0.6px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+        .pf-hero-username { display: inline-flex; align-items: center; gap: 4px; font-family: 'DM Sans', monospace; font-size: 13px; font-weight: 600; color: rgba(84,199,248,0.65); letter-spacing: 0.2px; margin-bottom: 10px; user-select: all; cursor: text; }
         .pf-hero-username-at { color: rgba(84,199,248,0.4); font-weight: 500; }
-
-        /* Tier pill */
-        .pf-role-tier {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 4px 11px 4px 7px; border-radius: 100px;
-          font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800;
-          letter-spacing: 1.5px; text-transform: uppercase;
-          border: 1.5px solid; width: fit-content;
-          margin-bottom: 10px;
-        }
+        .pf-role-tier { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 7px; border-radius: 100px; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; border: 1.5px solid; width: fit-content; margin-bottom: 10px; }
         .pf-role-tier.tier-viewer  { background:rgba(84,199,248,0.07); border-color:rgba(84,199,248,0.18); color:rgba(84,199,248,0.7); }
         .pf-role-tier.tier-vip     { background:linear-gradient(90deg,rgba(251,191,36,0.14),rgba(245,158,11,0.08)); border-color:rgba(251,191,36,0.40); color:var(--vip-a); animation:pfVipPulse 3s ease-in-out infinite; }
         .pf-role-tier.tier-streamer{ background:linear-gradient(90deg,rgba(74,222,128,0.13),rgba(34,197,94,0.07)); border-color:rgba(74,222,128,0.38); color:var(--str-a); animation:pfStrPulse 3s ease-in-out infinite; }
@@ -667,22 +586,14 @@ export default function ProfilePage() {
         .tier-vip     .pf-role-tier-dot { background:var(--vip-a); box-shadow:0 0 6px var(--vip-a); animation:pfPulse 2s infinite; }
         .tier-streamer .pf-role-tier-dot { background:var(--str-a); box-shadow:0 0 6px var(--str-a); animation:pfPulse 2s infinite; }
         .tier-owner   .pf-role-tier-dot { background:var(--own-a); box-shadow:0 0 8px var(--own-a); animation:pfPulse 2s infinite; }
-
-        /* Badges inline: género, edad, ubicación, ocupación */
         .pf-hero-badges { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
         .pf-badge { padding:3px 10px; border-radius:100px; font-size:11px; font-weight:600; letter-spacing:0.3px; border:1px solid; }
         .pf-badge-gender { background:rgba(84,199,248,0.08); border-color:rgba(84,199,248,0.22); color:var(--sky); }
         .pf-badge-age    { background:rgba(59,158,218,0.08);  border-color:rgba(59,158,218,0.22);  color:var(--sky2); }
         .pf-badge-loc    { background:rgba(26,111,168,0.10);  border-color:rgba(26,111,168,0.28);  color:#7ec8f0; }
         .pf-badge-occ    { background:rgba(84,199,248,0.06);  border-color:rgba(84,199,248,0.16);  color:var(--muted); }
+        .pf-hero-bio { font-size: 13px; color: rgba(180,215,240,0.55); line-height: 1.65; word-break: break-word; white-space: pre-wrap; }
 
-        /* Bio — sin recorte */
-        .pf-hero-bio {
-          font-size: 13px; color: rgba(180,215,240,0.55); line-height: 1.65;
-          word-break: break-word; white-space: pre-wrap;
-        }
-
-        /* ── Completion bar (ahora fuera del hero card) ── */
         .pf-completion { padding: 14px 0; animation: pfFadeUp 0.5s 0.25s both; }
         .pf-completion-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
         .pf-completion-label { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:var(--muted); }
@@ -691,23 +602,15 @@ export default function ProfilePage() {
         .pf-completion-fill  { height:100%; border-radius:100px; background:linear-gradient(90deg,var(--sky3),var(--sky)); transition:width 0.8s cubic-bezier(.4,0,.2,1); position:relative; overflow:hidden; }
         .pf-completion-fill::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent); animation:pfShimBar 2s ease-in-out infinite; }
 
-        /* ── Tabs ── */
         .pf-tabs-wrap { position:relative; }
         .pf-tabs { display:flex; gap:4px; padding:12px 0; border-bottom:1px solid var(--glass-b); animation:pfFadeUp 0.5s 0.3s both; }
-        .pf-tab {
-          flex:1; display:flex; align-items:center; justify-content:center; gap:7px;
-          padding:10px 6px; background:transparent; border:1px solid transparent;
-          border-radius:12px; font-family:'Syne',sans-serif;
-          font-size:12px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase;
-          color:var(--muted); cursor:pointer; transition:all 0.22s ease;
-        }
+        .pf-tab { flex:1; display:flex; align-items:center; justify-content:center; gap:7px; padding:10px 6px; background:transparent; border:1px solid transparent; border-radius:12px; font-family:'Syne',sans-serif; font-size:12px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; color:var(--muted); cursor:pointer; transition:all 0.22s ease; }
         .pf-tab img { width:18px; height:18px; opacity:0.4; transition:all 0.25s; }
         .pf-tab:hover { color:var(--w); background:var(--glass); }
         .pf-tab:hover img { opacity:0.75; transform:scale(1.05); }
         .pf-tab.active { background:rgba(84,199,248,0.10); border-color:rgba(84,199,248,0.32); color:var(--sky); }
         .pf-tab.active img { opacity:1; filter:drop-shadow(0 0 5px rgba(84,199,248,0.7)); transform:scale(1.1); }
 
-        /* ── Content ── */
         .pf-content { position:relative; padding:28px 0 0; animation:pfFadeUp 0.4s 0.35s both; }
         .pf-grid-2  { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
 
@@ -739,7 +642,6 @@ export default function ProfilePage() {
         .pf-chip.active { background:rgba(84,199,248,0.12); border-color:rgba(84,199,248,0.4); color:var(--sky); box-shadow:0 2px 10px rgba(84,199,248,0.12); }
         .pf-chip:hover:not(.active) { border-color:rgba(84,199,248,0.2); color:var(--w); }
 
-        /* ── Photos ── */
         .pf-photos-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
         .pf-photo-slot { aspect-ratio:3/4; border-radius:14px; overflow:hidden; position:relative; background:var(--glass); border:1.5px dashed var(--glass-b); cursor:pointer; transition:all 0.22s ease; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; user-select:none; }
         .pf-photo-slot.empty:hover { border-color:rgba(84,199,248,0.4); background:rgba(84,199,248,0.07); transform:scale(1.02); }
@@ -761,7 +663,6 @@ export default function ProfilePage() {
         .pf-drag-hint { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--muted); padding:10px 14px; background:rgba(84,199,248,0.04); border:1px solid rgba(84,199,248,0.10); border-radius:10px; }
         .pf-photos-hint { font-size:12px; color:var(--muted); line-height:1.6; text-align:center; padding:8px 0; }
 
-        /* ── Looking For ── */
         .pf-lf-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
         .pf-lf-card { padding:16px 10px; background:var(--glass); border:1.5px solid var(--glass-b); border-radius:16px; cursor:pointer; transition:all 0.22s cubic-bezier(.34,1.56,.64,1); display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; }
         .pf-lf-card:hover { border-color:rgba(84,199,248,0.28); transform:translateY(-3px); }
@@ -775,7 +676,6 @@ export default function ProfilePage() {
         .pf-lf-check-dot { width:6px; height:6px; border-radius:50%; background:#020d18; opacity:0; transition:opacity 0.2s; }
         .pf-lf-card.active .pf-lf-check-dot { opacity:1; }
 
-        /* ── Actions ── */
         .pf-actions { display:flex; gap:10px; margin-top:6px; }
         .pf-error-banner { background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.3); border-radius:12px; padding:12px 16px; font-size:13px; color:var(--error); display:flex; align-items:center; gap:8px; }
         .pf-btn { flex:1; padding:14px; background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 50%,var(--sky3) 100%); border:none; border-radius:13px; color:#020d18; font-family:'Syne',sans-serif; font-size:14px; font-weight:800; letter-spacing:0.5px; cursor:pointer; transition:all 0.22s; box-shadow:0 6px 22px rgba(84,199,248,0.32); position:relative; overflow:hidden; }
@@ -789,7 +689,6 @@ export default function ProfilePage() {
 
         .pf-skel { height:48px; border-radius:12px; background:var(--glass); animation:pfShimmer 1.4s ease-in-out infinite; }
 
-        /* ── Responsive ── */
         @media (max-width:680px) {
           .pf-hero-inner { gap:0 16px; }
           .pf-avatar-ring { width:88px; height:88px; }
@@ -805,7 +704,6 @@ export default function ProfilePage() {
         }
       `}</style>
 
-      {/* ── USERNAME MODAL (bloquea si no tiene @) ── */}
       {showUsernameModal && !loading && (
         <UsernameModal
           userId={userId}
@@ -818,13 +716,11 @@ export default function ProfilePage() {
 
       <div className="pf">
 
-        {/* ════════════════ HERO ════════════════ */}
         <div className={`pf-hero${roleClass ? ` hero-${roleClass}` : ""}`}>
           <div className="pf-wrap">
             <div className={`pf-hero-card${roleClass ? ` card-${roleClass}` : ""}`}>
               <div className="pf-hero-inner">
 
-                {/* ── Avatar col ── */}
                 <div className="pf-avatar-col" style={{ animation: "pfFadeUp 0.5s 0.05s both" }}>
                   <div className={`pf-avatar-ring${roleClass ? ` ring-${roleClass}` : ""}`}>
                     <div className="pf-avatar-inner">
@@ -834,11 +730,9 @@ export default function ProfilePage() {
                       }
                     </div>
                   </div>
-                  {/* Edit button */}
                   <button type="button" className="pf-avatar-edit-btn" onClick={() => setActiveTab("fotos")} aria-label="Editar fotos">
                     <img src={imgCamara.src} alt="" aria-hidden="true" />
                   </button>
-                  {/* Role badge */}
                   {role === "vip" && (
                     <div className="pf-role-badge badge-vip" title="VIP">
                       <img src={imgVip.src} alt="VIP" />
@@ -856,21 +750,14 @@ export default function ProfilePage() {
                   )}
                 </div>
 
-                {/* ── Info col ── */}
                 <div className="pf-hero-info">
-
-                  {/* Nombre */}
                   <div className="pf-hero-name">{name || "Tu perfil"}</div>
-
-                  {/* @username */}
                   {username && (
                     <div className="pf-hero-username">
                       <span className="pf-hero-username-at">@</span>
                       {username}
                     </div>
                   )}
-
-                  {/* Role tier pill */}
                   {!loading && (
                     <div className={`pf-role-tier ${
                       role === "vip"      ? "tier-vip"      :
@@ -885,8 +772,6 @@ export default function ProfilePage() {
                        "Viewer"}
                     </div>
                   )}
-
-                  {/* Badges: género, edad, ubicación, ocupación */}
                   {!loading && (gender || age || location || occupation) && (
                     <div className="pf-hero-badges">
                       {gender     && <span className="pf-badge pf-badge-gender">{gender}</span>}
@@ -895,8 +780,6 @@ export default function ProfilePage() {
                       {occupation && <span className="pf-badge pf-badge-occ">{occupation}</span>}
                     </div>
                   )}
-
-                  {/* Bio */}
                   {bio && <div className="pf-hero-bio">{bio}</div>}
                 </div>
 
@@ -905,7 +788,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ── Completion bar ── */}
         {!loading && (
           <div className="pf-wrap">
             <div className="pf-completion">
@@ -920,7 +802,6 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* ════════════════ TABS ════════════════ */}
         <div className="pf-tabs-wrap">
           <div className="pf-wrap">
             <div className="pf-tabs" role="tablist">
@@ -940,7 +821,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ════════════════ CONTENIDO ════════════════ */}
         {loading ? (
           <div className="pf-wrap">
             <div className="pf-content" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -956,7 +836,6 @@ export default function ProfilePage() {
               {/* ══ TAB: INFO ══ */}
               {activeTab === "info" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
                   <div className="pf-grid-2">
                     <div className={`pf-card pf-field ${errors.name ? "pf-card-error" : ""}`}>
                       <div className="pf-section-hdr">
@@ -969,7 +848,6 @@ export default function ProfilePage() {
                         maxLength={30} aria-label="Nombre" aria-invalid={!!errors.name} />
                       {errors.name && <span className="pf-field-error">{errors.name}</span>}
                     </div>
-
                     <div className={`pf-card pf-field ${errors.age ? "pf-card-error" : ""}`}>
                       <div className="pf-section-hdr">
                         <img src={imgDiamante.src} alt="" aria-hidden="true" style={{ filter: "brightness(0) invert(1)" }} />
