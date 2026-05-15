@@ -32,7 +32,7 @@ export function useVipGuard(userId: string | undefined, role: string | undefined
 
       console.log("⏰ VIP vencido — rol revocado");
       // Opcional: recargar la página para reflejar el cambio
-      window.location.reload();
+      //window.location.reload();
     };
 
     check();
