@@ -66,7 +66,7 @@ export default function AuthCallback() {
         .single();
 
       if (profile && profile.name && profile.age) {
-        router.replace("/discover");
+        router.replace("/profile");
       } else {
         router.replace("/auth/register?from=google");
       }
