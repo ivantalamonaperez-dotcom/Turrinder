@@ -38,38 +38,41 @@ export default function AuthCallback() {
   const router = useRouter();
 
   useEffect(() => {
-    const handleCallback = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
+  const handleCallback = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
 
-      if (code) {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error || !data.session) {
-          router.replace("/");
-          return;
-        }
-        await continueWithSession(data.session.user.id, router);
+    if (code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error || !data.session) {
+        router.replace("/");
         return;
       }
+      await continueWithSession(data.session.user.id, router);
+      return; // ← termina acá, nunca llega al setTimeout
+    }
 
-      // Fallback flujo implícito
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          if (event === "SIGNED_IN" && session) {
-            subscription.unsubscribe();
-            await continueWithSession(session.user.id, router);
-          }
+    // Solo si NO hay code, usar el fallback con timeout
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === "SIGNED_IN" && session) {
+          clearTimeout(timeoutId); // ← cancelar el timeout
+          subscription.unsubscribe();
+          await continueWithSession(session.user.id, router);
         }
-      );
+      }
+    );
 
-      setTimeout(() => {
-        subscription.unsubscribe();
-        router.replace("/");
-      }, 8000);
-    };
+    timeoutId = setTimeout(() => {
+      subscription.unsubscribe();
+      router.replace("/");
+    }, 8000);
+  };
 
-    handleCallback();
-  }, [router]);
+  handleCallback();
+}, [router]);
 
   return (
     <div style={{
