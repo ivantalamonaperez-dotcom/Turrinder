@@ -11,8 +11,24 @@ function VipWatcher() {
   const [userId, setUserId] = useState<string | undefined>();
   const [role,   setRole]   = useState<string | undefined>();
 
-  useEffect(() => {
+useEffect(() => {
   console.log("🔵 Layout MONTADO");
+
+  // Interceptar cualquier navegación para ver quién redirige
+  const originalPush = window.history.pushState.bind(window.history);
+  const originalReplace = window.history.replaceState.bind(window.history);
+
+  window.history.pushState = function(...args) {
+    console.log("🚨 pushState hacia:", args[2]);
+    console.trace("🚨 pushState stack");
+    return originalPush(...args);
+  };
+
+  window.history.replaceState = function(...args) {
+    console.log("🚨 replaceState hacia:", args[2]);
+    console.trace("🚨 replaceState stack");
+    return originalReplace(...args);
+  };
 
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
@@ -37,6 +53,9 @@ function VipWatcher() {
 
   return () => {
     console.log("🔵 Layout DESMONTADO");
+    // Restaurar funciones originales
+    window.history.pushState = originalPush;
+    window.history.replaceState = originalReplace;
     subscription.unsubscribe();
   };
 }, []);
