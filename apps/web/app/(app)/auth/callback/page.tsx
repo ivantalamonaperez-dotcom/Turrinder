@@ -2,8 +2,43 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient, Session } from "@supabase/supabase-js";
+import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
 import { logLogin } from "@/lib/logLogin";
+
+async function continueWithSession(
+  supabase: SupabaseClient,
+  session: Session,
+  router: ReturnType<typeof useRouter>
+) {
+  const userId = session.user.id;
+
+  const banRes = await fetch("/api/check-ban", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId }),
+  });
+  const banData = await banRes.json();
+
+  if (banData.banned) {
+    await supabase.auth.signOut();
+    router.replace("/?banned=true");
+    return;
+  }
+
+  await logLogin(userId, "google");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, name, age")
+    .eq("id", userId)
+    .single();
+
+  if (profile && profile.name && profile.age) {
+    router.replace("/profile");
+  } else {
+    router.replace("/auth/register?from=google");
+  }
+}
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -15,61 +50,34 @@ export default function AuthCallback() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
 
-      const session = await new Promise<Session | null>((resolve) => {
-        supabase.auth.getSession().then(({ data }) => {
-          if (data.session) {
-            resolve(data.session);
-            return;
-          }
-          const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            (event, session) => {
-              if (event === "SIGNED_IN" && session) {
-                subscription.unsubscribe();
-                resolve(session);
-              }
-            }
-          );
-          setTimeout(() => {
+      // Flujo PKCE: Supabase pone un `code` en la query string
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error || !data.session) {
+          router.replace("/");
+          return;
+        }
+        await continueWithSession(supabase, data.session, router);
+        return;
+      }
+
+      // Fallback: flujo implícito con hash (proyectos más viejos)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (event === "SIGNED_IN" && session) {
             subscription.unsubscribe();
-            resolve(null);
-          }, 8000);
-        });
-      });
+            await continueWithSession(supabase, session, router);
+          }
+        }
+      );
 
-      if (!session) {
+      setTimeout(() => {
+        subscription.unsubscribe();
         router.replace("/");
-        return;
-      }
-
-      const userId = session.user.id;
-
-      // ── Chequear ban ──
-      const banRes = await fetch("/api/check-ban", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId }),
-      });
-      const banData = await banRes.json();
-
-      if (banData.banned) {
-        await supabase.auth.signOut();
-        router.replace("/?banned=true");
-        return;
-      }
-
-      await logLogin(userId, "google");
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, name, age")
-        .eq("id", userId)
-        .single();
-
-      if (profile && profile.name && profile.age) {
-        router.replace("/profile");
-      } else {
-        router.replace("/auth/register?from=google");
-      }
+      }, 8000);
     };
 
     handleCallback();
