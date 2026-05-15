@@ -306,6 +306,7 @@ export default function ProfilePage() {
 
   /* ── Load profile con onAuthStateChange ── */
   useEffect(() => {
+    console.log("🟡 ProfilePage MONTADO");
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log("🟡 ProfilePage onAuthStateChange:", event, !!session);
@@ -320,6 +321,7 @@ export default function ProfilePage() {
       }
 
         subscription.unsubscribe();
+        console.log("🟢 ProfilePage: cargando perfil para", session.user.id);
         setUserId(session.user.id);
 
         const { data: p } = await supabase
@@ -354,7 +356,10 @@ export default function ProfilePage() {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+    console.log("🟡 ProfilePage DESMONTADO");
+    subscription.unsubscribe();
+  };
   }, [router]);
 
   /* ── Validation ── */
