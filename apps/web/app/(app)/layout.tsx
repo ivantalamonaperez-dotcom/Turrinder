@@ -1,56 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/components/ui/BottomNav";
 import { useVipGuard } from "@/hooks/useVipGuard";
 
-// Componente separado para la lógica de auth/VIP.
-// Al estar aislado, sus re-renders por cambios de estado (userId, role)
-// NO re-montan <BottomNav />, que vive fuera de este árbol.
 function AuthGuard() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | undefined>();
   const [role,   setRole]   = useState<string | undefined>();
 
   useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) { router.push("/"); return; }
+    let cancelled = false;
 
-      setUserId(data.user.id);
+    const check = async () => {
+      // Intento 1
+      let { data: { session } } = await supabase.auth.getSession();
+
+      // Si no hay sesión, esperar 1.5s y reintentar (el callback puede estar procesando)
+      if (!session) {
+        await new Promise(r => setTimeout(r, 1500));
+        const retry = await supabase.auth.getSession();
+        session = retry.data.session;
+      }
+
+      if (cancelled) return;
+
+      if (!session) {
+        router.push("/");
+        return;
+      }
+
+      setUserId(session.user.id);
 
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", data.user.id)
+        .eq("id", session.user.id)
         .single();
 
-      if (profile?.role) setRole(profile.role);
+      if (!cancelled && profile?.role) setRole(profile.role);
     };
-    init();
+
+    check();
+
+    // Escuchar solo SIGNED_OUT para limpiar
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") router.push("/");
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
-  // ✅ Revoca el VIP automáticamente si vip_until ya venció
   useVipGuard(userId, role);
-
   return null;
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* AuthGuard tiene su propio estado — sus re-renders no afectan a BottomNav */}
       <AuthGuard />
       <BottomNav />
-      <main
-        id="main-content"
-        style={{
-          marginLeft: "64px",
-          minHeight: "100vh",
-        }}
-      >
+      <main id="main-content" style={{ marginLeft: "64px", minHeight: "100vh" }}>
         {children}
       </main>
     </>
