@@ -2,16 +2,10 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
+import { supabase } from "@/services/supabase.client";
 import { logLogin } from "@/lib/logLogin";
 
-async function continueWithSession(
-  supabase: SupabaseClient,
-  session: Session,
-  router: ReturnType<typeof useRouter>
-) {
-  const userId = session.user.id;
-
+async function continueWithSession(userId: string, router: ReturnType<typeof useRouter>) {
   const banRes = await fetch("/api/check-ban", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,12 +39,6 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-
-      // Flujo PKCE: Supabase pone un `code` en la query string
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
 
@@ -60,16 +48,16 @@ export default function AuthCallback() {
           router.replace("/");
           return;
         }
-        await continueWithSession(supabase, data.session, router);
+        await continueWithSession(data.session.user.id, router);
         return;
       }
 
-      // Fallback: flujo implícito con hash (proyectos más viejos)
+      // Fallback flujo implícito
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event, session) => {
           if (event === "SIGNED_IN" && session) {
             subscription.unsubscribe();
-            await continueWithSession(supabase, session, router);
+            await continueWithSession(session.user.id, router);
           }
         }
       );
