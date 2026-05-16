@@ -1,14 +1,14 @@
 /**
- * matchmaking.events.ts — v4 · SEGURIDAD
+ * matchmaking.events.ts — v5 · SEGURIDAD
  *
- * Cambios respecto a v3:
- *  - Validación estricta de todos los inputs antes de pasarlos al handler.
- *    Valores fuera de los permitidos son rechazados silenciosamente.
- *  - Rate limiting por socket: máximo 1 find-match por segundo.
- *    Evita que un cliente malicioso sature el servidor emitiendo en bucle.
- *  - Los IDs de sala y usuario se sanitizan (solo UUID válido o alfanumérico).
- *  - El userId ya NO viene del query — se lee desde socket.data.userId
- *    que fue verificado por el middleware JWT en server.ts.
+ * Cambios respecto a v4:
+ *  - VALID_GENDERS ampliado con "non-binary" y "prefer-not-to-say" para
+ *    cubrir "No binario" y "Prefiero no decir" del selector de género.
+ *    En el handler ambos se tratan como género neutral ("ambos"), por lo
+ *    que matchean con cualquier filtro de la otra persona.
+ *  - isValidGender actualizado con la misma estrategia defensiva que el
+ *    handler: acepta todo valor que no sea null/number/objeto, dejando
+ *    la semántica de neutralidad al handler.
  */
 
 import { Server, Socket } from "socket.io";
@@ -17,7 +17,19 @@ import { matchmakingHandler, MatchMode, GenderFilter, UserGender } from "../hand
 // ─── Valores válidos para cada campo ─────────────────────────────────────────
 const VALID_MODES:    Set<string>      = new Set(["discover", "ligues"]);
 const VALID_FILTERS:  Set<GenderFilter> = new Set(["all", "male", "female"]);
-const VALID_GENDERS:  Set<string>      = new Set(["male", "female", "other"]);
+
+// Géneros reconocidos — "male" y "female" son binarios; todo lo demás
+// (other, non-binary, prefer-not-to-say, etc.) se trata como neutral en el handler.
+// Se usa un Set para la whitelist pero isValidGender también acepta cualquier
+// string razonable que no sea null/number, para no romper si el frontend
+// añade nuevas opciones en el futuro.
+const VALID_GENDERS: Set<string> = new Set([
+  "male",
+  "female",
+  "other",
+  "non-binary",
+  "prefer-not-to-say",
+]);
 
 // Regex para validar UUIDs y roomIds alfanuméricos
 const UUID_REGEX        = /^[0-9a-f-]{36}$/i;
@@ -46,8 +58,10 @@ function isValidFilter(filter: unknown): filter is GenderFilter {
 }
 
 function isValidGender(gender: unknown): gender is UserGender {
-  return gender === undefined || gender === null ||
-    (typeof gender === "string" && (VALID_GENDERS as Set<string>).has(gender));
+  if (gender === undefined || gender === null) return true;
+  // Aceptar cualquier string no vacío — el handler decide la semántica.
+  // Rechazar solo tipos no-string para evitar inyecciones.
+  return typeof gender === "string" && gender.length > 0 && gender.length <= 64;
 }
 
 function isValidUUID(id: unknown): id is string {

@@ -1,16 +1,13 @@
 /**
- * matchmaking.handler.ts — v5
+ * matchmaking.handler.ts — v6
  *
- * Fixes respecto a v4:
- *  - FIX: el setTimeout de 100ms en handleFindMatch causaba que en React
- *    Strict Mode (doble mount) el segundo emitLeave + findNewMatch borrara
- *    userMode antes de que el timer disparara, abortando la búsqueda
- *    silenciosamente. Solución: almacenar un "searchToken" por usuario y
- *    verificar que siga vigente cuando el timer dispara.
- *  - FIX: handleDisconnect ya no borra la entrada de userSocketMap si el
- *    usuario se reconectó con un socket distinto mientras procesábamos
- *    el disconnect del anterior. Comparamos el socketId antes de borrar.
- *  - El resto de la lógica de matchmaking y género no cambia.
+ * Fixes respecto a v5:
+ *  - FIX: género "other" o undefined ahora actúa como "ambos" (neutral).
+ *    Antes, si A tenía filtro "male" y B tenía género "other", la check de
+ *    B fallaba (genderA "male" !== filterB "all" era ok, pero filterA "male"
+ *    !== genderB "other" lo bloqueaba). Ahora un género neutral satisface
+ *    cualquier filtro del otro lado, igual que "all" en los filtros.
+ *    Regla: isNeutralGender(g) = g === "other" || g === undefined.
  */
 
 import { Socket, Server } from "socket.io";
@@ -18,7 +15,7 @@ import { userSocketMap } from "../../webrtc/webrtc.events";
 
 export type MatchMode    = "discover" | "ligues" | string;
 export type GenderFilter = "all" | "male" | "female";
-export type UserGender   = "male" | "female" | "other" | undefined;
+export type UserGender   = "male" | "female" | "other" | "non-binary" | "prefer-not-to-say" | undefined;
 
 export const DEBATE_ROOM_PREFIX = "debate-room:";
 
@@ -88,22 +85,40 @@ const breakActiveMatch = (io: Server, userId: string) => {
 };
 
 // ─── Compatibilidad de género ─────────────────────────────────────────────────
+
+/**
+ * Un género "neutral" actúa como "ambos": satisface cualquier filtro del
+ * otro lado sin imponer restricciones propias.
+ *
+ * Son neutrales: "other", "non-binary", "prefer-not-to-say", undefined, o
+ * cualquier valor que no sea estrictamente "male" o "female".
+ * Estrategia defensiva: en vez de enumerar todos los valores no-binarios
+ * posibles, solo dejamos pasar sin restricción todo lo que NO sea
+ * explícitamente "male" o "female". Así funciona sin importar el string
+ * exacto que el frontend use para "No binario" / "Prefiero no decir".
+ */
+const isNeutralGender = (g: UserGender): boolean =>
+  g !== "male" && g !== "female";
+
 function gendersCompatible(userA: string, userB: string): boolean {
   const filterA = userGenderFilter.get(userA) ?? "all";
   const filterB = userGenderFilter.get(userB) ?? "all";
   const genderA = userGender.get(userA);
   const genderB = userGender.get(userB);
 
+  // El filtro de A queda satisfecho si:
+  //   - A acepta cualquier género ("all"), O
+  //   - B tiene género neutral (other/undefined → "ambos"), O
+  //   - el género de B coincide exactamente con el filtro de A
   const aSatisfied =
-    filterA === "all" ||
-    genderB === undefined ||
-    genderB === "other"  ||
+    filterA === "all"       ||
+    isNeutralGender(genderB) ||
     genderB === filterA;
 
+  // Ídem para el lado B
   const bSatisfied =
-    filterB === "all" ||
-    genderA === undefined ||
-    genderA === "other"  ||
+    filterB === "all"       ||
+    isNeutralGender(genderA) ||
     genderA === filterB;
 
   return aSatisfied && bSatisfied;
