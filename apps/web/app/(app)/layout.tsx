@@ -1,64 +1,94 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/services/supabase.client";
-import { useRouter } from "next/navigation";
 import BottomNav from "@/components/ui/BottomNav";
 import { useVipGuard } from "@/hooks/useVipGuard";
-import { useState } from "react";
+
+// ─── Cache de rol a nivel módulo ─────────────────────────────────────────────
+// Evita re-fetchear el rol en cada navegación entre rutas
+let _cachedUserId: string | null = null;
+let _cachedRole:   string | null = null;
 
 function VipWatcher() {
-  const [userId, setUserId] = useState<string | undefined>();
-  const [role,   setRole]   = useState<string | undefined>();
-
-useEffect(() => {
-  console.log("🔵 Layout MONTADO");
-
-  // Interceptar cualquier navegación para ver quién redirige
-  const originalPush = window.history.pushState.bind(window.history);
-  const originalReplace = window.history.replaceState.bind(window.history);
-
-  window.history.pushState = function(...args) {
-    console.log("🚨 pushState hacia:", args[2]);
-    console.trace("🚨 pushState stack");
-    return originalPush(...args);
-  };
-
-  window.history.replaceState = function(...args) {
-    console.log("🚨 replaceState hacia:", args[2]);
-    console.trace("🚨 replaceState stack");
-    return originalReplace(...args);
-  };
-
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      console.log("🔵 Layout onAuthStateChange:", event, !!session);
-      if (event === "SIGNED_OUT") {
-        console.log("🔴 Layout: SIGNED_OUT → redirigiendo a /");
-        setUserId(undefined);
-        setRole(undefined);
-        return;
-      }
-      if (session) {
-        setUserId(session.user.id);
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .single();
-        if (profile?.role) setRole(profile.role);
-      }
-    }
+  const [userId, setUserId] = useState<string | undefined>(
+    _cachedUserId ?? undefined
+  );
+  const [role, setRole] = useState<string | undefined>(
+    _cachedRole ?? undefined
   );
 
-  return () => {
-    console.log("🔵 Layout DESMONTADO");
-    // Restaurar funciones originales
-    window.history.pushState = originalPush;
-    window.history.replaceState = originalReplace;
-    subscription.unsubscribe();
-  };
-}, []);
+  useEffect(() => {
+    console.log("🔵 Layout MONTADO");
+    let isMounted = true;
+
+    const loadRole = async (uid: string) => {
+      // ✅ Si ya tenemos el rol cacheado para este usuario, no re-fetching
+      if (_cachedUserId === uid && _cachedRole) {
+        if (isMounted) {
+          setUserId(uid);
+          setRole(_cachedRole);
+        }
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", uid)
+        .single();
+
+      if (!isMounted) return;
+
+      if (error) {
+        console.error("❌ Layout: error cargando role:", error.message);
+        return;
+      }
+
+      const role = profile?.role ?? "viewer";
+      _cachedUserId = uid;
+      _cachedRole   = role;
+      setUserId(uid);
+      setRole(role);
+    };
+
+    // ✅ Primero intentar sesión cacheada — no esperar al evento
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
+      if (session?.user) {
+        loadRole(session.user.id);
+      }
+    });
+
+    // ✅ Escuchar solo cambios reales de auth (login/logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log("🔵 Layout onAuthStateChange:", event, !!session);
+
+        if (event === "SIGNED_OUT") {
+          // Limpiar cache al cerrar sesión
+          _cachedUserId = null;
+          _cachedRole   = null;
+          if (isMounted) {
+            setUserId(undefined);
+            setRole(undefined);
+          }
+          return;
+        }
+
+        // Solo actuar en login nuevo, no en TOKEN_REFRESHED ni INITIAL_SESSION
+        if (event === "SIGNED_IN" && session?.user) {
+          loadRole(session.user.id);
+        }
+      }
+    );
+
+    return () => {
+      console.log("🔵 Layout DESMONTADO");
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useVipGuard(userId, role);
   return null;
