@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/services/supabase.client";
 
 export type UserGender = "male" | "female" | "other" | undefined;
@@ -9,53 +9,68 @@ function normalizeGender(raw?: string | null): UserGender {
   if (!raw) return undefined;
   const v = raw.toLowerCase().trim();
   if (v === "hombre") return "male";
-  if (v === "mujer")  return "female";
+  if (v === "mujer") return "female";
   return "other";
 }
 
 export const useProfile = () => {
   const [profile, setProfile] = useState<{
-    id:     string;
-    role:   string;
+    id: string;
+    role: string;
     gender: UserGender;
   } | null>(null);
 
   const [profileReady, setProfileReady] = useState(false);
 
-  useEffect(() => {
-    const checkProfile = async () => {
-      // Reintentar hasta 3 veces si no hay sesión todavía
-      let user = null;
-      for (let i = 0; i < 3; i++) {
-        const { data } = await supabase.auth.getUser();
-        if (data.user) { user = data.user; break; }
-        await new Promise(r => setTimeout(r, 1000));
-      }
+  // ✅ Ref para evitar setState si el componente se desmontó
+  const isMounted = useRef(true);
 
-      if (!user) {
-        setProfileReady(true); // marcar como listo aunque no haya usuario
+  useEffect(() => {
+    isMounted.current = true;
+
+    const checkProfile = async () => {
+      // ✅ Usar getSession() en vez de getUser() — más rápido, no hace
+      // round-trip al servidor si ya hay sesión cacheada
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!isMounted.current) return;
+
+      if (!session?.user) {
+        setProfileReady(true);
         return;
       }
 
-      const { data: p } = await supabase
+      const { data: p, error } = await supabase
         .from("profiles")
         .select("id, role, gender")
-        .eq("id", user.id)
+        .eq("id", session.user.id)
         .single();
+
+      if (!isMounted.current) return;
+
+      // ✅ Manejar error explícitamente — no quedarse colgado en silencio
+      if (error) {
+        console.error("[useProfile] Error fetching profile:", error.message);
+        setProfileReady(true);
+        return;
+      }
 
       if (p) {
         setProfile({
-          id:     p.id,
-          role:   p.role,
+          id: p.id,
+          role: p.role,
           gender: normalizeGender(p.gender),
         });
       }
 
-      // Siempre marcar como listo, con o sin perfil
       setProfileReady(true);
     };
 
     checkProfile();
+
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
 
   return { profile, profileReady };

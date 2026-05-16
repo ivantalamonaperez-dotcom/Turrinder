@@ -3,62 +3,71 @@
 import { useEffect } from "react";
 import { supabase } from "@/services/supabase.client";
 
+// ✅ Singleton: solo un intervalo activo globalmente, sin importar cuántas
+// veces se monte el componente al navegar entre rutas.
+let _presenceInterval: ReturnType<typeof setInterval> | null = null;
+let _presenceUserId: string | null = null;
+let _mountCount = 0;
+
+async function setOnline(userId: string) {
+  await supabase
+    .from("profiles")
+    .update({ is_online: true, last_seen: new Date() })
+    .eq("id", userId);
+}
+
+async function setOffline(userId: string) {
+  await supabase
+    .from("profiles")
+    .update({ is_online: false, last_seen: new Date() })
+    .eq("id", userId);
+  console.log("🔴 OFFLINE:", userId);
+}
+
 export const usePresence = () => {
   useEffect(() => {
-    let interval: any;
-    let userId: string | null = null;
+    _mountCount++;
 
     const start = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
 
-      userId = data.user.id;
+      const userId = data.user.id;
+      _presenceUserId = userId;
 
-      // 🔥 marcar online inmediatamente
-      await supabase
-        .from("profiles")
-        .update({
-          is_online: true,
-          last_seen: new Date(),
-        })
-        .eq("id", userId);
-
+      await setOnline(userId);
       console.log("🟢 ONLINE:", userId);
 
-      // 🔥 heartbeat cada 5s
-      interval = setInterval(async () => {
-        await supabase
-          .from("profiles")
-          .update({
-            is_online: true,
-            last_seen: new Date(),
-          })
-          .eq("id", userId);
-      }, 5000);
-    };
-
-    const setOffline = async () => {
-      if (!userId) return;
-
-      await supabase
-        .from("profiles")
-        .update({
-          is_online: false,
-          last_seen: new Date(),
-        })
-        .eq("id", userId);
-
-      console.log("🔴 OFFLINE:", userId);
+      // ✅ Solo crear el intervalo si no existe ya uno corriendo
+      if (!_presenceInterval) {
+        _presenceInterval = setInterval(() => {
+          if (_presenceUserId) setOnline(_presenceUserId);
+        }, 30_000); // ✅ 30s en lugar de 5s — suficiente para presencia
+      }
     };
 
     start();
 
-    window.addEventListener("beforeunload", setOffline);
+    const handleUnload = () => {
+      if (_presenceUserId) setOffline(_presenceUserId);
+    };
+    window.addEventListener("beforeunload", handleUnload);
 
     return () => {
-      clearInterval(interval);
-      setOffline();
-      window.removeEventListener("beforeunload", setOffline);
+      window.removeEventListener("beforeunload", handleUnload);
+      _mountCount--;
+
+      // ✅ Solo limpiar cuando no queda ningún componente montado
+      if (_mountCount === 0) {
+        if (_presenceInterval) {
+          clearInterval(_presenceInterval);
+          _presenceInterval = null;
+        }
+        if (_presenceUserId) {
+          setOffline(_presenceUserId);
+          _presenceUserId = null;
+        }
+      }
     };
   }, []);
 };

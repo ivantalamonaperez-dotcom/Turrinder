@@ -1,17 +1,6 @@
 "use client";
 
-/**
- * useSocket — SINGLETON + CONTADOR DE CONEXIONES + AUTH SEGURA
- *
- * CAMBIOS DE SEGURIDAD:
- *   - El userId ya NO se manda en el query (era fácil de suplantar).
- *   - Ahora se manda el access_token de Supabase en socket.auth.token.
- *   - El servidor verifica el token con Supabase y extrae el userId real.
- *   - Si el token expira, el socket se reconecta automáticamente con el
- *     token nuevo gracias al evento onTokenRefreshed de Supabase.
- */
-
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { supabase } from "@/services/supabase.client";
 
@@ -27,8 +16,9 @@ async function getOrCreateSocket(): Promise<Socket | null> {
   if (_initPromise) return _initPromise;
 
   _initPromise = (async () => {
-    // Obtener sesión completa (necesitamos el access_token, no solo el user)
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
     if (!session?.access_token) {
       console.warn("⚠️ Sin sesión autenticada.");
@@ -36,27 +26,28 @@ async function getOrCreateSocket(): Promise<Socket | null> {
       return null;
     }
 
-    // Chequeo post-await (StrictMode puede haber creado uno ya)
-    if (_socket?.connected) { _initPromise = null; return _socket; }
-    if (_socket) { _socket.disconnect(); _socket = null; }
+    if (_socket?.connected) {
+      _initPromise = null;
+      return _socket;
+    }
+    if (_socket) {
+      _socket.disconnect();
+      _socket = null;
+    }
 
     const s = io(SOCKET_URL, {
       autoConnect: true,
       transports: ["websocket", "polling"],
-      // ✅ Token en auth (no en query) — el servidor lo verifica con Supabase
       auth: { token: session.access_token },
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
     });
 
-    s.on("connect", () =>
-      console.log("🟢 Socket conectado:", s.id)
-    );
+    s.on("connect", () => console.log("🟢 Socket conectado:", s.id));
 
     s.on("connect_error", (err) => {
       console.error("❌ Error socket:", err.message);
-      // Si el error es de auth, limpiar para forzar re-init con token nuevo
       if (err.message.includes("AUTH_")) {
         _socket = null;
         _initPromise = null;
@@ -80,8 +71,6 @@ async function getOrCreateSocket(): Promise<Socket | null> {
 }
 
 // ─── Reconexión automática cuando Supabase refresca el token ─────────────────
-// Cuando el JWT expira, Supabase emite onAuthStateChange con el token nuevo.
-// Reconectamos el socket con el token fresco para que el servidor lo revalide.
 if (typeof window !== "undefined") {
   supabase.auth.onAuthStateChange((event, session) => {
     if (event === "TOKEN_REFRESHED" && session?.access_token && _socket) {
@@ -90,7 +79,6 @@ if (typeof window !== "undefined") {
       _socket.disconnect();
       _socket = null;
       _initPromise = null;
-      // El hook se encargará de reconectar en el próximo render
     }
     if (event === "SIGNED_OUT") {
       _socket?.disconnect();
@@ -103,8 +91,6 @@ if (typeof window !== "undefined") {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 interface UseSocketResult {
   socket: Socket | null;
-  /** Incrementa cada vez que el socket emite "connect". Úsalo como
-   *  dependencia de useEffect para reaccionar a reconexiones. */
   connectCount: number;
 }
 
@@ -112,10 +98,16 @@ export const useSocket = (): UseSocketResult => {
   const [socket, setSocket] = useState<Socket | null>(
     _socket?.connected ? _socket : null
   );
-  // Empieza en 1 si ya hay socket conectado (evita búsqueda doble al montar)
   const [connectCount, setConnectCount] = useState(
     _socket?.connected ? 1 : 0
   );
+
+  // ✅ Guardar referencias a los listeners para poder removerlos correctamente
+  const listenersRef = useRef<{
+    onConnect: () => void;
+    onDisconnect: () => void;
+    socket: Socket;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -123,7 +115,6 @@ export const useSocket = (): UseSocketResult => {
     getOrCreateSocket().then((s) => {
       if (!active || !s) return;
 
-      // Si ya estaba conectado al momento de resolver, actualizar estado
       if (s.connected) {
         setSocket(s);
         setConnectCount((c) => (c === 0 ? 1 : c));
@@ -141,16 +132,24 @@ export const useSocket = (): UseSocketResult => {
         setSocket(null);
       };
 
+      // ✅ Guardar referencia para cleanup
+      listenersRef.current = { onConnect, onDisconnect, socket: s };
+
       s.on("connect", onConnect);
       s.on("disconnect", onDisconnect);
-
-      return () => {
-        s.off("connect", onConnect);
-        s.off("disconnect", onDisconnect);
-      };
     });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+
+      // ✅ Ahora sí remueve los listeners correctamente al desmontar
+      if (listenersRef.current) {
+        const { socket: s, onConnect, onDisconnect } = listenersRef.current;
+        s.off("connect", onConnect);
+        s.off("disconnect", onDisconnect);
+        listenersRef.current = null;
+      }
+    };
   }, []);
 
   return { socket, connectCount };
