@@ -307,59 +307,92 @@ export default function ProfilePage() {
   /* ── Load profile con onAuthStateChange ── */
   useEffect(() => {
     console.log("🟡 ProfilePage MONTADO");
+    let isMounted = true;
+
+    const loadProfile = async (userId: string) => {
+      console.log("🟢 ProfilePage: cargando perfil para", userId);
+      setUserId(userId);
+
+      const { data: p, error } = await supabase
+        .from("profiles")
+        .select("name, age, bio, gender, location, occupation, languages, avatar_url, photos, interests, looking_for, role, username")
+        .eq("id", userId)
+        .single();
+
+      if (!isMounted) return;
+
+      if (error) {
+        console.error("❌ ProfilePage: error cargando perfil:", error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (p) {
+        setName(p.name || "");
+        setAge(p.age?.toString() || "");
+        setBio(p.bio || "");
+        setGender(p.gender || "");
+        setLocation(p.location || "");
+        setOccupation(p.occupation || "");
+        setLanguages(p.languages || []);
+        setInterests(p.interests || []);
+        setLookingFor(p.looking_for || []);
+        setRole(p.role || "viewer");
+        setUsername(p.username || null);
+        if (!p.username) setShowUsernameModal(true);
+
+        const urls: Photo[] = [];
+        if (p.photos?.length) {
+          p.photos.forEach((url: string) => urls.push({ url }));
+        } else if (p.avatar_url) {
+          urls.push({ url: p.avatar_url });
+        }
+        setPhotos(urls);
+      }
+
+      setLoading(false);
+    };
+
+    // ✅ Primero intentar con la sesión ya cacheada — no esperar el evento
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
+      if (session?.user) {
+        loadProfile(session.user.id);
+      }
+      // Si no hay sesión, onAuthStateChange lo manejará abajo
+    });
+
+    // ✅ Escuchar cambios futuros (login, logout, token refresh)
+    // sin desuscribirse dentro del callback
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         console.log("🟡 ProfilePage onAuthStateChange:", event, !!session);
+
         if (event === "SIGNED_OUT") {
           console.log("🔴 ProfilePage: SIGNED_OUT → redirigiendo a /");
           router.push("/");
           return;
         }
-        if (!session) {
-        console.log("🟠 ProfilePage: no session, event:", event, "→ ignorando");
-        return;
-      }
 
-        subscription.unsubscribe();
-        console.log("🟢 ProfilePage: cargando perfil para", session.user.id);
-        setUserId(session.user.id);
-
-        const { data: p } = await supabase
-          .from("profiles")
-          .select("name, age, bio, gender, location, occupation, languages, avatar_url, photos, interests, looking_for, role, username")
-          .eq("id", session.user.id)
-          .single();
-
-        if (p) {
-          setName(p.name || "");
-          setAge(p.age?.toString() || "");
-          setBio(p.bio || "");
-          setGender(p.gender || "");
-          setLocation(p.location || "");
-          setOccupation(p.occupation || "");
-          setLanguages(p.languages || []);
-          setInterests(p.interests || []);
-          setLookingFor(p.looking_for || []);
-          setRole(p.role || "viewer");
-          setUsername(p.username || null);
-          if (!p.username) setShowUsernameModal(true);
-
-          const urls: Photo[] = [];
-          if (p.photos?.length) {
-            p.photos.forEach((url: string) => urls.push({ url }));
-          } else if (p.avatar_url) {
-            urls.push({ url: p.avatar_url });
-          }
-          setPhotos(urls);
+        // INITIAL_SESSION sin sesión = usuario no logueado
+        if (event === "INITIAL_SESSION" && !session) {
+          if (isMounted) setLoading(false);
+          router.push("/");
+          return;
         }
-        setLoading(false);
+
+        // Solo recargar perfil si es un login nuevo, no en cada token refresh
+        if (event === "SIGNED_IN" && session?.user) {
+          loadProfile(session.user.id);
+        }
       }
     );
 
     return () => {
-    console.log("🟡 ProfilePage DESMONTADO");
-    subscription.unsubscribe();
-  };
+      console.log("🟡 ProfilePage DESMONTADO");
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
   /* ── Validation ── */
