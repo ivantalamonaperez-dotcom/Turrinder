@@ -385,43 +385,79 @@ export default function registerDebatesEvents(
   });
 
 
-  // ── VOTES (broadcast via socket.io room) ──────────────────────────────────
-  // Todos los sockets hacen socket.join(roomId) en joinRoom/createRoom,
-  // por lo que io.to(roomId) llega a todos los miembros sin importar userId->socketId.
+  // ── VOTES ─────────────────────────────────────────────────────────────────
+  // debate-start-vote  → solo host/mod. Soporta type: "yes_no" | "kick_vote" | "custom"
+  // debate-cast-vote   → cualquier miembro de la sala
+  // debate-end-vote    → solo host/mod (cierre anticipado)
 
   socket.on("debate-start-vote", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
+
     const p      = payload as Record<string, unknown>;
     const roomId = safeStr(p.roomId);
     if (!roomId || !validRoomId(roomId)) return;
     if (!isModerator(roomId, myUserId)) return;
+
     const vote = p.vote;
     if (!vote || typeof vote !== "object") return;
 
-    io.to(roomId).emit("debate-vote-started", vote);
+    const v = vote as Record<string, unknown>;
 
-    const voteObj = vote as Record<string, unknown>;
-    const endsAt  = typeof voteObj.endsAt === "number" ? voteObj.endsAt : 0;
-    const voteId  = typeof voteObj.id     === "string"  ? voteObj.id    : "";
-    const msLeft  = endsAt - Date.now();
-    if (msLeft > 0 && voteId) {
-      setTimeout(() => {
-        io.to(roomId).emit("debate-vote-ended", { voteId });
-      }, msLeft);
-    }
+    // Validar campos mínimos
+    const question = safeStr(v.question, 300);
+    if (!question || !question.trim()) return;
+
+    const type = v.type;
+    if (type !== "yes_no" && type !== "kick_vote" && type !== "custom") return;
+
+    const rawOptions: unknown[] = Array.isArray(v.options) ? v.options : [];
+    const options = rawOptions
+      .map((o) => (typeof o === "string" ? o.trim().slice(0, 80) : ""))
+      .filter(Boolean)
+      .slice(0, 6);
+
+    if (options.length < 2) return;
+
+    const endsAt = typeof v.endsAt === "number" && v.endsAt > Date.now()
+      ? v.endsAt
+      : Date.now() + 30_000;
+
+    const sanitizedVote = {
+      ...v,
+      question: question.trim(),
+      options,
+      endsAt,
+      votes: {},   // nunca confiar en votos del cliente
+    };
+
+    debateHandler.startVote(io, roomId, myUserId, sanitizedVote);
   });
 
   socket.on("debate-cast-vote", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
+
     const p      = payload as Record<string, unknown>;
     const roomId = safeStr(p.roomId);
-    const voteId = safeStr(p.voteId);
-    const choice = safeStr(p.choice, 20);
+    const voteId = safeStr(p.voteId, 64);
+    const choice = safeStr(p.choice, 80);
+
     if (!roomId || !validRoomId(roomId)) return;
     if (!voteId || !choice) return;
-    const room = debateState.get(roomId);
-    if (!room || !room.members.has(myUserId)) return;
 
-    io.to(roomId).emit("debate-vote-cast", { voteId, userId: myUserId, choice });
+    debateHandler.castVote(io, roomId, myUserId, voteId, choice);
+  });
+
+  socket.on("debate-end-vote", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const p      = payload as Record<string, unknown>;
+    const roomId = safeStr(p.roomId);
+    const voteId = safeStr(p.voteId, 64);
+
+    if (!roomId || !validRoomId(roomId)) return;
+    if (!voteId) return;
+    if (!isModerator(roomId, myUserId)) return;
+
+    debateHandler.endVote(io, roomId, myUserId, voteId);
   });
 }

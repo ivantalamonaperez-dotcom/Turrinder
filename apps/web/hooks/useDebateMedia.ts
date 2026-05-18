@@ -75,13 +75,14 @@ export type RoomSettings = {
 
 export type ActiveVote = {
   id: string;
-  type: "yes_no" | "kick_vote";
+  type: "yes_no" | "kick_vote" | "custom";
   question: string;
   options: string[];
   votes: Record<string, string>;
   endsAt: number;
   targetId?: string;
   targetName?: string;
+  createdBy?: string;
 };
 
 export type ModLog = {
@@ -512,8 +513,20 @@ export function useDebateMedia(
     };
 
     // El servidor indica que la votación terminó → cerrarla
-    const onVoteEnded = ({ voteId }: { voteId: string }) => {
+    const onVoteEnded = ({
+      voteId,
+      results,
+      winner,
+      total,
+    }: {
+      voteId: string;
+      results?: Record<string, number>;
+      winner?: string | null;
+      total?: number;
+    }) => {
       setActiveVote((v) => (v?.id === voteId ? null : v));
+      // Los resultados se emiten por separado si el consumidor los necesita;
+      // acá podrías disparar un toast/callback externo si quisieras.
     };
 
     /* ── Retry ROOM_NOT_FOUND ───────────────────────────────────────────── */
@@ -743,26 +756,32 @@ export function useDebateMedia(
     activeVote,
 
     // FIX 2: ahora emite al servidor para que la votación llegue a todos.
-    // Antes solo hacía setActiveVote() localmente.
     startVote: (
-      type: "yes_no" | "kick_vote",
+      type: "yes_no" | "kick_vote" | "custom",
       q: string,
       ms: number,
       tid?: string,
-      tn?: string
+      tn?: string,
+      customOptions?: string[]
     ) => {
+      const options =
+        type === "yes_no"    ? ["Sí", "No"] :
+        type === "kick_vote" ? ["Expulsar", "Cancelar"] :
+        (customOptions ?? []).map((o) => o.trim()).filter(Boolean).slice(0, 6);
+
       const vote: ActiveVote = {
         id:         crypto.randomUUID?.() || String(Date.now()),
         type,
         question:   q,
-        options:    type === "yes_no" ? ["Sí", "No"] : ["Expulsar", "Cancelar"],
+        options,
         votes:      {},
         endsAt:     Date.now() + ms,
         targetId:   tid,
         targetName: tn,
+        createdBy:  currentUserName,
       };
-      setActiveVote(vote); // feedback instantáneo al host
-      socketRef.current?.emit("debate-start-vote", { roomId, vote }); // broadcast a todos
+      setActiveVote(vote);
+      socketRef.current?.emit("debate-start-vote", { roomId, vote });
     },
 
     // FIX 2: ahora emite al servidor para sincronizar el voto entre todos.
@@ -774,6 +793,11 @@ export function useDebateMedia(
           : v
       ); // feedback instantáneo al votante
       socketRef.current?.emit("debate-cast-vote", { roomId, voteId, choice }); // broadcast a todos
+    },
+
+    // Cierre anticipado de votación (solo host/mod)
+    endVote: (voteId: string) => {
+      socketRef.current?.emit("debate-end-vote", { roomId, voteId });
     },
 
     modLogs,

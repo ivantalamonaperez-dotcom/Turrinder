@@ -10,7 +10,7 @@ export interface DebateMember {
   userId:   string;
   socketId: string;
   name:     string;
-  avatarUrl: string | null;   // ← NUEVO: necesario para mostrar avatar en tiles
+  avatarUrl: string | null;
 
   role: DebateRole;
 
@@ -20,8 +20,22 @@ export interface DebateMember {
   banned:     boolean;
   handRaised: boolean;
 
-  shadowMuted:    boolean;        // ← NUEVO: shadow mute silencioso
-  tempMutedUntil: number | null;  // ← NUEVO: timestamp de expiración del temp mute
+  shadowMuted:    boolean;
+  tempMutedUntil: number | null;
+}
+
+export type DebateVoteType = "yes_no" | "kick_vote" | "custom";
+
+export interface DebateActiveVote {
+  id:          string;
+  type:        DebateVoteType;
+  question:    string;
+  options:     string[];
+  votes:       Record<string, string>; // userId → opción elegida
+  endsAt:      number;
+  targetId?:   string;
+  targetName?: string;
+  createdBy?:  string;
 }
 
 export interface DebateRoomState {
@@ -39,14 +53,15 @@ export interface DebateRoomState {
   strictMode: boolean;
   freeMode:   boolean;
 
-  // Configuración de sala
-  allMutedOnEntry: boolean;   // ← NUEVO: mutear al entrar
-  cameraAllowed:   boolean;   // ← NUEVO: permitir cámara
-  speakTimeLimit:  number;    // ← NUEVO: ms por turno (0 = sin límite)
+  allMutedOnEntry: boolean;
+  cameraAllowed:   boolean;
+  speakTimeLimit:  number;
 
-  speakQueue:     string[];        // userIds en orden de solicitud
+  speakQueue:     string[];
   currentSpeaker: string | null;
-  speakEndsAt:    number | null;   // ← NUEVO: timestamp de fin de turno
+  speakEndsAt:    number | null;
+
+  activeVote: DebateActiveVote | null;  // votación en curso
 
   createdAt: number;
 }

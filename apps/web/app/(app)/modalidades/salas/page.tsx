@@ -57,9 +57,9 @@ interface ModLog {
 }
 
 interface ActiveVote {
-  id: string; type: "yes_no" | "kick_vote";
-  question: string; votes: Record<string, string>;
-  endsAt: number; targetId?: string; targetName?: string;
+  id: string; type: "yes_no" | "kick_vote" | "custom";
+  question: string; options: string[]; votes: Record<string, string>;
+  endsAt: number; targetId?: string; targetName?: string; createdBy?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -178,37 +178,224 @@ function SpeakTimer({ endsAt }: { endsAt: number }) {
 }
 
 // ─── VotePanel ────────────────────────────────────────────────────────────────
+// Visible para TODOS los usuarios con animación de entrada llamativa
 
 function VotePanel({ vote, userId, onCast }: {
   vote: ActiveVote; userId: string; onCast: (id: string, choice: string) => void;
 }) {
-  const myVote   = vote.votes[userId];
-  const yes      = Object.values(vote.votes).filter(v => v === "yes").length;
-  const no       = Object.values(vote.votes).filter(v => v === "no").length;
-  const total    = Object.keys(vote.votes).length || 1;
+  const myVote = vote.votes[userId];
+  const total  = Math.max(Object.keys(vote.votes).length, 1);
   const [secs, setSecs] = useState(Math.max(0, Math.ceil((vote.endsAt - Date.now()) / 1000)));
+  const [justVoted, setJustVoted] = useState(false);
+
   useEffect(() => {
-    const t = setInterval(() => setSecs(Math.max(0, Math.ceil((vote.endsAt - Date.now()) / 1000))), 500);
+    const t = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
-  }, [vote.endsAt]);
+  }, []);
+
+  const handleCast = (opt: string) => {
+    if (myVote) return;
+    setJustVoted(true);
+    onCast(vote.id, opt);
+  };
+
+  const pct = (secs / Math.max(Math.ceil((vote.endsAt - (vote.endsAt - secs * 1000 - Date.now() + vote.endsAt)) / 1000), 1));
+  const timerColor = secs <= 5 ? "#f87171" : secs <= 15 ? "#fbbf24" : "#a78bfa";
+
+  // Colores por índice de opción
+  const OPT_STYLES = [
+    { border: "rgba(74,222,128,0.35)",  bg: "rgba(74,222,128,0.1)",  bgHover: "rgba(74,222,128,0.18)",  bgVoted: "rgba(74,222,128,0.22)",  color: "#4ade80"  },
+    { border: "rgba(248,113,113,0.35)", bg: "rgba(248,113,113,0.1)", bgHover: "rgba(248,113,113,0.18)", bgVoted: "rgba(248,113,113,0.22)", color: "#f87171"  },
+    { border: "rgba(84,199,248,0.35)",  bg: "rgba(84,199,248,0.1)",  bgHover: "rgba(84,199,248,0.18)",  bgVoted: "rgba(84,199,248,0.22)",  color: "#54c7f8"  },
+    { border: "rgba(251,191,36,0.35)",  bg: "rgba(251,191,36,0.1)",  bgHover: "rgba(251,191,36,0.18)",  bgVoted: "rgba(251,191,36,0.22)",  color: "#fbbf24"  },
+    { border: "rgba(167,139,250,0.35)", bg: "rgba(167,139,250,0.1)", bgHover: "rgba(167,139,250,0.18)", bgVoted: "rgba(167,139,250,0.22)", color: "#a78bfa"  },
+    { border: "rgba(251,146,60,0.35)",  bg: "rgba(251,146,60,0.1)",  bgHover: "rgba(251,146,60,0.18)",  bgVoted: "rgba(251,146,60,0.22)",  color: "#fb923c"  },
+  ];
+
   return (
-    <div className="vote-panel">
-      <div className="vote-header">
-        <span className="vote-icon">🗳️</span>
-        <span className="vote-question">{vote.question}</span>
-        <span className="vote-timer">{secs}s</span>
+    <div className={`vp-overlay ${justVoted ? "vp-voted" : ""}`}>
+      <div className="vp-card">
+        {/* Header */}
+        <div className="vp-header">
+          <div className="vp-header-left">
+            <span className="vp-pulse-ring" />
+            <span className="vp-icon">🗳️</span>
+            <div className="vp-titles">
+              {vote.createdBy && <span className="vp-creator">{vote.createdBy} lanzó una votación</span>}
+              <span className="vp-question">{vote.question}</span>
+            </div>
+          </div>
+          <div className="vp-timer-wrap" style={{ color: timerColor, borderColor: timerColor + "55", background: timerColor + "11" }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span className="vp-timer-text">{secs}s</span>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="vp-progress-bar">
+          <div className="vp-progress-fill" style={{ width: `${Math.min(100, (secs / 60) * 100)}%`, background: timerColor }} />
+        </div>
+
+        {/* Opciones */}
+        <div className="vp-options">
+          {vote.options.map((opt, i) => {
+            const s     = OPT_STYLES[i % OPT_STYLES.length];
+            const count = Object.values(vote.votes).filter(v => v === opt).length;
+            const p     = Math.round(count / total * 100);
+            const isMyChoice = myVote === opt;
+            return (
+              <button
+                key={opt}
+                className={`vp-opt ${isMyChoice ? "vp-opt-chosen" : ""}`}
+                style={{
+                  borderColor:    s.border,
+                  background:     isMyChoice ? s.bgVoted : s.bg,
+                  color:          s.color,
+                  "--opt-hover-bg": s.bgHover,
+                } as React.CSSProperties}
+                onClick={() => handleCast(opt)}
+                disabled={!!myVote}
+              >
+                {/* barra de progreso interna */}
+                <div className="vp-opt-bar" style={{ width: `${p}%`, background: s.color + "22" }} />
+                <span className="vp-opt-label">
+                  {isMyChoice && <span className="vp-opt-check">✓ </span>}
+                  {opt}
+                </span>
+                <span className="vp-opt-stats">{count} · {p}%</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {myVote && (
+          <div className="vp-voted-msg">
+            ✅ Votaste por <strong>{myVote}</strong> · {Object.keys(vote.votes).length} voto{Object.keys(vote.votes).length !== 1 ? "s" : ""}
+          </div>
+        )}
       </div>
-      <div className="vote-options">
-        <button className={`vote-opt yes ${myVote === "yes" ? "voted" : ""}`}
-          onClick={() => onCast(vote.id, "yes")} disabled={!!myVote}>
-          <span>✅ Sí</span>
-          <span className="vote-count">{yes} ({Math.round(yes/total*100)}%)</span>
-        </button>
-        <button className={`vote-opt no ${myVote === "no" ? "voted" : ""}`}
-          onClick={() => onCast(vote.id, "no")} disabled={!!myVote}>
-          <span>❌ No</span>
-          <span className="vote-count">{no} ({Math.round(no/total*100)}%)</span>
-        </button>
+    </div>
+  );
+}
+
+// ─── VoteCreatorModal ─────────────────────────────────────────────────────────
+
+function VoteCreatorModal({ onClose, onStart }: {
+  onClose: () => void;
+  onStart: (type: "yes_no" | "kick_vote" | "custom", q: string, ms: number, tid?: string, tn?: string, opts?: string[]) => void;
+}) {
+  const [question,  setQuestion]  = useState("");
+  const [voteType,  setVoteType]  = useState<"yes_no" | "custom">("yes_no");
+  const [options,   setOptions]   = useState(["", ""]);
+  const [duration,  setDuration]  = useState(30);
+  const [error,     setError]     = useState("");
+
+  const addOption = () => { if (options.length < 6) setOptions(p => [...p, ""]); };
+  const removeOption = (i: number) => { if (options.length > 2) setOptions(p => p.filter((_, j) => j !== i)); };
+  const setOpt = (i: number, v: string) => setOptions(p => p.map((o, j) => j === i ? v : o));
+
+  const handleStart = () => {
+    if (!question.trim()) { setError("Escribí la pregunta"); return; }
+    if (voteType === "custom") {
+      const clean = options.map(o => o.trim()).filter(Boolean);
+      if (clean.length < 2) { setError("Necesitás al menos 2 opciones"); return; }
+      onStart("custom", question.trim(), duration * 1000, undefined, undefined, clean);
+    } else {
+      onStart("yes_no", question.trim(), duration * 1000);
+    }
+    onClose();
+  };
+
+  return (
+    <div className="vcm-overlay" onClick={onClose}>
+      <div className="vcm-card" onClick={e => e.stopPropagation()}>
+        <div className="vcm-beam" />
+        <div className="vcm-header">
+          <div className="vcm-header-left">
+            <span className="vcm-icon">🗳️</span>
+            <div>
+              <div className="vcm-eyebrow">Moderación</div>
+              <div className="vcm-title">Crear votación</div>
+            </div>
+          </div>
+          <button className="vcm-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="vcm-body">
+          {/* Pregunta */}
+          <div className="vcm-field">
+            <label className="vcm-label">Pregunta <span className="vcm-req">*</span></label>
+            <input className="vcm-input" placeholder="¿Qué quieren votar?" value={question}
+              onChange={e => setQuestion(e.target.value)} maxLength={200} autoFocus />
+            <span className="vcm-char">{question.length}/200</span>
+          </div>
+
+          {/* Tipo */}
+          <div className="vcm-field">
+            <label className="vcm-label">Tipo de votación</label>
+            <div className="vcm-type-row">
+              <button className={`vcm-type-btn ${voteType === "yes_no" ? "active" : ""}`}
+                onClick={() => setVoteType("yes_no")}>
+                <span>✅❌</span><span>Sí / No</span>
+              </button>
+              <button className={`vcm-type-btn ${voteType === "custom" ? "active" : ""}`}
+                onClick={() => setVoteType("custom")}>
+                <span>🎨</span><span>Personalizada</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Opciones custom */}
+          {voteType === "custom" && (
+            <div className="vcm-field">
+              <label className="vcm-label">Opciones <span className="vcm-hint">(2–6)</span></label>
+              <div className="vcm-opts-list">
+                {options.map((opt, i) => (
+                  <div key={i} className="vcm-opt-row">
+                    <span className="vcm-opt-num">{i + 1}</span>
+                    <input className="vcm-input vcm-opt-input" placeholder={`Opción ${i + 1}`}
+                      value={opt} onChange={e => setOpt(i, e.target.value)} maxLength={80} />
+                    {options.length > 2 && (
+                      <button className="vcm-opt-remove" onClick={() => removeOption(i)}>✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {options.length < 6 && (
+                <button className="vcm-add-opt" onClick={addOption}>+ Agregar opción</button>
+              )}
+            </div>
+          )}
+
+          {/* Duración */}
+          <div className="vcm-field">
+            <label className="vcm-label">Duración</label>
+            <div className="vcm-dur-presets">
+              {[15, 30, 60, 120].map(s => (
+                <button key={s} className={`vcm-dur-btn ${duration === s ? "active" : ""}`}
+                  onClick={() => setDuration(s)}>
+                  {s < 60 ? `${s}s` : `${s / 60}min`}
+                </button>
+              ))}
+            </div>
+            <div className="vcm-dur-custom">
+              <input type="range" min={10} max={300} step={5} value={duration}
+                onChange={e => setDuration(Number(e.target.value))} className="vcm-slider" />
+              <span className="vcm-dur-value">{duration}s</span>
+            </div>
+          </div>
+
+          {error && <div className="vcm-error">⚠️ {error}</div>}
+        </div>
+
+        <div className="vcm-footer">
+          <button className="vcm-btn-cancel" onClick={onClose}>Cancelar</button>
+          <button className="vcm-btn-start" onClick={handleStart}>
+            <span>🗳️ Iniciar votación</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -242,13 +429,14 @@ function HostPanel({
   onUpdateSettings: (s: Partial<RoomSettings>) => void;
   onAssignCohost: (id: string, name: string, assign: boolean) => void;
   onTransferHost: (id: string, name: string) => void;
-  onStartVote: (type: "yes_no"|"kick_vote", q: string, ms: number, tid?: string, tn?: string) => void;
+  onStartVote: (type: "yes_no"|"kick_vote"|"custom", q: string, ms: number, tid?: string, tn?: string, customOptions?: string[]) => void;
   onCastVote: (id: string, choice: string) => void;
 }) {
   const [tab,          setTab]        = useState<HostTab>("participants");
   const [expandedId,   setExpanded]   = useState<string | null>(null);
   const [tempMuteMenu, setTempMuteM]  = useState<string | null>(null);
   const [confirmTransfer, setConfirmTransfer] = useState<string | null>(null);
+  const [voteModalOpen, setVoteModalOpen] = useState(false);
 
   const isMod = (uid: string) => uid === hostId || cohosts.has(uid);
   const currentMode = roomSettings.strictMode ? "strict" : roomSettings.freeMode ? "free" : "normal";
@@ -293,8 +481,19 @@ function HostPanel({
           </div>
         )}
 
-        {/* Votación activa */}
-        {activeVote && <VotePanel vote={activeVote} userId={userId} onCast={onCastVote} />}
+        {/* Botón lanzar votación */}
+        <button className="hp-vote-launch-btn" onClick={() => setVoteModalOpen(true)}>
+          <span>🗳️</span>
+          <span>Lanzar votación</span>
+          <span className="hp-vote-launch-arrow">→</span>
+        </button>
+
+        {voteModalOpen && (
+          <VoteCreatorModal
+            onClose={() => setVoteModalOpen(false)}
+            onStart={onStartVote}
+          />
+        )}
 
         {/* ── Tab: Participantes ─────────────────────────────────────────── */}
         {tab === "participants" && (
@@ -429,9 +628,10 @@ function HostPanel({
               }
             </div>
             <div className="hp-subsection">
-              <div className="hp-subsection-title">🗳️ Votación rápida</div>
+              <div className="hp-subsection-title">🗳️ Votación</div>
               <div className="hp-quick-actions">
-                <button className="hq-btn" onClick={() => onStartVote("yes_no", "¿Continuamos con este tema?", 30_000)}>¿Seguimos con el tema?</button>
+                <button className="hq-btn" onClick={() => setVoteModalOpen(true)}>🗳️ Crear votación personalizada</button>
+                <button className="hq-btn" onClick={() => onStartVote("yes_no", "¿Continuamos con este tema?", 30_000)}>⚡ ¿Seguimos con el tema?</button>
               </div>
             </div>
           </div>
@@ -1776,6 +1976,11 @@ function RoomView({
                 </div>
               )}
 
+              {/* Votación activa — visible para TODOS los participantes */}
+              {activeVote && (
+                <VotePanel vote={activeVote} userId={currentUserId} onCast={castVote} />
+              )}
+
               {pinned ? (
                 <div className="rv-pinned-layout">
                   <div className="rv-pinned-stage">
@@ -2596,22 +2801,225 @@ function GlobalStyles() {
       .dr-chat-send:hover { background:rgba(84,199,248,0.2); border-color:rgba(84,199,248,0.45); }
       .dr-chat-disabled { padding:10px 14px; font-size:12px; color:rgba(180,215,240,0.3); text-align:center; border-top:1px solid rgba(84,199,248,0.07); }
 
-      /* ── Vote panel ── */
-      .vote-panel { background:rgba(167,139,250,0.07); border:1px solid rgba(167,139,250,0.2); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
-      .vote-header { display:flex; align-items:center; gap:6px; }
-      .vote-icon { font-size:14px; }
-      .vote-question { font-size:12px; font-weight:600; color:rgba(180,215,240,0.8); flex:1; }
-      .vote-timer { font-size:11px; color:rgba(167,139,250,0.7); font-weight:600; flex-shrink:0; }
-      .vote-options { display:flex; gap:6px; }
-      .vote-opt { flex:1; padding:8px 6px; border-radius:8px; border:1px solid; cursor:pointer; font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:4px; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
-      .vote-opt.yes { border-color:rgba(74,222,128,0.3); background:rgba(74,222,128,0.07); color:#4ade80; }
-      .vote-opt.yes:hover:not(:disabled) { background:rgba(74,222,128,0.15); }
-      .vote-opt.yes.voted { background:rgba(74,222,128,0.2); }
-      .vote-opt.no  { border-color:rgba(248,113,113,0.3); background:rgba(248,113,113,0.07); color:var(--danger); }
-      .vote-opt.no:hover:not(:disabled) { background:rgba(248,113,113,0.14); }
-      .vote-opt.no.voted { background:rgba(248,113,113,0.18); }
-      .vote-opt:disabled { opacity:0.7; cursor:not-allowed; }
-      .vote-count { font-size:10px; opacity:0.7; }
+      /* ══════════════════════════════════════════════════════════════
+         ── VOTE PANEL (overlay global, todos lo ven) ──
+      ══════════════════════════════════════════════════════════════ */
+      .vp-overlay {
+        position: absolute;
+        bottom: 100px; /* justo sobre la barra de controles */
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 45;
+        width: min(460px, calc(100vw - 32px));
+        animation: vp-enter 0.5s cubic-bezier(0.34,1.56,0.64,1) both;
+        pointer-events: all;
+      }
+      @keyframes vp-enter {
+        from { opacity:0; transform:translateX(-50%) translateY(30px) scale(0.9); }
+        to   { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+      }
+      .vp-card {
+        background: rgba(10,16,32,0.97);
+        border: 1px solid rgba(167,139,250,0.35);
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(167,139,250,0.1), 0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(167,139,250,0.12);
+        backdrop-filter: blur(20px);
+      }
+      .vp-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px 10px;
+      }
+      .vp-header-left {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        min-width: 0;
+        position: relative;
+      }
+      .vp-pulse-ring {
+        position: absolute;
+        top: -4px; left: -4px;
+        width: 30px; height: 30px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(167,139,250,0.5);
+        animation: vp-ring 1.8s ease-in-out infinite;
+        pointer-events: none;
+      }
+      @keyframes vp-ring {
+        0%   { transform: scale(0.8); opacity: 1; }
+        100% { transform: scale(1.6); opacity: 0; }
+      }
+      .vp-icon { font-size: 20px; flex-shrink: 0; position: relative; z-index: 1; }
+      .vp-titles { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+      .vp-creator { font-size: 10px; font-weight: 600; color: rgba(167,139,250,0.65); letter-spacing: 0.3px; }
+      .vp-question { font-size: 14px; font-weight: 700; color: #f0f6ff; line-height: 1.3; }
+      .vp-timer-wrap {
+        display: flex; align-items: center; gap: 5px;
+        padding: 5px 10px; border-radius: 100px; border: 1px solid;
+        font-size: 12px; font-weight: 700; flex-shrink: 0;
+        transition: all 0.5s;
+      }
+      .vp-timer-text { font-variant-numeric: tabular-nums; }
+      .vp-progress-bar {
+        height: 2px;
+        background: rgba(167,139,250,0.1);
+        margin: 0 16px;
+      }
+      .vp-progress-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 1s linear, background 0.5s;
+      }
+      .vp-options {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 12px 16px;
+      }
+      .vp-opt {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: 'DM Sans', sans-serif;
+        transition: all 0.18s;
+        overflow: hidden;
+        text-align: left;
+      }
+      .vp-opt:hover:not(:disabled) {
+        background: var(--opt-hover-bg) !important;
+        transform: translateX(3px);
+      }
+      .vp-opt:active:not(:disabled) { transform: translateX(1px) scale(0.99); }
+      .vp-opt:disabled { cursor: not-allowed; }
+      .vp-opt-chosen { transform: none !important; }
+      .vp-opt-bar {
+        position: absolute;
+        top: 0; left: 0; bottom: 0;
+        border-radius: 11px;
+        transition: width 0.6s cubic-bezier(0.16,1,0.3,1);
+        pointer-events: none;
+      }
+      .vp-opt-label {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .vp-opt-check { font-size: 12px; }
+      .vp-opt-stats {
+        position: relative;
+        z-index: 1;
+        font-size: 11px;
+        opacity: 0.75;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+      }
+      .vp-voted-msg {
+        padding: 8px 16px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        color: rgba(167,139,250,0.8);
+        text-align: center;
+      }
+      .vp-voted-msg strong { color: #f0f6ff; }
+
+      /* ── Vote launch button in HostPanel ── */
+      .hp-vote-launch-btn {
+        display: flex; align-items: center; gap: 8px;
+        width: 100%; padding: 10px 14px; border-radius: 12px;
+        border: 1px solid rgba(167,139,250,0.3);
+        background: rgba(167,139,250,0.08);
+        color: #a78bfa; font-size: 13px; font-weight: 600;
+        cursor: pointer; transition: all 0.18s;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .hp-vote-launch-btn:hover { background: rgba(167,139,250,0.16); border-color: rgba(167,139,250,0.5); box-shadow: 0 0 20px rgba(167,139,250,0.15); }
+      .hp-vote-launch-arrow { margin-left: auto; font-size: 14px; transition: transform 0.18s; }
+      .hp-vote-launch-btn:hover .hp-vote-launch-arrow { transform: translateX(3px); }
+
+      /* ── VoteCreatorModal ── */
+      .vcm-overlay {
+        position: fixed; inset: 0; z-index: 300;
+        background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+        display: flex; align-items: center; justify-content: center; padding: 16px;
+        animation: rv-fadein 0.2s ease;
+      }
+      .vcm-card {
+        width: 100%; max-width: 440px;
+        background: rgba(4,10,24,0.99); border: 1px solid rgba(167,139,250,0.2);
+        border-radius: 22px; overflow: hidden;
+        box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 0 40px rgba(167,139,250,0.1);
+        animation: crm-up 0.3s cubic-bezier(0.16,1,0.3,1) both;
+      }
+      .vcm-beam { height: 2px; background: linear-gradient(90deg, rgba(167,139,250,0.8), rgba(84,199,248,0.4), transparent); }
+      .vcm-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 22px 16px; border-bottom: 1px solid rgba(167,139,250,0.08);
+      }
+      .vcm-header-left { display: flex; align-items: center; gap: 12px; }
+      .vcm-icon { font-size: 26px; }
+      .vcm-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: rgba(167,139,250,0.55); margin-bottom: 3px; }
+      .vcm-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: #f0f6ff; }
+      .vcm-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(84,199,248,0.1); background: rgba(84,199,248,0.04); color: rgba(180,215,240,0.35); cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; transition: all 0.16s; }
+      .vcm-close:hover { color: rgba(180,215,240,0.9); background: rgba(84,199,248,0.1); }
+      .vcm-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
+      .vcm-field { display: flex; flex-direction: column; gap: 8px; position: relative; }
+      .vcm-label { font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: rgba(180,215,240,0.4); display: flex; align-items: center; gap: 5px; }
+      .vcm-req { color: rgba(167,139,250,0.8); font-size: 13px; }
+      .vcm-hint { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; color: rgba(180,215,240,0.25); }
+      .vcm-input {
+        background: rgba(3,10,22,0.8); border: 1px solid rgba(84,199,248,0.1);
+        border-radius: 12px; padding: 11px 14px;
+        color: #e8f2ff; font-size: 13px; font-family: 'DM Sans', sans-serif;
+        outline: none; transition: border-color 0.2s; width: 100%;
+      }
+      .vcm-input:focus { border-color: rgba(167,139,250,0.4); box-shadow: 0 0 0 3px rgba(167,139,250,0.07); }
+      .vcm-input::placeholder { color: rgba(180,215,240,0.2); }
+      .vcm-char { font-size: 10px; color: rgba(180,215,240,0.2); text-align: right; margin-top: -4px; }
+      .vcm-type-row { display: flex; gap: 8px; }
+      .vcm-type-btn {
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+        padding: 12px 8px; border-radius: 12px;
+        border: 1px solid rgba(84,199,248,0.1); background: rgba(84,199,248,0.03);
+        color: rgba(180,215,240,0.45); font-size: 12px; font-weight: 600;
+        cursor: pointer; transition: all 0.18s; font-family: 'DM Sans', sans-serif;
+      }
+      .vcm-type-btn span:first-child { font-size: 20px; }
+      .vcm-type-btn:hover { border-color: rgba(167,139,250,0.3); color: rgba(180,215,240,0.8); }
+      .vcm-type-btn.active { border-color: rgba(167,139,250,0.5); background: rgba(167,139,250,0.1); color: #a78bfa; }
+      .vcm-opts-list { display: flex; flex-direction: column; gap: 6px; }
+      .vcm-opt-row { display: flex; align-items: center; gap: 8px; }
+      .vcm-opt-num { font-size: 11px; font-weight: 700; color: rgba(167,139,250,0.5); width: 16px; flex-shrink: 0; text-align: center; }
+      .vcm-opt-input { flex: 1; padding: 9px 12px; font-size: 12px; }
+      .vcm-opt-remove { width: 28px; height: 28px; border-radius: 8px; border: 1px solid rgba(248,113,113,0.2); background: rgba(248,113,113,0.05); color: rgba(248,113,113,0.6); cursor: pointer; font-size: 11px; flex-shrink: 0; transition: all 0.14s; display: flex; align-items: center; justify-content: center; }
+      .vcm-opt-remove:hover { background: rgba(248,113,113,0.15); color: #f87171; }
+      .vcm-add-opt { padding: 8px 14px; border-radius: 9px; border: 1px dashed rgba(167,139,250,0.3); background: rgba(167,139,250,0.04); color: rgba(167,139,250,0.65); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.16s; font-family: 'DM Sans', sans-serif; align-self: flex-start; }
+      .vcm-add-opt:hover { background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.5); color: #a78bfa; }
+      .vcm-dur-presets { display: flex; gap: 6px; }
+      .vcm-dur-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(84,199,248,0.1); background: rgba(84,199,248,0.03); color: rgba(180,215,240,0.45); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: 'DM Sans', sans-serif; }
+      .vcm-dur-btn:hover { border-color: rgba(84,199,248,0.25); color: rgba(180,215,240,0.8); }
+      .vcm-dur-btn.active { border-color: rgba(84,199,248,0.45); background: rgba(84,199,248,0.1); color: #54c7f8; }
+      .vcm-dur-custom { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+      .vcm-slider { flex: 1; accent-color: #a78bfa; cursor: pointer; }
+      .vcm-dur-value { font-size: 13px; font-weight: 700; color: #a78bfa; min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+      .vcm-error { font-size: 12px; color: #f87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); border-radius: 10px; padding: 9px 13px; }
+      .vcm-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 22px 20px; border-top: 1px solid rgba(84,199,248,0.06); }
+      .vcm-btn-cancel { padding: 11px 20px; border-radius: 12px; border: 1px solid rgba(84,199,248,0.1); background: transparent; color: rgba(180,215,240,0.35); font-size: 13px; cursor: pointer; transition: all 0.16s; font-family: 'DM Sans', sans-serif; }
+      .vcm-btn-cancel:hover { color: rgba(180,215,240,0.75); border-color: rgba(84,199,248,0.2); }
+      .vcm-btn-start { display: flex; align-items: center; gap: 8px; padding: 11px 22px; border-radius: 12px; border: 1px solid rgba(167,139,250,0.4); background: linear-gradient(135deg,rgba(167,139,250,0.18),rgba(167,139,250,0.07)); color: #a78bfa; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; }
+      .vcm-btn-start:hover { border-color: rgba(167,139,250,0.7); box-shadow: 0 0 24px rgba(167,139,250,0.2); transform: translateY(-1px); }
 
       /* ── Host panel (sin cambios) ── */
       .host-panel { width:296px; flex-shrink:0; display:flex; flex-direction:column; background:rgba(3,10,22,0.98); border-left:1px solid rgba(84,199,248,0.1); overflow:hidden; }
