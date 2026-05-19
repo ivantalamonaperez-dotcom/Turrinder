@@ -14,6 +14,18 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-real-ip") ??
     "unknown";
 
+  const userAgent = req.headers.get("user-agent") ?? "unknown";
+
+  // Geolocalizar IP
+  let geoInfo = "desconocida";
+  try {
+    const geo = await fetch(`https://ipapi.co/${ip}/json/`);
+    const geoData = await geo.json();
+    if (geoData.city) {
+      geoInfo = `${geoData.city}, ${geoData.region}, ${geoData.country_name}`;
+    }
+  } catch {}
+
   const { error } = await supabase
     .from("login_logs")
     .insert({ user_id, ip, method });
@@ -23,14 +35,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  console.log("🤖 BOT_URL:", process.env.NEXT_PUBLIC_BOT_URL);
-
   fetch(`${process.env.NEXT_PUBLIC_BOT_URL}/discord`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       tipo: "log_login",
-      datos: { userId: user_id, method, ip },
+      datos: { userId: user_id, method, ip, userAgent, geoInfo },
     }),
   })
     .then(r => r.json())
