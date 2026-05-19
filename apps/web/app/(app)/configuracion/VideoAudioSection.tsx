@@ -816,24 +816,31 @@ export default function VideoAudioSection() {
       );
   }, [enumerateDevices]);
 
+  // ── Notificar a useWebRTC que las prefs cambiaron ─────────────────────────
+  // useWebRTC escucha este evento para reemplazar el stream en caliente.
+  const dispatchPrefsChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("turrin:va_prefs_changed"));
+  }, []);
+
   // ── Aplicar cambio de cámara al stream activo (si useWebRTC lo expone) ────
-  // Por ahora escribe la pref; useWebRTC la leerá en el próximo getUserMedia.
-  // Si querés aplicar en caliente en una llamada activa, podés llamar a
-  // applyCamera() pasándole el RTCPeerConnection del hook.
   const handleCameraChange = useCallback(
     async (id: string) => {
       setCameraId(id);
-      showToast("Cámara actualizada · se aplicará en el próximo match");
+      // Las prefs se guardan por el useEffect de savePrefs; disparamos el
+      // evento en el siguiente tick para que localStorage ya esté actualizado.
+      setTimeout(dispatchPrefsChanged, 0);
+      showToast("Cámara actualizada · aplicando...");
     },
-    [showToast]
+    [showToast, dispatchPrefsChanged]
   );
 
   const handleMicChange = useCallback(
     async (id: string) => {
       setMicId(id);
-      showToast("Micrófono actualizado · se aplicará en el próximo match");
+      setTimeout(dispatchPrefsChanged, 0);
+      showToast("Micrófono actualizado · aplicando...");
     },
-    [showToast]
+    [showToast, dispatchPrefsChanged]
   );
 
   // ── Mirror: aplica directamente sobre el video local en el DOM ────────────
