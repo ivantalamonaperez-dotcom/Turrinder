@@ -19,11 +19,19 @@ import VideoControls from "@/components/video/Videocontrols";
 
 export default function DiscoverPage() {
   const router = useRouter();
-  const { socket } = useSocket();
+
+  const [isGuest, setIsGuest] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setIsGuest(sessionStorage.getItem("guest_mode") === "true");
+  }, []);
 
   const [userRole, setUserRole] = useState<string>("viewer");
 
   useEffect(() => {
+    if (isGuest === null) return;
+    if (isGuest) return;
+
     const init = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) { router.push("/"); return; }
@@ -37,19 +45,20 @@ export default function DiscoverPage() {
       if (p?.role) setUserRole(p.role);
     };
     init();
-  }, [router]);
+  }, [router, isGuest]);
 
-  // profileReady = true cuando Supabase terminó de devolver el perfil con el género
+  const { socket } = useSocket(isGuest !== false);
+
   const { profile, profileReady } = useProfile();
-  usePresence();
+  usePresence(isGuest === true);
 
   const { genderFilter, setGenderFilter } = useGenderFilter();
 
   const { room, searching, isInitiator, findNewMatch } = useMatchmaking(
     "discover",
     genderFilter,
-    profile?.gender,  // "male" | "female" | "other" | undefined
-    profileReady,     // bloquea el find-match hasta que el género esté disponible
+    profile?.gender,
+    profileReady,
   );
 
   const { matchUser } = useMatchUser(room);
@@ -66,11 +75,11 @@ export default function DiscoverPage() {
     findNewMatch(1000);
   }, [isBlocked, reportSkip, socket, findNewMatch]);
 
+  if (isGuest === null) return null;
+
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap');
-
         .dp-root {
           --sky:       #54c7f8;
           --sky2:      #3b9eda;
@@ -83,7 +92,6 @@ export default function DiscoverPage() {
           --glass-b:   rgba(84,199,248,0.12);
           --muted:     rgba(180,215,240,0.45);
         }
-
         .dp-root {
           height: 100dvh;
           display: flex;
@@ -94,7 +102,6 @@ export default function DiscoverPage() {
           font-family: 'DM Sans', sans-serif;
           -webkit-font-smoothing: antialiased;
         }
-
         .dp-aurora {
           position: absolute;
           inset: 0;
@@ -111,7 +118,6 @@ export default function DiscoverPage() {
           50%  { opacity: 1;   transform: scale(1.04) rotate(0.3deg); }
           100% { opacity: .85; transform: scale(1.07) rotate(-0.2deg);}
         }
-
         .dp-flag {
           position: absolute;
           top: 0; left: 0; right: 0;
@@ -124,7 +130,6 @@ export default function DiscoverPage() {
           z-index: 60;
           opacity: 0.65;
         }
-
         .dp-video {
           flex: 1;
           min-height: 0;
@@ -132,7 +137,6 @@ export default function DiscoverPage() {
           position: relative;
           z-index: 1;
         }
-
         .dp-header {
           position: absolute;
           top: 3px;
@@ -150,9 +154,7 @@ export default function DiscoverPage() {
             transparent 100%
           );
         }
-
         .dp-logo-wrap {
-          position: relative;
           pointer-events: all;
           user-select: none;
           display: flex;
@@ -160,41 +162,30 @@ export default function DiscoverPage() {
         }
         .dp-logo-t {
           font-family: 'Syne', sans-serif;
-          font-size: 19px;
-          font-weight: 900;
+          font-size: 19px; font-weight: 900;
           letter-spacing: -0.8px;
           color: var(--white-arg);
           line-height: 1;
         }
         .dp-logo-inder {
           font-family: 'Syne', sans-serif;
-          font-size: 19px;
-          font-weight: 900;
-          letter-spacing: -0.8px;
-          line-height: 1;
+          font-size: 19px; font-weight: 900;
+          letter-spacing: -0.8px; line-height: 1;
           background: linear-gradient(120deg, var(--sky) 0%, #a8e6ff 55%, var(--sky2) 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
-
         .dp-header-right {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          pointer-events: all;
+          display: flex; align-items: center;
+          gap: 7px; pointer-events: all;
         }
-
         .dp-skips {
-          display: flex;
-          align-items: center;
-          gap: 7px;
+          display: flex; align-items: center; gap: 7px;
           background: rgba(3,10,20,0.58);
           border: 1px solid var(--glass-b);
           backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border-radius: 100px;
-          padding: 5px 12px;
+          border-radius: 100px; padding: 5px 12px;
           transition: border-color 0.3s ease, background 0.3s ease;
         }
         .dp-skips.warn {
@@ -204,12 +195,11 @@ export default function DiscoverPage() {
         }
         @keyframes dp-warn {
           0%,100% { transform: none; }
-          35%      { transform: scale(1.07); }
+          35%     { transform: scale(1.07); }
         }
         .dp-pips { display: flex; gap: 3px; align-items: center; }
         .dp-pip {
-          width: 5px; height: 5px;
-          border-radius: 50%;
+          width: 5px; height: 5px; border-radius: 50%;
           background: rgba(84,199,248,0.14);
           transition: background 0.25s ease, box-shadow 0.25s ease;
         }
@@ -218,28 +208,19 @@ export default function DiscoverPage() {
           box-shadow: 0 0 5px rgba(84,199,248,0.8);
         }
         .dp-skip-label {
-          font-size: 10px;
-          font-weight: 500;
+          font-size: 10px; font-weight: 500;
           color: rgba(143,212,255,0.8);
-          letter-spacing: 0.5px;
-          white-space: nowrap;
+          letter-spacing: 0.5px; white-space: nowrap;
         }
-
         .dp-exempt-badge {
-          display: flex;
-          align-items: center;
-          gap: 5px;
+          display: flex; align-items: center; gap: 5px;
           background: rgba(84,199,248,0.08);
           border: 1px solid rgba(84,199,248,0.25);
           backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border-radius: 100px;
-          padding: 5px 12px;
-          font-size: 10px;
-          font-weight: 500;
+          border-radius: 100px; padding: 5px 12px;
+          font-size: 10px; font-weight: 500;
           color: rgba(143,212,255,0.75);
-          letter-spacing: 0.5px;
-          white-space: nowrap;
+          letter-spacing: 0.5px; white-space: nowrap;
         }
       `}</style>
 
@@ -276,9 +257,7 @@ export default function DiscoverPage() {
                 )}
               </div>
             ) : (
-              <div className="dp-exempt-badge">
-                ✦ Sin anuncios
-              </div>
+              <div className="dp-exempt-badge">✦ Sin anuncios</div>
             )}
 
             <GenderFilterButton

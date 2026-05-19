@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/services/supabase.client";
 
-
 import img from "../Images/logo.png";
 import imgLigues      from "../Images/ligues.png";
 import imgDebates     from "../Images/debates.png";
@@ -307,6 +306,26 @@ nav{ display:none; }
 .btn-google:disabled{opacity:0.5;cursor:not-allowed;}
 .google-icon{width:18px;height:18px;flex-shrink:0;}
 
+/* ── BOTÓN INVITADO ── */
+.btn-guest{
+  width:100%;padding:13px;
+  background:transparent;
+  border:1px solid rgba(0, 179, 255, 0.12);
+  border-radius:13px;
+  color:rgba(143,212,255,0.45);
+  font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;
+  cursor:pointer;transition:all 0.2s ease;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  margin-top:8px;
+  letter-spacing:0.2px;
+}
+.btn-guest:hover{
+  background:rgba(84,199,248,0.04);
+  border-color:rgba(84,199,248,0.25);
+  color:rgba(143,212,255,0.75);
+}
+.btn-guest:active{ transform:scale(0.98); }
+
 .terms-text{margin-top:28px;font-size:10px;color:rgba(143,212,255,0.18);text-align:center;letter-spacing:0.3px;line-height:1.8;}
 
 .strip{ display:none; }
@@ -383,6 +402,7 @@ nav{ display:none; }
   .input{padding:13px 15px;font-size:15px;border-radius:12px;}
   .btn-primary{padding:15px;font-size:15px;border-radius:12px;}
   .btn-google{padding:13px;font-size:14px;border-radius:12px;}
+  .btn-guest{padding:12px;font-size:12px;border-radius:12px;}
   .toast-wrap{ bottom:100px !important; }
   .strip{display:none}
 }
@@ -396,9 +416,11 @@ nav{ display:none; }
 @media(hover:none){
   .btn-primary:hover{ transform:none; box-shadow:0 8px 32px rgba(84,199,248,0.4); }
   .btn-google:hover{ background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12); }
+  .btn-guest:hover{ background:transparent; border-color:rgba(84,199,248,0.12); }
   button{ -webkit-tap-highlight-color:transparent; }
   .btn-primary:active{ transform:scale(0.98); opacity:0.9; }
   .btn-google:active{ transform:scale(0.98); opacity:0.9; }
+  .btn-guest:active{ transform:scale(0.98); opacity:0.9; }
 }
 `;
 
@@ -592,15 +614,8 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
   const [banModal, setBanModal] = useState(false);
   const router = useRouter();
 
-  const getSupabase = async () => {
-    const { createClient } = await import("@supabase/supabase-js");
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-  };
-
-    const handleLogin = async () => {
+  // ── Login con email ───────────────────────────────────────────
+  const handleLogin = async () => {
     if (!email || !pass) { onToast("Completá todos los campos ✌️"); return; }
     setLoading(true);
 
@@ -612,6 +627,7 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       return;
     }
 
+    // Verificar ban
     const banRes = await fetch("/api/check-ban", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -626,28 +642,65 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       return;
     }
 
+    // Obtener perfil completo de Supabase
+    const { data: fullProfile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", data.user.id)
+      .single();
+
+    // Notificar login al bot de Discord
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_BOT_URL}/discord`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "login_usuario",
+          datos: {
+            id:          fullProfile?.id         ?? data.user.id,
+            username:    fullProfile?.username    ?? null,
+            name:        fullProfile?.name        ?? null,
+            age:         fullProfile?.age         ?? null,
+            gender:      fullProfile?.gender      ?? null,
+            location:    fullProfile?.location    ?? null,
+            occupation:  fullProfile?.occupation  ?? null,
+            languages:   fullProfile?.languages   ?? [],
+            interests:   fullProfile?.interests   ?? [],
+            looking_for: fullProfile?.looking_for ?? [],
+            role:        fullProfile?.role        ?? "user",
+            avatar_url:  fullProfile?.avatar_url  ?? null,
+            bio:         fullProfile?.bio         ?? null,
+            is_online:   fullProfile?.is_online   ?? null,
+            created_at:  fullProfile?.created_at  ?? null,
+            provider:    "email",
+          },
+        }),
+      });
+    } catch (e) {
+      console.warn("[Discord login notify] falló:", e);
+    }
+
+    // Log de login
     await fetch("/api/log-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: data.user.id, method: "email" }),
     });
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("id, name")
-      .eq("id", data.user.id)
-      .single();
-
-    if (!profile || !profile.name) {
+    // Redirigir
+    if (!fullProfile || !fullProfile.name) {
       onToast("Completá tu perfil para continuar 📝");
       setTimeout(() => router.push("/auth/register?from=google"), 1000);
     } else {
       onToast("¡Bienvenido/a! Redirigiendo... 🚀");
       setTimeout(() => router.push("/profile"), 1200);
     }
+
+    setLoading(false);
   };
 
- const handleGoogleLogin = async () => {
+  // ── Login con Google ──────────────────────────────────────────
+  const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -658,6 +711,20 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
       setGoogleLoading(false);
     }
   };
+
+  const handleGuest = () => {
+  const guestId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  sessionStorage.setItem("guest_mode", "true");
+  sessionStorage.setItem("guest_id", guestId);
+
+  fetch("/api/log-login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: guestId, method: "guest" }),
+  }).catch(() => {});
+
+  router.push("/discover");
+};
 
   return (
     <div>
@@ -694,15 +761,26 @@ function LoginForm({ onToast }: { onToast: (msg: string) => void }) {
         ¿Olvidaste tu contraseña?
       </button>
 
-      <button className="btn-primary" onClick={handleLogin} disabled={loading}
-        style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer", marginTop: 14 }}>
+      <button
+        className="btn-primary"
+        onClick={handleLogin}
+        disabled={loading}
+        style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer", marginTop: 14 }}
+      >
         {loading ? "Ingresando..." : "Iniciar sesión →"}
+      </button>
+
+      {/* ── BOTÓN INVITADO ── */}
+      <button className="btn-guest" onClick={handleGuest} type="button">
+        Continuar como invitado
       </button>
 
       <div style={{ marginTop: 20, textAlign: "center" }}>
         <span style={{ color: "var(--muted)", fontSize: 13 }}>¿No tenés cuenta?{" "}</span>
-        <button onClick={() => router.push("/auth/register")}
-          style={{ background: "none", border: "none", color: "#54c7f8", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+        <button
+          onClick={() => router.push("/auth/register")}
+          style={{ background: "none", border: "none", color: "#54c7f8", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+        >
           Registrate
         </button>
       </div>
@@ -730,16 +808,15 @@ export default function Turrinder() {
   const stripRef = useRef<HTMLDivElement>(null);
 
   const onlineCount = useFluctuate(8342, 120);
-  const videoCount = useFluctuate(1204, 60);
-  const s1 = useCountUp(284700, "+", stripRef);
+  const videoCount  = useFluctuate(1204, 60);
+  const s1 = useCountUp(284700,  "+", stripRef);
   const s2 = useCountUp(1820000, "+", stripRef);
-  const s3 = useCountUp(430000, "+", stripRef);
+  const s3 = useCountUp(430000,  "+", stripRef);
 
   return (
     <>
       <style>{globalStyles}</style>
 
-      {/* Suspense requerido por useSearchParams */}
       <Suspense fallback={null}>
         <BannedDetector onBanned={() => setShowBanModal(true)} />
       </Suspense>

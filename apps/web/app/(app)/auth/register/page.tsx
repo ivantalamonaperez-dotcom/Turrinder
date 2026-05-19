@@ -328,48 +328,80 @@ function RegisterPageInner() {
 
   // ── Último paso: subir fotos y guardar perfil ─────────────────
   const handleFinish = async () => {
-    if (!userId) return err("Sesión perdida. Volvé al inicio.");
-    setLoading(true); setError("");
+  if (!userId) return err("Sesión perdida. Volvé al inicio.");
+  setLoading(true); setError("");
 
-    try {
-      let avatarUrl: string | null = null;
+  try {
+    let avatarUrl: string | null = null;
 
-      if (photos.length > 0) {
-        const mainPhoto = photos[0];
-        const ext = mainPhoto.file.name.split(".").pop() ?? "jpg";
-        const path = `${userId}/avatar.${ext}`;
+    if (photos.length > 0) {
+      const mainPhoto = photos[0];
+      const ext = mainPhoto.file.name.split(".").pop() ?? "jpg";
+      const path = `${userId}/avatar.${ext}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("avatars")
-          .upload(path, mainPhoto.file, { upsert: true });
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, mainPhoto.file, { upsert: true });
 
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
-          avatarUrl = urlData.publicUrl;
-        }
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
+        avatarUrl = urlData.publicUrl;
       }
-
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .upsert({
-          id:          userId,
-          name:        name.trim(),
-          age:         parseInt(age),
-          gender:      gender || null,
-          bio:         bio.trim() || null,
-          avatar_url:  avatarUrl,
-          looking_for: lookingFor,
-        });
-
-      if (profileError) return err("Error al guardar el perfil: " + profileError.message);
-
-      router.push("/profile");
-    } catch {
-      err("Error inesperado al guardar el perfil.");
-    } finally {
-      setLoading(false);
     }
-  };
+
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .upsert({
+        id:          userId,
+        name:        name.trim(),
+        age:         parseInt(age),
+        gender:      gender || null,
+        bio:         bio.trim() || null,
+        avatar_url:  avatarUrl,
+        looking_for: lookingFor,
+      });
+
+    if (profileError) return err("Error al guardar el perfil: " + profileError.message);
+
+    // ── Notificar al bot de Discord ──────────────────────────
+    try {
+      // Obtener el proveedor (google o email)
+      const { data: { user } } = await supabase.auth.getUser();
+      const provider = user?.app_metadata?.provider ?? "email";
+
+      await fetch(`${process.env.NEXT_PUBLIC_BOT_URL}/discord`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "nuevo_usuario",
+          datos: {
+            id:         userId,
+            username:   user?.user_metadata?.user_name ?? null,
+            name:       name.trim(),
+            age:        parseInt(age),
+            gender:     gender || null,
+            location:   null,   // no se carga en el registro, se puede agregar después
+            occupation: null,
+            languages:  [],
+            role:       "user",
+            avatar_url: avatarUrl,
+            provider,
+          },
+        }),
+      });
+    } catch (e) {
+      // Si falla el bot, no bloqueamos al usuario
+      console.warn("[Discord notify] falló:", e);
+    }
+    // ────────────────────────────────────────────────────────
+
+    router.push("/profile");
+  } catch {
+    err("Error inesperado al guardar el perfil.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const addPhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);

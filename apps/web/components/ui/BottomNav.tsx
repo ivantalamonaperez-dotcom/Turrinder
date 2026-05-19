@@ -16,10 +16,115 @@ import imgFeedback       from "../../Images/feedback.png";
 import { enviarFeedback } from '@/services/discordService';
 import { supabase } from "@/services/supabase.client";
 import { initMercadoPago, Wallet } from "@mercadopago/sdk-react";
+import { useIsGuest } from "@/hooks/useGuestGuard";
 
 initMercadoPago(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY!, {
   locale: "es-AR",
 });
+
+// ─────────────────────────────────────────────────────────
+// GUEST BLOCK MODAL
+// ─────────────────────────────────────────────────────────
+function GuestBlockModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
+
+  const handleClose = () => { setVisible(false); setTimeout(onClose, 350); };
+  const handleRegister = () => {
+    setVisible(false);
+    setTimeout(() => router.push("/auth/register"), 350);
+  };
+
+  return (
+    <>
+      <style>{`
+        .gb-backdrop {
+          position: fixed; inset: 0; z-index: 300;
+          background: rgba(0,0,0,0);
+          backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px);
+          transition: background 0.35s ease, backdrop-filter 0.35s ease;
+          display: flex; align-items: center; justify-content: center; padding: 20px;
+        }
+        .gb-backdrop.in {
+          background: rgba(0,0,10,0.82);
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        }
+        .gb-modal {
+          width: 100%; max-width: 380px;
+          background: linear-gradient(160deg, #05101e 0%, #020a16 100%);
+          border: 1px solid rgba(84,199,248,0.18);
+          border-radius: 24px;
+          box-shadow: 0 40px 100px rgba(0,0,0,0.75), 0 0 60px rgba(84,199,248,0.06), inset 0 1px 0 rgba(84,199,248,0.10);
+          padding: 36px 28px 28px;
+          text-align: center;
+          opacity: 0; transform: translateY(24px) scale(0.96);
+          transition: opacity 0.38s cubic-bezier(0.16,1,0.3,1), transform 0.38s cubic-bezier(0.16,1,0.3,1);
+          position: relative; overflow: hidden;
+        }
+        .gb-modal.in { opacity: 1; transform: translateY(0) scale(1); }
+        .gb-modal::before {
+          content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(84,199,248,0.5), transparent);
+        }
+        .gb-aurora {
+          position: absolute; top: 0; left: 0; right: 0; height: 160px;
+          pointer-events: none;
+          background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(84,199,248,0.14) 0%, transparent 65%);
+        }
+        .gb-icon { font-size: 48px; margin-bottom: 14px; display: block; animation: gbFloat 3s ease-in-out infinite; }
+        @keyframes gbFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        .gb-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #f5f8ff; letter-spacing: -0.5px; margin-bottom: 8px; position: relative; }
+        .gb-sub { font-family: 'DM Sans', sans-serif; font-size: 13px; color: rgba(180,215,240,0.45); line-height: 1.6; margin-bottom: 26px; position: relative; }
+        .gb-sub strong { color: rgba(84,199,248,0.8); font-weight: 600; }
+        .gb-btn-primary {
+          width: 100%; padding: 14px;
+          background: linear-gradient(135deg, #54c7f8 0%, #3b9eda 50%, #1a6fa8 100%);
+          border: none; border-radius: 13px; color: #02080f;
+          font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+          cursor: pointer; margin-bottom: 10px;
+          box-shadow: 0 8px 28px rgba(84,199,248,0.4);
+          transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+          position: relative; overflow: hidden;
+        }
+        .gb-btn-primary::before {
+          content:''; position:absolute; inset:0;
+          background:linear-gradient(135deg,rgba(255,255,255,0.2),transparent 55%);
+        }
+        .gb-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(84,199,248,0.55); }
+        .gb-btn-secondary {
+          width: 100%; padding: 13px; background: transparent;
+          border: 1px solid rgba(84,199,248,0.12); border-radius: 13px;
+          color: rgba(143,212,255,0.4); font-family: 'DM Sans', sans-serif;
+          font-size: 13px; cursor: pointer; transition: all 0.2s ease;
+        }
+        .gb-btn-secondary:hover {
+          background: rgba(84,199,248,0.04);
+          border-color: rgba(84,199,248,0.22);
+          color: rgba(143,212,255,0.65);
+        }
+      `}</style>
+      <div className={`gb-backdrop ${visible ? "in" : ""}`} onClick={handleClose}>
+        <div className={`gb-modal ${visible ? "in" : ""}`} onClick={e => e.stopPropagation()}>
+          <div className="gb-aurora" />
+          <span className="gb-icon">🔒</span>
+          <div className="gb-title">Creá tu cuenta</div>
+          <p className="gb-sub">
+            Esta función es solo para usuarios registrados.<br />
+            <strong>Es gratis y tarda menos de 60 segundos.</strong>
+          </p>
+          <button className="gb-btn-primary" onClick={handleRegister}>
+            Registrarme gratis →
+          </button>
+          <button className="gb-btn-secondary" onClick={handleClose}>
+            Seguir explorando
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ─────────────────────────────────────────────────────────
 // FEEDBACK MODAL
@@ -678,7 +783,7 @@ function VIPModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// DISCORD LOGO SVG (inline, sin dependencia externa)
+// DISCORD LOGO SVG
 // ─────────────────────────────────────────────────────────
 function DiscordIcon({ size = 20 }: { size?: number }) {
   return (
@@ -694,10 +799,13 @@ function DiscordIcon({ size = 20 }: { size?: number }) {
 export default function SideNav() {
   const router   = useRouter();
   const pathname = usePathname();
-  const [open,         setOpen]         = useState(false);
-  const [vipOpen,      setVipOpen]      = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [open,           setOpen]           = useState(false);
+  const [vipOpen,        setVipOpen]        = useState(false);
+  const [feedbackOpen,   setFeedbackOpen]   = useState(false);
+  const [guestModalOpen, setGuestModalOpen] = useState(false); // ← NUEVO
   const [isMobile, setIsMobile] = useState(false);
+
+  const isGuest = useIsGuest(); // ← NUEVO
 
   const openTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -713,9 +821,9 @@ export default function SideNav() {
   useEffect(() => { if (isMobile) setOpen(false); }, [pathname, isMobile]);
 
   useEffect(() => {
-    document.body.style.overflow = (open || vipOpen || feedbackOpen) ? "hidden" : "";
+    document.body.style.overflow = (open || vipOpen || feedbackOpen || guestModalOpen) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [open, vipOpen, feedbackOpen]);
+  }, [open, vipOpen, feedbackOpen, guestModalOpen]);
 
   const handleMouseEnter = () => {
     if (isMobile) return;
@@ -727,6 +835,16 @@ export default function SideNav() {
     if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
     if (open) closeTimer.current = setTimeout(() => setOpen(false), 500);
   };
+
+  const guardedAction = (action: () => void) => {
+  if (isGuest) {
+    if (isMobile) setOpen(false);
+    // En vez de modal, directo al register
+    router.push("/auth/register");
+    return;
+  }
+  action();
+};
 
   const tabs = [
     { path: "/discover",       img: imgDiscover,       label: "Discover",       desc: "Conocé gente nueva",    accent: "#54c7f8" },
@@ -763,7 +881,6 @@ export default function SideNav() {
           content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px; z-index: 1;
           background: linear-gradient(to bottom, transparent 0%, rgba(84,199,248,0.3) 30%, rgba(59,158,218,0.2) 60%, transparent 100%);
         }
-
         .snav-backdrop {
           position: fixed; inset: 0; z-index: 55;
           background: rgba(0,0,0,0); pointer-events: none;
@@ -773,7 +890,6 @@ export default function SideNav() {
           background: rgba(0,0,0,0.55); pointer-events: all;
           backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
         }
-
         .snav-header {
           position: relative; z-index: 2;
           display: flex; align-items: center; gap: 12px;
@@ -785,7 +901,6 @@ export default function SideNav() {
         .snav-logo-text { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: #f5f8ff; line-height: 1; white-space: nowrap; opacity: 0; transform: translateX(-8px); transition: opacity 0.25s ease 0.15s, transform 0.25s ease 0.15s; }
         .snav-panel.open .snav-logo-text { opacity: 1; transform: translateX(0); }
         .snav-logo-text span { background: linear-gradient(135deg, #54c7f8, #3b9eda, #1a6fa8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-
         .snav-mobile-toggle { display: none; position: relative; z-index: 2; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 40px; height: 40px; margin: 10px auto 4px; background: rgba(84,199,248,0.05); border: 1px solid rgba(84,199,248,0.14); border-radius: 12px; cursor: pointer; flex-shrink: 0; transition: background 0.2s ease, box-shadow 0.2s ease; padding: 0; outline: none; -webkit-tap-highlight-color: transparent; }
         .snav-mobile-toggle:hover { background: rgba(84,199,248,0.12); box-shadow: 0 0 16px rgba(84,199,248,0.18); }
         .snav-toggle-bar { width: 14px; height: 2px; border-radius: 2px; background: rgba(255,255,255,0.55); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: center; }
@@ -794,12 +909,10 @@ export default function SideNav() {
         .snav-mobile-toggle.is-open .snav-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); background: #54c7f8; }
         @keyframes pipPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
         .snav-toggle-pip { position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: #54c7f8; box-shadow: 0 0 6px #54c7f8; animation: pipPulse 2s ease-in-out infinite; }
-
         .snav-hover-hint { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; height: 28px; margin: 8px 8px 2px; flex-shrink: 0; opacity: 0.0; transition: opacity 0.3s ease; }
         .snav-panel:not(.open):hover .snav-hover-hint { opacity: 1; }
         .snav-hover-hint-line { width: 20px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(84,199,248,0.0), rgba(84,199,248,0.35), rgba(84,199,248,0.0)); animation: hintBlink 2s ease-in-out infinite; }
         @keyframes hintBlink { 0%,100%{opacity:0.4} 50%{opacity:1} }
-
         .snav-items { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 12px 8px; overflow: hidden; }
         .snav-item { display: flex; align-items: center; justify-content: center; gap: 0; padding: 0 10px; border-radius: 12px; border: 1px solid transparent; background: transparent; cursor: pointer; transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; width: 100%; position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; outline: none; height: 46px; }
         .snav-panel.open .snav-item { justify-content: flex-start; gap: 14px; }
@@ -808,54 +921,40 @@ export default function SideNav() {
         .snav-item:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); }
         .snav-panel.open .snav-item:hover { transform: translateX(3px); }
         .snav-item.active { background: var(--item-accent-bg); border-color: var(--item-accent-border); }
-
         .snav-panel:not(.open) .snav-item::after { content: attr(data-tooltip); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px); background: rgba(3,10,20,0.95); border: 1px solid rgba(84,199,248,0.2); color: #f5f8ff; font-family: 'DM Sans', sans-serif; font-size: 12px; padding: 5px 10px; border-radius: 8px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease; z-index: 100; box-shadow: 4px 4px 16px rgba(0,0,0,0.5); }
         .snav-panel:not(.open) .snav-item:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
-
-        /* Override tooltip for special items */
         .snav-panel:not(.open) .snav-item-streamer::after { content: 'Ser Streamer'; border-color: rgba(167,139,250,0.3); color: #a78bfa; }
         .snav-panel:not(.open) .snav-item-vip::after { content: 'VIP ✨'; border-color: rgba(255,195,0,0.3); color: #ffd700; }
         .snav-panel:not(.open) .snav-item-feedback::after { content: 'Feedback & Bugs'; border-color: rgba(52,211,153,0.3); color: #34d399; }
         .snav-panel:not(.open) .snav-item-discord::after { content: 'Comunidad Discord'; border-color: rgba(88,101,242,0.4); color: #7289da; }
-
         .snav-item-icon { width: 32px; height: 32px; flex-shrink: 0; position: relative; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease; filter: brightness(0.45) saturate(0.2); }
         .snav-item.active .snav-item-icon { filter: brightness(1) saturate(1.1) drop-shadow(0 0 7px var(--item-accent)); }
         .snav-item:hover .snav-item-icon { transform: scale(1.12) rotate(-4deg); filter: brightness(0.75) saturate(0.5); }
         .snav-item.active:hover .snav-item-icon { transform: scale(1.12) rotate(-4deg); filter: brightness(1.1) saturate(1.3) drop-shadow(0 0 10px var(--item-accent)); }
         .snav-item-icon-glow { position: absolute; inset: -8px; border-radius: 50%; background: radial-gradient(circle, var(--item-accent) 0%, transparent 70%); opacity: 0; transition: opacity 0.3s ease; z-index: -1; filter: blur(7px); }
         .snav-item.active .snav-item-icon-glow { opacity: 0.3; }
-
-        /* ── Discord icon wrapper (SVG, no Image) ── */
         .snav-item-icon-svg { width: 32px; height: 32px; flex-shrink: 0; position: relative; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s ease, filter 0.3s ease; color: rgba(255,255,255,0.28); display: flex; align-items: center; justify-content: center; }
         .snav-item:hover .snav-item-icon-svg { transform: scale(1.12) rotate(-4deg); color: rgba(114,137,218,0.7); }
         .snav-item-discord:hover .snav-item-icon-svg { filter: drop-shadow(0 0 6px rgba(88,101,242,0.5)); }
-
         .snav-item-text { display: flex; flex-direction: column; gap: 2px; flex: 1; opacity: 0; transform: translateX(-6px); transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1); white-space: nowrap; overflow: hidden; max-width: 0; }
         .snav-panel.open .snav-item-text { opacity: 1; transform: translateX(0); max-width: 200px; transition: opacity 0.25s ease 0.18s, transform 0.25s ease 0.18s, max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1); }
         .snav-item-label { font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 700; color: rgba(255,255,255,0.45); transition: color 0.2s ease; line-height: 1; letter-spacing: -0.2px; }
         .snav-item.active .snav-item-label { color: #f5f8ff; }
         .snav-item-desc { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.25); line-height: 1; }
         .snav-item.active .snav-item-desc { color: rgba(180,215,240,0.5); }
-
         .snav-item-dot { width: 3px; height: 16px; border-radius: 3px; flex-shrink: 0; background: var(--item-accent, #54c7f8); box-shadow: 0 0 10px var(--item-accent, #54c7f8); opacity: 0; transform: scaleY(0); transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); max-width: 0; overflow: hidden; }
         .snav-panel.open .snav-item-dot { max-width: 3px; }
         .snav-item.active .snav-item-dot { opacity: 1; transform: scaleY(1); }
-
         .snav-divider { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 6px 10px 3px; overflow: hidden; }
         .snav-divider-line { flex: 1; height: 1px; background: rgba(84,199,248,0.07); }
         .snav-divider-label { font-family: 'DM Sans', sans-serif; font-size: 9px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: rgba(180,215,240,0.18); white-space: nowrap; opacity: 0; transition: opacity 0.2s ease; }
         .snav-panel.open .snav-divider-label { opacity: 1; transition: opacity 0.25s ease 0.2s; }
-
         @keyframes crownBounce { 0%,100%{transform:translateY(0)rotate(-5deg)} 50%{transform:translateY(-4px)rotate(5deg)} }
-
-        /* ── Discord button special glow on hover ── */
         @keyframes discordPulse { 0%,100%{box-shadow:0 0 0 0 rgba(88,101,242,0)} 50%{box-shadow:0 0 18px 3px rgba(88,101,242,0.18)} }
         .snav-item-discord:hover { animation: discordPulse 1.8s ease-in-out infinite; }
-
         .snav-footer { position: relative; z-index: 2; padding: 12px 12px 20px; border-top: 1px solid rgba(84,199,248,0.07); overflow: hidden; flex-shrink: 0; }
         .snav-footer-line { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.16); text-align: center; white-space: nowrap; opacity: 0; transition: opacity 0.2s ease; }
         .snav-panel.open .snav-footer-line { opacity: 1; transition: opacity 0.25s ease 0.25s; }
-
         @media (max-width: 768px) {
           .snav-mobile-toggle { display: flex !important; }
           .snav-hover-hint { display: none; }
@@ -924,7 +1023,15 @@ export default function SideNav() {
                 )}
                 <button
                   className={`snav-item ${isActive ? "active" : ""}`}
-                  onClick={() => { router.push(tab.path); if (isMobile) setOpen(false); }}
+                  onClick={() => {
+  if (isGuest && tab.path !== "/discover") {
+    if (isMobile) setOpen(false);
+    router.push("/auth/register");
+    return;
+  }
+  router.push(tab.path);
+  if (isMobile) setOpen(false);
+}}
                   data-tooltip={tab.label}
                   style={{
                     "--item-accent":        tab.accent,
@@ -957,7 +1064,10 @@ export default function SideNav() {
           {/* Streamer */}
           <button
             className="snav-item snav-item-streamer"
-            onClick={() => { if (isMobile) setOpen(false); router.push("/streamers"); }}
+            onClick={() => guardedAction(() => {
+              if (isMobile) setOpen(false);
+              router.push("/streamers");
+            })}
             data-tooltip="Ser Streamer"
             style={{
               "--item-accent":        "#a78bfa",
@@ -977,10 +1087,13 @@ export default function SideNav() {
             <div className="snav-item-dot" style={{ background: "#a78bfa", boxShadow: "0 0 10px #a78bfa" }} />
           </button>
 
-          {/* Feedback / Bug */}
+          {/* Feedback */}
           <button
             className="snav-item snav-item-feedback"
-            onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setFeedbackOpen(true), 200); }}
+            onClick={() => guardedAction(() => {
+              if (isMobile) setOpen(false);
+              setTimeout(() => setFeedbackOpen(true), 200);
+            })}
             data-tooltip="Feedback & Bugs"
             style={{
               "--item-accent":        "#34d399",
@@ -999,7 +1112,7 @@ export default function SideNav() {
             <div className="snav-item-dot" style={{ background: "#34d399", boxShadow: "0 0 10px #34d399" }} />
           </button>
 
-          {/* ── DISCORD ── NUEVO ── */}
+          {/* Discord */}
           <button
             className="snav-item snav-item-discord"
             onClick={() => {
@@ -1013,21 +1126,11 @@ export default function SideNav() {
               "--item-accent-border": "rgba(88,101,242,0.20)",
             } as React.CSSProperties}
           >
-            <div
-              className="snav-item-icon-svg"
-              style={{ "--item-accent": "#7289da" } as React.CSSProperties}
-            >
+            <div className="snav-item-icon-svg" style={{ "--item-accent": "#7289da" } as React.CSSProperties}>
               <DiscordIcon size={22} />
             </div>
             <div className="snav-item-text">
-              <span
-                className="snav-item-label"
-                style={{
-                  background: "linear-gradient(135deg,#b9bfff,#7289da)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
+              <span className="snav-item-label" style={{ background: "linear-gradient(135deg,#b9bfff,#7289da)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 Comunidad
               </span>
               <span className="snav-item-desc">Unite a nuestro Discord</span>
@@ -1038,7 +1141,10 @@ export default function SideNav() {
           {/* VIP */}
           <button
             className="snav-item snav-item-vip"
-            onClick={() => { if (isMobile) setOpen(false); setTimeout(() => setVipOpen(true), 200); }}
+            onClick={() => guardedAction(() => {
+              if (isMobile) setOpen(false);
+              setTimeout(() => setVipOpen(true), 200);
+            })}
             data-tooltip="Turrinder VIP"
             style={{
               "--item-accent":        "#ffd700",
@@ -1064,8 +1170,9 @@ export default function SideNav() {
         </div>
       </nav>
 
-      {vipOpen      && <VIPModal      onClose={() => setVipOpen(false)}      />}
-      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
+      {vipOpen        && <VIPModal      onClose={() => setVipOpen(false)}        />}
+      {feedbackOpen   && <FeedbackModal onClose={() => setFeedbackOpen(false)}   />}
+      {guestModalOpen && <GuestBlockModal onClose={() => setGuestModalOpen(false)} />}
     </>
   );
 }

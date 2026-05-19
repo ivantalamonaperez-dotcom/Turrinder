@@ -94,15 +94,13 @@ interface UseSocketResult {
   connectCount: number;
 }
 
-export const useSocket = (): UseSocketResult => {
+export const useSocket = (skip = false): UseSocketResult => {
   const [socket, setSocket] = useState<Socket | null>(
     _socket?.connected ? _socket : null
   );
   const [connectCount, setConnectCount] = useState(
     _socket?.connected ? 1 : 0
   );
-
-  // ✅ Guardar referencias a los listeners para poder removerlos correctamente
   const listenersRef = useRef<{
     onConnect: () => void;
     onDisconnect: () => void;
@@ -110,6 +108,8 @@ export const useSocket = (): UseSocketResult => {
   } | null>(null);
 
   useEffect(() => {
+    if (skip) return; // ← invitado: no conectar
+
     let active = true;
 
     getOrCreateSocket().then((s) => {
@@ -122,7 +122,6 @@ export const useSocket = (): UseSocketResult => {
 
       const onConnect = () => {
         if (!active) return;
-        console.log("[useSocket] onConnect →", s.id);
         setSocket(s);
         setConnectCount((c) => c + 1);
       };
@@ -132,17 +131,13 @@ export const useSocket = (): UseSocketResult => {
         setSocket(null);
       };
 
-      // ✅ Guardar referencia para cleanup
       listenersRef.current = { onConnect, onDisconnect, socket: s };
-
       s.on("connect", onConnect);
       s.on("disconnect", onDisconnect);
     });
 
     return () => {
       active = false;
-
-      // ✅ Ahora sí remueve los listeners correctamente al desmontar
       if (listenersRef.current) {
         const { socket: s, onConnect, onDisconnect } = listenersRef.current;
         s.off("connect", onConnect);
@@ -150,7 +145,7 @@ export const useSocket = (): UseSocketResult => {
         listenersRef.current = null;
       }
     };
-  }, []);
+  }, [skip]); // ← skip como dependencia
 
   return { socket, connectCount };
 };
