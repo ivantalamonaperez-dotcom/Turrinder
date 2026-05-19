@@ -75,14 +75,13 @@ export type RoomSettings = {
 
 export type ActiveVote = {
   id: string;
-  type: "yes_no" | "kick_vote" | "custom";
+  type: "yes_no" | "kick_vote";
   question: string;
   options: string[];
   votes: Record<string, string>;
   endsAt: number;
   targetId?: string;
   targetName?: string;
-  createdBy?: string;
 };
 
 export type ModLog = {
@@ -230,12 +229,58 @@ export function useDebateMedia(
     }
   }, []);
 
+  // ── closePeerWith y closeAllPeers DEBEN ir ANTES de createPeerWith ──────────
+  const closePeerWith = useCallback((targetUserId: string) => {
+    const peer = peersRef.current.get(targetUserId);
+    if (peer) {
+      peer.ontrack = null;
+      peer.onicecandidate = null;
+      peer.oniceconnectionstatechange = null;
+      peer.close();
+      peersRef.current.delete(targetUserId);
+      console.log(`[WebRTC] 🧹 Peer cerrado con ${targetUserId}`);
+    }
+    iceCandidateQueuesRef.current.delete(targetUserId);
+    remoteStreamsRef.current.delete(targetUserId);
+    setRemoteStreams(new Map(remoteStreamsRef.current));
+  }, []);
+
+  const closeAllPeers = useCallback(() => {
+    peersRef.current.forEach((peer, uid) => {
+      peer.ontrack = null;
+      peer.onicecandidate = null;
+      peer.oniceconnectionstatechange = null;
+      peer.close();
+      console.log(`[WebRTC] 🧹 Peer cerrado con ${uid}`);
+    });
+    peersRef.current.clear();
+    iceCandidateQueuesRef.current.clear();
+    remoteStreamsRef.current.clear();
+    setRemoteStreams(new Map());
+  }, []);
+
   const createPeerWith = useCallback(async (
     targetUserId: string,
-    initiator: boolean
+    initiator: boolean,
+    forceNew = false
   ): Promise<RTCPeerConnection | null> => {
-    if (peersRef.current.has(targetUserId)) {
-      return peersRef.current.get(targetUserId)!;
+    // Si ya existe un peer en buen estado y no se fuerza reemplazo, reutilizarlo
+    if (!forceNew && peersRef.current.has(targetUserId)) {
+      const existing = peersRef.current.get(targetUserId)!;
+      const state = existing.iceConnectionState;
+      if (!["failed", "disconnected", "closed"].includes(state)) {
+        return existing;
+      }
+      // El peer existente está en mal estado — cerrarlo antes de recrear.
+      // Usamos peersRef directamente para evitar la dep circular con closePeerWith.
+      existing.ontrack = null;
+      existing.onicecandidate = null;
+      existing.oniceconnectionstatechange = null;
+      existing.close();
+      peersRef.current.delete(targetUserId);
+      iceCandidateQueuesRef.current.delete(targetUserId);
+      remoteStreamsRef.current.delete(targetUserId);
+      setRemoteStreams(new Map(remoteStreamsRef.current));
     }
     if (!localStreamRef.current) await initMedia();
 
@@ -272,8 +317,37 @@ export function useDebateMedia(
     peer.oniceconnectionstatechange = () => {
       const state = peer.iceConnectionState;
       console.log(`[WebRTC] Estado ICE con ${targetUserId}:`, state);
-      if (["disconnected", "failed", "closed"].includes(state)) {
-        closePeerWith(targetUserId);
+
+      // Inline close para evitar dep circular — idéntico a closePeerWith
+      const doClose = () => {
+        const p = peersRef.current.get(targetUserId);
+        if (p) {
+          p.ontrack = null;
+          p.onicecandidate = null;
+          p.oniceconnectionstatechange = null;
+          p.close();
+          peersRef.current.delete(targetUserId);
+        }
+        iceCandidateQueuesRef.current.delete(targetUserId);
+        remoteStreamsRef.current.delete(targetUserId);
+        setRemoteStreams(new Map(remoteStreamsRef.current));
+      };
+
+      if (state === "failed") {
+        console.warn(`[WebRTC] ❌ ICE failed con ${targetUserId} — solicitando reconexión`);
+        socketRef.current?.emit("signal-reconnect", { roomId, to: targetUserId });
+        doClose();
+      } else if (state === "disconnected") {
+        setTimeout(() => {
+          const p = peersRef.current.get(targetUserId);
+          if (p && ["disconnected", "failed", "closed"].includes(p.iceConnectionState)) {
+            console.warn(`[WebRTC] ⚠️ ICE sigue disconnected con ${targetUserId} — cerrando`);
+            socketRef.current?.emit("signal-reconnect", { roomId, to: targetUserId });
+            doClose();
+          }
+        }, 4000);
+      } else if (state === "closed") {
+        doClose();
       }
     };
 
@@ -290,36 +364,7 @@ export function useDebateMedia(
 
     return peer;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initMedia]);
-
-  const closePeerWith = useCallback((targetUserId: string) => {
-    const peer = peersRef.current.get(targetUserId);
-    if (peer) {
-      peer.ontrack = null;
-      peer.onicecandidate = null;
-      peer.oniceconnectionstatechange = null;
-      peer.close();
-      peersRef.current.delete(targetUserId);
-      console.log(`[WebRTC] 🧹 Peer cerrado con ${targetUserId}`);
-    }
-    iceCandidateQueuesRef.current.delete(targetUserId);
-    remoteStreamsRef.current.delete(targetUserId);
-    setRemoteStreams(new Map(remoteStreamsRef.current));
-  }, []);
-
-  const closeAllPeers = useCallback(() => {
-    peersRef.current.forEach((peer, uid) => {
-      peer.ontrack = null;
-      peer.onicecandidate = null;
-      peer.oniceconnectionstatechange = null;
-      peer.close();
-      console.log(`[WebRTC] 🧹 Peer cerrado con ${uid}`);
-    });
-    peersRef.current.clear();
-    iceCandidateQueuesRef.current.clear();
-    remoteStreamsRef.current.clear();
-    setRemoteStreams(new Map());
-  }, []);
+  }, [initMedia, roomId]);
 
   /* =========================================================
      ROOM JOIN
@@ -405,6 +450,9 @@ export function useDebateMedia(
     const onUserJoined = async ({ userId: uid }: any) => {
       if (uid === currentUserId) return;
       console.log(`[WebRTC] 👤 Usuario unido: ${uid} — iniciando como initiator`);
+      // Pequeño delay para que el otro lado haya terminado de procesar su join
+      // y esté listo para recibir la offer (evita "offer antes de peer listo")
+      await new Promise(r => setTimeout(r, 300));
       await createPeerWith(uid, true);
     };
 
@@ -412,6 +460,12 @@ export function useDebateMedia(
     const onUserLeft = ({ userId: uid }: any) => {
       console.log(`[WebRTC] 🚪 Usuario fue: ${uid}`);
       closePeerWith(uid);
+    };
+
+    /* ── Reconexión solicitada por el otro peer ─────────────────────────── */
+    const onReconnectRequest = async ({ from }: { from: string }) => {
+      console.log(`[WebRTC] 🔄 Reconexión solicitada por ${from} — recreando peer como initiator`);
+      await createPeerWith(from, true, true); // forceNew = true
     };
 
     /* ── Señalización WebRTC ────────────────────────────────────────────── */
@@ -513,20 +567,8 @@ export function useDebateMedia(
     };
 
     // El servidor indica que la votación terminó → cerrarla
-    const onVoteEnded = ({
-      voteId,
-      results,
-      winner,
-      total,
-    }: {
-      voteId: string;
-      results?: Record<string, number>;
-      winner?: string | null;
-      total?: number;
-    }) => {
+    const onVoteEnded = ({ voteId }: { voteId: string }) => {
       setActiveVote((v) => (v?.id === voteId ? null : v));
-      // Los resultados se emiten por separado si el consumidor los necesita;
-      // acá podrías disparar un toast/callback externo si quisieras.
     };
 
     /* ── Retry ROOM_NOT_FOUND ───────────────────────────────────────────── */
@@ -561,37 +603,37 @@ export function useDebateMedia(
     };
 
     /* ── Registro de listeners ──────────────────────────────────────────── */
-    socket.on("debate-room-state",       onState);
-    socket.on("debate-user-joined",      onUserJoined);
-    socket.on("debate-user-left",        onUserLeft);
-    socket.on("signal",                  onSignal);
-    socket.on("debate-chat-message",     onChat);
-    socket.on("debate-room-closed",      onClosed);
-    socket.on("debate-you-kicked",       onKicked);
-    socket.on("debate-you-banned",       onBanned);
-    socket.on("debate-error",            onError);
-    socket.on("debate-host-transferred", onHostTransferred);
-    // FIX 2: los tres listeners de votación que faltaban
-    socket.on("debate-vote-started",     onVoteStarted);
-    socket.on("debate-vote-cast",        onVoteCast);
-    socket.on("debate-vote-ended",       onVoteEnded);
+    socket.on("debate-room-state",          onState);
+    socket.on("debate-user-joined",         onUserJoined);
+    socket.on("debate-user-left",           onUserLeft);
+    socket.on("signal",                     onSignal);
+    socket.on("signal-reconnect-request",   onReconnectRequest);
+    socket.on("debate-chat-message",        onChat);
+    socket.on("debate-room-closed",         onClosed);
+    socket.on("debate-you-kicked",          onKicked);
+    socket.on("debate-you-banned",          onBanned);
+    socket.on("debate-error",               onError);
+    socket.on("debate-host-transferred",    onHostTransferred);
+    socket.on("debate-vote-started",        onVoteStarted);
+    socket.on("debate-vote-cast",           onVoteCast);
+    socket.on("debate-vote-ended",          onVoteEnded);
 
     return () => {
       if (retryTimer) clearTimeout(retryTimer);
-      socket.off("debate-room-state",       onState);
-      socket.off("debate-user-joined",      onUserJoined);
-      socket.off("debate-user-left",        onUserLeft);
-      socket.off("signal",                  onSignal);
-      socket.off("debate-chat-message",     onChat);
-      socket.off("debate-room-closed",      onClosed);
-      socket.off("debate-you-kicked",       onKicked);
-      socket.off("debate-you-banned",       onBanned);
-      socket.off("debate-error",            onError);
-      socket.off("debate-host-transferred", onHostTransferred);
-      // FIX 2: cleanup
-      socket.off("debate-vote-started",     onVoteStarted);
-      socket.off("debate-vote-cast",        onVoteCast);
-      socket.off("debate-vote-ended",       onVoteEnded);
+      socket.off("debate-room-state",         onState);
+      socket.off("debate-user-joined",        onUserJoined);
+      socket.off("debate-user-left",          onUserLeft);
+      socket.off("signal",                    onSignal);
+      socket.off("signal-reconnect-request",  onReconnectRequest);
+      socket.off("debate-chat-message",       onChat);
+      socket.off("debate-room-closed",        onClosed);
+      socket.off("debate-you-kicked",         onKicked);
+      socket.off("debate-you-banned",         onBanned);
+      socket.off("debate-error",              onError);
+      socket.off("debate-host-transferred",   onHostTransferred);
+      socket.off("debate-vote-started",       onVoteStarted);
+      socket.off("debate-vote-cast",          onVoteCast);
+      socket.off("debate-vote-ended",         onVoteEnded);
     };
   }, [
     socket,
@@ -756,32 +798,26 @@ export function useDebateMedia(
     activeVote,
 
     // FIX 2: ahora emite al servidor para que la votación llegue a todos.
+    // Antes solo hacía setActiveVote() localmente.
     startVote: (
-      type: "yes_no" | "kick_vote" | "custom",
+      type: "yes_no" | "kick_vote",
       q: string,
       ms: number,
       tid?: string,
-      tn?: string,
-      customOptions?: string[]
+      tn?: string
     ) => {
-      const options =
-        type === "yes_no"    ? ["Sí", "No"] :
-        type === "kick_vote" ? ["Expulsar", "Cancelar"] :
-        (customOptions ?? []).map((o) => o.trim()).filter(Boolean).slice(0, 6);
-
       const vote: ActiveVote = {
         id:         crypto.randomUUID?.() || String(Date.now()),
         type,
         question:   q,
-        options,
+        options:    type === "yes_no" ? ["Sí", "No"] : ["Expulsar", "Cancelar"],
         votes:      {},
         endsAt:     Date.now() + ms,
         targetId:   tid,
         targetName: tn,
-        createdBy:  currentUserName,
       };
-      setActiveVote(vote);
-      socketRef.current?.emit("debate-start-vote", { roomId, vote });
+      setActiveVote(vote); // feedback instantáneo al host
+      socketRef.current?.emit("debate-start-vote", { roomId, vote }); // broadcast a todos
     },
 
     // FIX 2: ahora emite al servidor para sincronizar el voto entre todos.
@@ -793,11 +829,6 @@ export function useDebateMedia(
           : v
       ); // feedback instantáneo al votante
       socketRef.current?.emit("debate-cast-vote", { roomId, voteId, choice }); // broadcast a todos
-    },
-
-    // Cierre anticipado de votación (solo host/mod)
-    endVote: (voteId: string) => {
-      socketRef.current?.emit("debate-end-vote", { roomId, voteId });
     },
 
     modLogs,
