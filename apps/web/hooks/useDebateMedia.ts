@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * useDebateMedia — VERSIÓN CON FIXES
+ * useDebateMedia — v3 MUTE FIX
  *
- * FIXES APLICADOS:
+ * FIXES APLICADOS EN ESTA VERSIÓN:
  *
  * 1. AUDIO REMOTO
  *    Los videos remotos tenían muted hardcodeado en VideoTile (page.tsx).
@@ -18,6 +18,21 @@
  * 3. KICK / BAN / CLOSE en tiempo real (ya estaba, se mantiene)
  *
  * 4. VIDEO / AUDIO DE PARTICIPANTES REMOTOS (ya estaba, se mantiene)
+ *
+ * 5. [NUEVO] MUTE REAL DE AUDIO/VIDEO
+ *    PROBLEMA RAÍZ: el código confundía "estado de UI" con "silencio real".
+ *    micBlocked/mutedByHost eran solo etiquetas — no silenciaban el MediaStream.
+ *    El silencio real requiere track.enabled = false en el stream del usuario.
+ *
+ *    FIXES:
+ *    a) Se escuchan "debate-you-muted" / "debate-you-unmuted" y se desactivan
+ *       los audio tracks del stream local inmediatamente.
+ *    b) Se escuchan "debate-you-camoff" / "debate-you-camon" igual para video.
+ *    c) Se escucha "debate-mute-all" y se aplica al track local.
+ *    d) En onState, si el servidor dice que self está muteado (allMutedOnEntry o
+ *       mute previo), se desactiva el track real, no solo el estado de UI.
+ *    e) blockedByHostRef permite que toggleAudio/toggleVideo bloqueen la
+ *       reactivación cuando el host tiene el mic/cam bloqueado.
  */
 
 import {
@@ -152,6 +167,20 @@ export function useDebateMedia(
   }, [roomId, currentUserId, currentUserName, currentUserAvatarUrl]);
 
   const [blockedByHost, setBlockedByHost] = useState({ mic: false, cam: false });
+
+  // FIX 5e: ref sincronizada con blockedByHost para que toggleAudio/toggleVideo
+  // puedan leer el estado actual sin necesitarlo como dependencia del useCallback.
+  const blockedByHostRef = useRef({ mic: false, cam: false });
+
+  // Helper unificado para actualizar ambos (estado React + ref)
+  const updateBlockedByHost = useCallback(
+    (patch: Partial<{ mic: boolean; cam: boolean }>) => {
+      blockedByHostRef.current = { ...blockedByHostRef.current, ...patch };
+      setBlockedByHost((prev) => ({ ...prev, ...patch }));
+    },
+    []
+  );
+
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [presenceCount, setPresenceCount] = useState(1);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -272,7 +301,6 @@ export function useDebateMedia(
         return existing;
       }
       // El peer existente está en mal estado — cerrarlo antes de recrear.
-      // Usamos peersRef directamente para evitar la dep circular con closePeerWith.
       existing.ontrack = null;
       existing.onicecandidate = null;
       existing.oniceconnectionstatechange = null;
@@ -318,7 +346,6 @@ export function useDebateMedia(
       const state = peer.iceConnectionState;
       console.log(`[WebRTC] Estado ICE con ${targetUserId}:`, state);
 
-      // Inline close para evitar dep circular — idéntico a closePeerWith
       const doClose = () => {
         const p = peersRef.current.get(targetUserId);
         if (p) {
@@ -382,7 +409,7 @@ export function useDebateMedia(
   }, [socket, roomId]);
 
   /* =========================================================
-     SOCKETS — estado de sala + señalización WebRTC + votos
+     SOCKETS — estado de sala + señalización WebRTC + votos + mute
   ========================================================= */
 
   useEffect(() => {
@@ -435,14 +462,33 @@ export function useDebateMedia(
           stream:       remoteStreamsRef.current.get(m.userId),
         }));
       setParticipants(mapped);
+
+      // FIX 5d: aplicar el estado real de tracks al recibir estado de sala.
+      // Cubre allMutedOnEntry, strictMode, y reconexiones donde el server ya
+      // tiene micBlocked/camBlocked = true para este usuario.
       const selfInServer = (state.members || []).find(
         (m: any) => m.userId === currentUserId
       );
       if (selfInServer) {
-        setBlockedByHost({
-          mic: !!selfInServer.micBlocked,
-          cam: !!selfInServer.camBlocked,
-        });
+        const micBlocked = !!selfInServer.micBlocked;
+        const camBlocked = !!selfInServer.camBlocked;
+
+        updateBlockedByHost({ mic: micBlocked, cam: camBlocked });
+
+        // Aplicar al track real, no solo al estado de UI
+        if (localStreamRef.current) {
+          localStreamRef.current.getAudioTracks().forEach((t) => {
+            // Solo forzar a false si el host bloqueó; si el usuario lo apagó
+            // manualmente también hay que respetar eso, así que no activamos.
+            if (micBlocked) t.enabled = false;
+          });
+          localStreamRef.current.getVideoTracks().forEach((t) => {
+            if (camBlocked) t.enabled = false;
+          });
+        }
+
+        if (micBlocked) setAudioOn(false);
+        if (camBlocked) setVideoOn(false);
       }
     };
 
@@ -450,8 +496,6 @@ export function useDebateMedia(
     const onUserJoined = async ({ userId: uid }: any) => {
       if (uid === currentUserId) return;
       console.log(`[WebRTC] 👤 Usuario unido: ${uid} — iniciando como initiator`);
-      // Pequeño delay para que el otro lado haya terminado de procesar su join
-      // y esté listo para recibir la offer (evita "offer antes de peer listo")
       await new Promise(r => setTimeout(r, 300));
       await createPeerWith(uid, true);
     };
@@ -465,7 +509,7 @@ export function useDebateMedia(
     /* ── Reconexión solicitada por el otro peer ─────────────────────────── */
     const onReconnectRequest = async ({ from }: { from: string }) => {
       console.log(`[WebRTC] 🔄 Reconexión solicitada por ${from} — recreando peer como initiator`);
-      await createPeerWith(from, true, true); // forceNew = true
+      await createPeerWith(from, true, true);
     };
 
     /* ── Señalización WebRTC ────────────────────────────────────────────── */
@@ -538,18 +582,73 @@ export function useDebateMedia(
       onForceLeaveRef.current?.();
     };
 
+    /* ── FIX 5a: Muteado individualmente por el host ──────────────────────
+       El servidor emite "debate-you-muted" solo al socket del usuario muteado.
+       Sin este listener, el evento llegaba pero nadie desactivaba el track.
+    ═════════════════════════════════════════════════════════════════════════ */
+    const onYouMuted = ({ by }: { by: string }) => {
+      console.log(`[Mute] 🔇 Muteado por ${by}`);
+      // Desactivar el track real — esto es lo que realmente silencia el audio en WebRTC
+      localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; });
+      setAudioOn(false);
+      updateBlockedByHost({ mic: true });
+      toast("El host silenció tu micrófono", "warn");
+    };
+
+    /* ── FIX 5a: Desmuteado individualmente por el host ─────────────────── */
+    const onYouUnmuted = ({ by }: { by: string }) => {
+      console.log(`[Mute] 🔊 Desmuteado por ${by}`);
+      // Solo levantamos el bloqueo del host; el usuario decide si reactivar
+      // su mic con toggleAudio(). No forzamos t.enabled = true aquí porque
+      // el usuario podría haber apagado su mic manualmente y no queremos
+      // reactivarlo sin su consentimiento.
+      updateBlockedByHost({ mic: false });
+      toast("Tu micrófono fue habilitado por el host", "info");
+    };
+
+    /* ── FIX 5b: Cámara apagada por el host ─────────────────────────────── */
+    const onYouCamOff = ({ by }: { by: string }) => {
+      console.log(`[Mute] 📷❌ Cámara apagada por ${by}`);
+      localStreamRef.current?.getVideoTracks().forEach((t) => { t.enabled = false; });
+      setVideoOn(false);
+      updateBlockedByHost({ cam: true });
+      toast("El host apagó tu cámara", "warn");
+    };
+
+    /* ── FIX 5b: Cámara encendida por el host ───────────────────────────── */
+    const onYouCamOn = ({ by }: { by: string }) => {
+      console.log(`[Mute] 📷✅ Cámara habilitada por ${by}`);
+      updateBlockedByHost({ cam: false });
+      toast("Tu cámara fue habilitada por el host", "info");
+    };
+
+    /* ── FIX 5c: Mute masivo ─────────────────────────────────────────────
+       El servidor emite "debate-mute-all" a toda la sala pero el cliente
+       nunca actuaba sobre los tracks locales.
+    ═════════════════════════════════════════════════════════════════════════ */
+    const onMuteAll = ({ value, by }: { value: boolean; by: string }) => {
+      // El moderador que ejecutó la acción no se muta a sí mismo
+      if (by === currentUserId) return;
+
+      localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !value; });
+      setAudioOn(!value);
+
+      if (value) {
+        updateBlockedByHost({ mic: true });
+        toast("El host silenció a todos", "warn");
+      } else {
+        updateBlockedByHost({ mic: false });
+        toast("El host activó los micrófonos", "info");
+      }
+    };
+
     /* ── FIX 2: Votaciones en tiempo real ─────────────────────────────────
        Estos tres listeners FALTABAN completamente en la versión anterior.
-       Sin ellos, las votaciones iniciadas por el host nunca llegaban a los
-       demás participantes, y los votos emitidos no se sincronizaban.
     ═════════════════════════════════════════════════════════════════════════ */
-
-    // El host inició una votación → mostrarla a todos los participantes
     const onVoteStarted = (vote: ActiveVote) => {
       setActiveVote(vote);
     };
 
-    // Alguien votó → actualizar conteo en tiempo real para todos
     const onVoteCast = ({
       voteId,
       userId,
@@ -566,7 +665,6 @@ export function useDebateMedia(
       );
     };
 
-    // El servidor indica que la votación terminó → cerrarla
     const onVoteEnded = ({ voteId }: { voteId: string }) => {
       setActiveVote((v) => (v?.id === voteId ? null : v));
     };
@@ -614,6 +712,14 @@ export function useDebateMedia(
     socket.on("debate-you-banned",          onBanned);
     socket.on("debate-error",               onError);
     socket.on("debate-host-transferred",    onHostTransferred);
+    // FIX 5a/5b: listeners de mute/cam individuales
+    socket.on("debate-you-muted",           onYouMuted);
+    socket.on("debate-you-unmuted",         onYouUnmuted);
+    socket.on("debate-you-camoff",          onYouCamOff);
+    socket.on("debate-you-camon",           onYouCamOn);
+    // FIX 5c: mute masivo
+    socket.on("debate-mute-all",            onMuteAll);
+    // FIX 2: votaciones
     socket.on("debate-vote-started",        onVoteStarted);
     socket.on("debate-vote-cast",           onVoteCast);
     socket.on("debate-vote-ended",          onVoteEnded);
@@ -631,6 +737,11 @@ export function useDebateMedia(
       socket.off("debate-you-banned",         onBanned);
       socket.off("debate-error",              onError);
       socket.off("debate-host-transferred",   onHostTransferred);
+      socket.off("debate-you-muted",          onYouMuted);
+      socket.off("debate-you-unmuted",        onYouUnmuted);
+      socket.off("debate-you-camoff",         onYouCamOff);
+      socket.off("debate-you-camon",          onYouCamOn);
+      socket.off("debate-mute-all",           onMuteAll);
       socket.off("debate-vote-started",       onVoteStarted);
       socket.off("debate-vote-cast",          onVoteCast);
       socket.off("debate-vote-ended",         onVoteEnded);
@@ -645,6 +756,7 @@ export function useDebateMedia(
     closePeerWith,
     closeAllPeers,
     drainIceQueue,
+    updateBlockedByHost,
   ]);
 
   /* =========================================================
@@ -663,17 +775,27 @@ export function useDebateMedia(
      CONTROLES DE MEDIA LOCAL
   ========================================================= */
 
+  // FIX 5e: toggleAudio bloquea la reactivación si el host silenció el mic.
   const toggleAudio = useCallback(() => {
+    if (blockedByHostRef.current.mic) {
+      toast("El host silenció tu micrófono", "warn");
+      return;
+    }
     const s = localStreamRef.current;
     if (!s) return;
     s.getAudioTracks().forEach((t) => { t.enabled = !t.enabled; setAudioOn(t.enabled); });
-  }, []);
+  }, [toast]);
 
+  // FIX 5e: toggleVideo bloquea la reactivación si el host apagó la cámara.
   const toggleVideo = useCallback(() => {
+    if (blockedByHostRef.current.cam) {
+      toast("El host apagó tu cámara", "warn");
+      return;
+    }
     const s = localStreamRef.current;
     if (!s) return;
     s.getVideoTracks().forEach((t) => { t.enabled = !t.enabled; setVideoOn(t.enabled); });
-  }, []);
+  }, [toast]);
 
   const stopMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -760,7 +882,9 @@ export function useDebateMedia(
       emit("debate-ban-user", { targetId: id });
     },
 
-    muteAll: (value?: boolean) => emit("debate-mute-all", { value }),
+    // FIX: value=true para silenciar, value=false para activar. El default
+    // anterior era undefined, lo que hacía que validBool() rechazara el evento.
+    muteAll: (value: boolean = true) => emit("debate-mute-all", { value }),
 
     tempMuteParticipant: (id: string, name: string, ms: number) => {
       setTempMutes((p) => ({ ...p, [id]: Date.now() + ms }));
@@ -797,8 +921,6 @@ export function useDebateMedia(
 
     activeVote,
 
-    // FIX 2: ahora emite al servidor para que la votación llegue a todos.
-    // Antes solo hacía setActiveVote() localmente.
     startVote: (
       type: "yes_no" | "kick_vote",
       q: string,
@@ -816,19 +938,17 @@ export function useDebateMedia(
         targetId:   tid,
         targetName: tn,
       };
-      setActiveVote(vote); // feedback instantáneo al host
-      socketRef.current?.emit("debate-start-vote", { roomId, vote }); // broadcast a todos
+      setActiveVote(vote);
+      socketRef.current?.emit("debate-start-vote", { roomId, vote });
     },
 
-    // FIX 2: ahora emite al servidor para sincronizar el voto entre todos.
-    // Antes solo hacía setActiveVote() localmente (el voto era invisible para los demás).
     castVote: (voteId: string, choice: string) => {
       setActiveVote((v) =>
         v && v.id === voteId
           ? { ...v, votes: { ...v.votes, [currentUserId]: choice } }
           : v
-      ); // feedback instantáneo al votante
-      socketRef.current?.emit("debate-cast-vote", { roomId, voteId, choice }); // broadcast a todos
+      );
+      socketRef.current?.emit("debate-cast-vote", { roomId, voteId, choice });
     },
 
     modLogs,
