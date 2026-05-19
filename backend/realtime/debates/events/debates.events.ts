@@ -236,6 +236,29 @@ export default function registerDebatesEvents(
     debateHandler.shadowMuteUser(io, roomId, myUserId, targetId);
   });
 
+  // ── SELF MUTE (usuario apaga su propio mic voluntariamente) ─────────────────
+  // FIX Bug 1: permite que el propio usuario notifique al servidor de su estado
+  // de mute para que broadcastState lo propague a los demás participantes.
+  socket.on("debate-self-mute", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const { roomId, micBlocked } = payload as Record<string, unknown>;
+    if (!validRoomId(roomId)) return;
+    if (typeof micBlocked !== "boolean") return;
+
+    debateHandler.selfMute(io, roomId, myUserId, micBlocked);
+  });
+
+  socket.on("debate-self-camoff", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const { roomId, camBlocked } = payload as Record<string, unknown>;
+    if (!validRoomId(roomId)) return;
+    if (typeof camBlocked !== "boolean") return;
+
+    debateHandler.selfCamOff(io, roomId, myUserId, camBlocked);
+  });
+
   // ── RAISE HAND ─────────────────────────────────────────────────────────────
   socket.on("debate-raise-hand", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;

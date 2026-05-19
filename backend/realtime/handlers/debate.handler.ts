@@ -491,6 +491,52 @@ export const debateHandler = {
     }, ms);
   },
 
+  // ── SELF MUTE (usuario apaga su propio mic/cam voluntariamente) ─────────────
+  // FIX Bug 1: sin este handler, el estado micBlocked en el servidor no
+  // se actualiza cuando el usuario se mutea solo. broadcastState no se dispara,
+  // los demás clientes no reciben el nuevo estado, y sus <video> siguen
+  // reproduciendo el audio del usuario como si nada.
+  selfMute(
+    io: Server, roomId: string, userId: string, micBlocked: boolean
+  ): void {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    const m = room.members.get(userId);
+    if (!m) return;
+
+    // En modo estricto solo el host/cohost puede activar el mic — ignorar
+    // intentos de self-unmute si micBlocked fue puesto por un moderador.
+    // Para detectarlo: si micBlocked=true en el server Y el usuario intenta
+    // poner micBlocked=false, solo permitirlo si freeMode o si es el speaker.
+    if (!micBlocked && m.micBlocked) {
+      const isSpeaker  = room.currentSpeaker === userId;
+      const isMod      = room.hostId === userId || room.cohosts.has(userId);
+      if (!room.freeMode && !isSpeaker && !isMod) return; // bloqueado por host
+    }
+
+    m.micBlocked = micBlocked;
+    broadcastState(io, roomId);
+  },
+
+  selfCamOff(
+    io: Server, roomId: string, userId: string, camBlocked: boolean
+  ): void {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    const m = room.members.get(userId);
+    if (!m) return;
+
+    if (!camBlocked && m.camBlocked) {
+      const isMod = room.hostId === userId || room.cohosts.has(userId);
+      if (!room.freeMode && !isMod) return;
+    }
+
+    m.camBlocked = camBlocked;
+    broadcastState(io, roomId);
+  },
+
   // ── SHADOW MUTE ─────────────────────────────────────────────────────────────
   shadowMuteUser(
     io: Server, roomId: string, by: string, target: string
@@ -546,12 +592,17 @@ export const debateHandler = {
     const m = room.members.get(target);
     if (!m) return;
 
-    // Si había un speaker anterior, devolverlo a viewer
+    // Si había un speaker anterior, devolverlo a viewer y mutearlo.
+    // FIX: igual que cutSpeaker — siempre mutear al speaker desplazado,
+    // sin importar allMutedOnEntry o freeMode, y notificar su socket.
     if (room.currentSpeaker && room.currentSpeaker !== target) {
       const prev = room.members.get(room.currentSpeaker);
       if (prev) {
         prev.role       = "viewer";
-        prev.micBlocked = room.allMutedOnEntry;
+        prev.micBlocked = true;
+        if (prev.socketId) {
+          io.to(prev.socketId).emit("debate-you-muted", { by });
+        }
       }
     }
 
@@ -598,8 +649,17 @@ export const debateHandler = {
     if (room.currentSpeaker) {
       const prev = room.members.get(room.currentSpeaker);
       if (prev) {
-        prev.role       = "viewer";
-        prev.micBlocked = room.allMutedOnEntry;
+        prev.role = "viewer";
+
+        // FIX: siempre mutear al speaker cortado, independientemente de
+        // allMutedOnEntry o freeMode. El moderador cortó la palabra
+        // explícitamente — el usuario no debe seguir hablando.
+        // Se fuerza micBlocked=true y se notifica al socket del speaker
+        // para que desactive su track local inmediatamente.
+        prev.micBlocked = true;
+        if (prev.socketId) {
+          io.to(prev.socketId).emit("debate-you-muted", { by });
+        }
       }
     }
 

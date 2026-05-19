@@ -823,7 +823,10 @@ export function useDebateMedia(
      CONTROLES DE MEDIA LOCAL
   ========================================================= */
 
-  // FIX 5e: toggleAudio bloquea la reactivación si el host silenció el mic.
+  // toggleAudio: bloquea si el host silenció el mic, y notifica al servidor
+  // del estado real para que broadcastState lo propague a los demás.
+  // FIX Bug 1: sin este emit, los otros clientes nunca saben que el usuario
+  // se muteó voluntariamente y siguen recibiendo el audio en su <video>.
   const toggleAudio = useCallback(() => {
     if (blockedByHostRef.current.mic) {
       toast("El host silenció tu micrófono", "warn");
@@ -831,10 +834,19 @@ export function useDebateMedia(
     }
     const s = localStreamRef.current;
     if (!s) return;
-    s.getAudioTracks().forEach((t) => { t.enabled = !t.enabled; setAudioOn(t.enabled); });
-  }, [toast]);
+    const track = s.getAudioTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setAudioOn(track.enabled);
+    // Notificar al servidor para que actualice micBlocked y haga broadcastState,
+    // lo que a su vez actualiza el stream remoto en el <video> de los demás.
+    socketRef.current?.emit("debate-self-mute", {
+      roomId,
+      micBlocked: !track.enabled,
+    });
+  }, [toast, roomId]);
 
-  // FIX 5e: toggleVideo bloquea la reactivación si el host apagó la cámara.
+  // toggleVideo: igual que toggleAudio pero para la cámara.
   const toggleVideo = useCallback(() => {
     if (blockedByHostRef.current.cam) {
       toast("El host apagó tu cámara", "warn");
@@ -842,8 +854,15 @@ export function useDebateMedia(
     }
     const s = localStreamRef.current;
     if (!s) return;
-    s.getVideoTracks().forEach((t) => { t.enabled = !t.enabled; setVideoOn(t.enabled); });
-  }, [toast]);
+    const track = s.getVideoTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setVideoOn(track.enabled);
+    socketRef.current?.emit("debate-self-camoff", {
+      roomId,
+      camBlocked: !track.enabled,
+    });
+  }, [toast, roomId]);
 
   const stopMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
