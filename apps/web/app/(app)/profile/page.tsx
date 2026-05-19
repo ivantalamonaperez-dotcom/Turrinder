@@ -579,9 +579,7 @@ export default function ProfilePage() {
           overflow-x: hidden; padding-bottom: 120px;
         }
 
-        .pf-ambient { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
-        .pf-ambient::before { content:''; position:absolute; width:800px; height:800px; top:-200px; right:-200px; border-radius:50%; background:radial-gradient(circle,rgba(84,199,248,0.09) 0%,transparent 65%); animation:pfOrb1 12s ease-in-out infinite alternate; }
-        .pf-ambient::after  { content:''; position:absolute; width:600px; height:600px; bottom:-150px; left:-150px; border-radius:50%; background:radial-gradient(circle,rgba(59,158,218,0.07) 0%,transparent 65%); animation:pfOrb2 16s ease-in-out infinite alternate; }
+        .pf-ambient { display:none; }
         .pf-flag { position:fixed; top:0; left:0; right:0; height:3px; z-index:300; background:linear-gradient(90deg,var(--sky) 0%,var(--sky) 33%,rgba(245,248,255,0.8) 33%,rgba(245,248,255,0.8) 66%,var(--sky) 66%,var(--sky) 100%); opacity:0.6; }
 
         .pf-wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
@@ -599,7 +597,7 @@ export default function ProfilePage() {
         .pf-hero-inner { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 0 24px; padding-bottom: 24px; }
 
         .pf-avatar-col { position:relative; flex-shrink:0; }
-        .pf-avatar-ring { width:108px; height:108px; border-radius:28px; padding:3px; background:linear-gradient(145deg,var(--sky) 0%,var(--sky3) 60%,rgba(84,199,248,0.15) 100%); animation:pfRingGlow 6s ease-in-out infinite alternate; flex-shrink:0; position:relative; }
+        .pf-avatar-ring { width:128px; height:128px; border-radius:28px; padding:3px; background:linear-gradient(145deg,var(--sky) 0%,var(--sky3) 60%,rgba(84,199,248,0.15) 100%); animation:pfRingGlow 6s ease-in-out infinite alternate; flex-shrink:0; position:relative; }
         .pf-avatar-ring.ring-vip      { background:linear-gradient(145deg,var(--vip-a) 0%,var(--vip-b) 50%,var(--vip-c) 100%); animation:pfRingVip 5s ease-in-out infinite alternate; }
         .pf-avatar-ring.ring-streamer { background:linear-gradient(145deg,var(--str-a) 0%,var(--str-b) 50%,var(--str-c) 100%); animation:pfRingStreamer 5s ease-in-out infinite alternate; }
         .pf-avatar-ring.ring-owner    { background:linear-gradient(145deg,var(--own-a) 0%,var(--own-b) 50%,var(--own-c) 100%); animation:pfRingOwner 5s ease-in-out infinite alternate; }
@@ -616,19 +614,14 @@ export default function ProfilePage() {
         .pf-role-badge img { width:16px; height:16px; object-fit:contain; filter:brightness(0) invert(1); }
 
         .pf-hero-info { display: flex; flex-direction: column; gap: 0; animation: pfFadeUp 0.5s 0.1s both; min-width: 0; padding-top: 4px; }
-        .pf-hero-name { font-family: 'Syne', sans-serif; font-size: clamp(20px, 3.5vw, 30px); font-weight: 800; color: var(--w); letter-spacing: -0.6px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+        .pf-hero-name { font-family: 'Syne', sans-serif; font-size: clamp(20px, 3.5vw, 30px); font-weight: 800; color: var(--w); letter-spacing: -0.6px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; display:flex; align-items:baseline; gap:8px; }
+        .pf-name-role { font-family:'Syne',sans-serif; font-size:11px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; padding:3px 9px; border-radius:100px; border:1.5px solid; flex-shrink:0; position:relative; top: -.5vh; }
+        .pf-name-role-viewer   { background:rgba(84,199,248,0.07); border-color:rgba(84,199,248,0.18); color:rgba(84,199,248,0.7); }
+        .pf-name-role-vip      { background:linear-gradient(90deg,rgba(251,191,36,0.14),rgba(245,158,11,0.08)); border-color:rgba(251,191,36,0.40); color:var(--vip-a); }
+        .pf-name-role-streamer { background:linear-gradient(90deg,rgba(74,222,128,0.13),rgba(34,197,94,0.07)); border-color:rgba(74,222,128,0.38); color:var(--str-a); }
+        .pf-name-role-owner    { background:linear-gradient(90deg,rgba(220,20,60,0.15),rgba(165,14,45,0.08)); border-color:rgba(220,20,60,0.42); color:var(--own-a); }
         .pf-hero-username { display: inline-flex; align-items: center; gap: 4px; font-family: 'DM Sans', monospace; font-size: 13px; font-weight: 600; color: rgba(84,199,248,0.65); letter-spacing: 0.2px; margin-bottom: 10px; user-select: all; cursor: text; }
         .pf-hero-username-at { color: rgba(84,199,248,0.4); font-weight: 500; }
-        .pf-role-tier { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 7px; border-radius: 100px; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; border: 1.5px solid; width: fit-content; margin-bottom: 10px; }
-        .pf-role-tier.tier-viewer  { background:rgba(84,199,248,0.07); border-color:rgba(84,199,248,0.18); color:rgba(84,199,248,0.7); }
-        .pf-role-tier.tier-vip     { background:linear-gradient(90deg,rgba(251,191,36,0.14),rgba(245,158,11,0.08)); border-color:rgba(251,191,36,0.40); color:var(--vip-a); animation:pfVipPulse 3s ease-in-out infinite; }
-        .pf-role-tier.tier-streamer{ background:linear-gradient(90deg,rgba(74,222,128,0.13),rgba(34,197,94,0.07)); border-color:rgba(74,222,128,0.38); color:var(--str-a); animation:pfStrPulse 3s ease-in-out infinite; }
-        .pf-role-tier.tier-owner   { background:linear-gradient(90deg,rgba(220,20,60,0.15),rgba(165,14,45,0.08)); border-color:rgba(220,20,60,0.42); color:var(--own-a); animation:pfOwnPulse 3s ease-in-out infinite; }
-        .pf-role-tier-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
-        .tier-viewer  .pf-role-tier-dot { background:rgba(84,199,248,0.6); }
-        .tier-vip     .pf-role-tier-dot { background:var(--vip-a); box-shadow:0 0 6px var(--vip-a); animation:pfPulse 2s infinite; }
-        .tier-streamer .pf-role-tier-dot { background:var(--str-a); box-shadow:0 0 6px var(--str-a); animation:pfPulse 2s infinite; }
-        .tier-owner   .pf-role-tier-dot { background:var(--own-a); box-shadow:0 0 8px var(--own-a); animation:pfPulse 2s infinite; }
         .pf-hero-badges { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
         .pf-badge { padding:3px 10px; border-radius:100px; font-size:11px; font-weight:600; letter-spacing:0.3px; border:1px solid; }
         .pf-badge-gender { background:rgba(84,199,248,0.08); border-color:rgba(84,199,248,0.22); color:var(--sky); }
@@ -734,7 +727,7 @@ export default function ProfilePage() {
 
         @media (max-width:680px) {
           .pf-hero-inner { gap:0 16px; }
-          .pf-avatar-ring { width:88px; height:88px; }
+          .pf-avatar-ring { width:100px; height:100px; }
           .pf-hero-card { padding:18px 18px 0; }
           .pf-wrap { padding:0 18px; }
           .pf-content { padding:18px 0 0; }
@@ -794,32 +787,28 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="pf-hero-info">
-                  <div className="pf-hero-name">{name || "Tu perfil"}</div>
+                  <div className="pf-hero-name">
+                    {name || "Tu perfil"}
+                    {!loading && role && role !== "viewer" && (
+                      <span className={`pf-name-role pf-name-role-${role === "vip" ? "vip" : role === "streamer" ? "streamer" : "owner"}`}>
+                        {role === "vip" ? "VIP" : role === "streamer" ? "Streamer" : "Owner"}
+                      </span>
+                    )}
+                    {!loading && role === "viewer" && (
+                      <span className="pf-name-role pf-name-role-viewer">Viewer</span>
+                    )}
+                  </div>
                   {username && (
                     <div className="pf-hero-username">
                       <span className="pf-hero-username-at">@</span>
                       {username}
                     </div>
                   )}
-                  {!loading && (
-                    <div className={`pf-role-tier ${
-                      role === "vip"      ? "tier-vip"      :
-                      role === "streamer" ? "tier-streamer" :
-                      role === "owner"    ? "tier-owner"    :
-                      "tier-viewer"
-                    }`}>
-                      <span className="pf-role-tier-dot" />
-                      {role === "vip"      ? "✦ VIP"      :
-                       role === "streamer" ? "◉ Streamer" :
-                       role === "owner"    ? "♛ Owner"    :
-                       "Viewer"}
-                    </div>
-                  )}
                   {!loading && (gender || age || location || occupation) && (
                     <div className="pf-hero-badges">
                       {gender     && <span className="pf-badge pf-badge-gender">{gender}</span>}
                       {age        && <span className="pf-badge pf-badge-age">{age} años</span>}
-                      {location   && <span className="pf-badge pf-badge-loc">📍 {location}</span>}
+                      {location   && <span className="pf-badge pf-badge-loc">{location}</span>}
                       {occupation && <span className="pf-badge pf-badge-occ">{occupation}</span>}
                     </div>
                   )}
