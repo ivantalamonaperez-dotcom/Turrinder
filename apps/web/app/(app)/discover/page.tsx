@@ -102,6 +102,12 @@ export default function DiscoverPage() {
           font-family: 'DM Sans', sans-serif;
           -webkit-font-smoothing: antialiased;
         }
+        /* On mobile the bottom nav takes 64px — shrink dp-root to fit */
+        @media (max-width: 768px) {
+          .dp-root {
+            height: calc(100dvh - 64px);
+          }
+        }
         .dp-aurora {
           position: absolute;
           inset: 0;

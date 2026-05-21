@@ -58,3 +58,10 @@ video {
 button, a, input, textarea {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+@media (max-width: 768px) {
+  #main-content {
+    margin-left: 0 !important;
+    padding-bottom: 64px;
+  }
+}

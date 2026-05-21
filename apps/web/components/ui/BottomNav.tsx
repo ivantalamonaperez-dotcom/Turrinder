@@ -803,6 +803,7 @@ export default function SideNav() {
   const [vipOpen,        setVipOpen]        = useState(false);
   const [feedbackOpen,   setFeedbackOpen]   = useState(false);
   const [guestModalOpen, setGuestModalOpen] = useState(false); // ← NUEVO
+  const [drawerOpen, setDrawerOpen] = useState(false); // ← Mobile extras drawer
   const [isMobile, setIsMobile] = useState(false);
 
   const isGuest = useIsGuest(); // ← NUEVO
@@ -821,9 +822,9 @@ export default function SideNav() {
   useEffect(() => { if (isMobile) setOpen(false); }, [pathname, isMobile]);
 
   useEffect(() => {
-    document.body.style.overflow = (open || vipOpen || feedbackOpen || guestModalOpen) ? "hidden" : "";
+    document.body.style.overflow = (open || vipOpen || feedbackOpen || guestModalOpen || drawerOpen) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [open, vipOpen, feedbackOpen, guestModalOpen]);
+  }, [open, vipOpen, feedbackOpen, guestModalOpen, drawerOpen]);
 
   const handleMouseEnter = () => {
     if (isMobile) return;
@@ -955,11 +956,241 @@ export default function SideNav() {
         .snav-footer { position: relative; z-index: 2; padding: 12px 12px 20px; border-top: 1px solid rgba(84,199,248,0.07); overflow: hidden; flex-shrink: 0; }
         .snav-footer-line { font-family: 'DM Sans', sans-serif; font-size: 10px; color: rgba(180,215,240,0.16); text-align: center; white-space: nowrap; opacity: 0; transition: opacity 0.2s ease; }
         .snav-panel.open .snav-footer-line { opacity: 1; transition: opacity 0.25s ease 0.25s; }
+        /* ── MOBILE BOTTOM NAV ────────────────────────────────── */
         @media (max-width: 768px) {
-          .snav-mobile-toggle { display: flex !important; }
-          .snav-hover-hint { display: none; }
-          .snav-panel { width: 64px; }
-          .snav-panel.open { width: 280px; }
+          /* Hide the desktop sidebar entirely on mobile */
+          .snav-panel,
+          .snav-backdrop {
+            display: none !important;
+          }
+
+          /* Fixed bottom bar */
+          .snav-bottom-nav {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 60;
+            height: 64px;
+            background: rgba(3,10,20,0.97);
+            border-top: 1px solid rgba(84,199,248,0.14);
+            backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
+            box-shadow: 0 -8px 40px rgba(0,0,0,0.55), 0 0 60px rgba(84,199,248,0.04);
+            display: flex;
+            align-items: stretch;
+            overflow: hidden;
+          }
+
+          /* Aurora strip at the top edge of the bottom bar */
+          .snav-bottom-nav::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(84,199,248,0.35), transparent);
+          }
+
+          /* Scrollable items track */
+          .snav-bottom-track {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 0 4px;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            flex: 1;
+            min-width: 0;
+          }
+          .snav-bottom-track::-webkit-scrollbar { display: none; }
+
+          /* Individual bottom nav item */
+          .snav-bottom-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            flex: 1;
+            min-width: 0;
+            height: 52px;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            background: transparent;
+            cursor: pointer;
+            flex-shrink: 0;
+            scroll-snap-align: start;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            -webkit-tap-highlight-color: transparent;
+            outline: none;
+            padding: 0 4px;
+            position: relative;
+            overflow: hidden;
+          }
+          .snav-bottom-item::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent);
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+          }
+          .snav-bottom-item:active::before { transform: translateY(0); }
+          .snav-bottom-item.active {
+            background: var(--item-accent-bg);
+            border-color: var(--item-accent-border);
+          }
+
+          .snav-bottom-icon {
+            width: 26px; height: 26px;
+            flex-shrink: 0;
+            position: relative;
+            filter: brightness(0.45) saturate(0.2);
+            transition: filter 0.25s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64,1);
+          }
+          .snav-bottom-item.active .snav-bottom-icon {
+            filter: brightness(1) saturate(1.1) drop-shadow(0 0 6px var(--item-accent));
+            transform: translateY(-2px);
+          }
+          .snav-bottom-icon-glow {
+            position: absolute; inset: -8px; border-radius: 50%;
+            background: radial-gradient(circle, var(--item-accent) 0%, transparent 70%);
+            opacity: 0; filter: blur(6px); z-index: -1;
+            transition: opacity 0.3s ease;
+          }
+          .snav-bottom-item.active .snav-bottom-icon-glow { opacity: 0.35; }
+
+          .snav-bottom-label {
+            font-family: 'Syne', sans-serif;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: -0.1px;
+            color: rgba(255,255,255,0.3);
+            white-space: nowrap;
+            line-height: 1;
+            transition: color 0.2s ease;
+          }
+          .snav-bottom-item.active .snav-bottom-label {
+            color: rgba(255,255,255,0.88);
+          }
+
+          /* Active pip indicator */
+          .snav-bottom-pip {
+            position: absolute;
+            bottom: 5px; left: 50%; transform: translateX(-50%);
+            width: 14px; height: 2px; border-radius: 2px;
+            background: var(--item-accent);
+            box-shadow: 0 0 8px var(--item-accent);
+            opacity: 0; transform: translateX(-50%) scaleX(0);
+            transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+          }
+          .snav-bottom-item.active .snav-bottom-pip {
+            opacity: 1; transform: translateX(-50%) scaleX(1);
+          }
+
+          /* No fade overlay needed — items fit without scroll */
+          .snav-bottom-nav::after {
+            content: '';
+            position: absolute; top: 0; right: 52px; bottom: 0; width: 0;
+            pointer-events: none;
+          }
+
+          /* Extras button (…) that opens the full expanded list */
+          .snav-bottom-more {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            width: 52px;
+            flex-shrink: 0;
+            height: 100%;
+            border: none;
+            background: rgba(84,199,248,0.04);
+            border-left: 1px solid rgba(84,199,248,0.10);
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            outline: none;
+            padding: 0 8px;
+            transition: background 0.2s ease;
+          }
+          .snav-bottom-more:active { background: rgba(84,199,248,0.10); }
+          .snav-bottom-more-dots {
+            display: flex; gap: 3px; align-items: center;
+          }
+          .snav-bottom-more-dots span {
+            width: 4px; height: 4px; border-radius: 50%;
+            background: rgba(84,199,248,0.45);
+          }
+          .snav-bottom-more-label {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 9px; font-weight: 600;
+            color: rgba(84,199,248,0.5);
+            letter-spacing: 0.5px;
+          }
+
+          /* Full-screen drawer for extras on mobile */
+          .snav-mobile-drawer {
+            position: fixed; inset: 0; z-index: 80;
+            display: flex; flex-direction: column; justify-content: flex-end;
+          }
+          .snav-mobile-drawer-backdrop {
+            position: absolute; inset: 0;
+            background: rgba(0,0,10,0.75);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+          }
+          .snav-mobile-drawer-sheet {
+            position: relative; z-index: 1;
+            background: linear-gradient(180deg, #04101f 0%, #020a16 100%);
+            border-top: 1px solid rgba(84,199,248,0.18);
+            border-radius: 24px 24px 0 0;
+            padding: 12px 16px 32px;
+            display: flex; flex-direction: column; gap: 4px;
+            transform: translateY(100%);
+            transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          .snav-mobile-drawer-sheet.in { transform: translateY(0); }
+          .snav-mobile-drawer-handle {
+            width: 36px; height: 4px; border-radius: 4px;
+            background: rgba(84,199,248,0.2);
+            margin: 0 auto 16px;
+          }
+          .snav-mobile-drawer-title {
+            font-family: 'DM Sans', sans-serif; font-size: 9px;
+            font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+            color: rgba(180,215,240,0.28); margin-bottom: 8px; padding: 0 4px;
+          }
+          .snav-mobile-drawer-item {
+            display: flex; align-items: center; gap: 14px;
+            padding: 13px 14px; border-radius: 14px;
+            background: transparent; border: 1px solid transparent;
+            cursor: pointer; width: 100%; text-align: left;
+            -webkit-tap-highlight-color: transparent; outline: none;
+            transition: all 0.22s cubic-bezier(0.16,1,0.3,1);
+          }
+          .snav-mobile-drawer-item:active {
+            background: rgba(255,255,255,0.04);
+          }
+          .snav-mobile-drawer-icon {
+            width: 32px; height: 32px; flex-shrink: 0;
+            filter: brightness(0.6) saturate(0.5);
+          }
+          .snav-mobile-drawer-icon-svg {
+            width: 32px; height: 32px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            color: rgba(255,255,255,0.35);
+          }
+          .snav-mobile-drawer-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+          .snav-mobile-drawer-label {
+            font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 700;
+            color: rgba(255,255,255,0.72); letter-spacing: -0.2px; line-height: 1;
+          }
+          .snav-mobile-drawer-desc {
+            font-family: 'DM Sans', sans-serif; font-size: 11px;
+            color: rgba(180,215,240,0.28); line-height: 1;
+          }
+        }
+
+        /* Hide bottom nav on desktop */
+        @media (min-width: 769px) {
+          .snav-bottom-nav,
+          .snav-mobile-drawer { display: none !important; }
         }
       `}</style>
 
@@ -1169,6 +1400,109 @@ export default function SideNav() {
           <p className="snav-footer-line">Turrinder © {new Date().getFullYear()}</p>
         </div>
       </nav>
+
+
+      {/* ══════════════════════════════════════════════
+          MOBILE BOTTOM NAV (only visible on ≤768px)
+      ══════════════════════════════════════════════ */}
+      <div className="snav-bottom-nav">
+        {/* Scrollable main tabs */}
+        <div className="snav-bottom-track">
+          {tabs.map((tab) => {
+            const isActive = pathname === tab.path || pathname.startsWith(tab.path + "/");
+            return (
+              <button
+                key={tab.path}
+                className={`snav-bottom-item ${isActive ? "active" : ""}`}
+                onClick={() => {
+                  if (isGuest && tab.path !== "/discover") {
+                    router.push("/auth/register");
+                    return;
+                  }
+                  router.push(tab.path);
+                }}
+                style={{
+                  "--item-accent":        tab.accent,
+                  "--item-accent-bg":     `${tab.accent}14`,
+                  "--item-accent-border": `${tab.accent}28`,
+                } as React.CSSProperties}
+              >
+                <div className="snav-bottom-icon" style={{ "--item-accent": tab.accent } as React.CSSProperties}>
+                  <div className="snav-bottom-icon-glow" />
+                  <Image src={tab.img} alt={tab.label} width={26} height={26}
+                    style={{ objectFit: "contain", width: "100%", height: "100%" }} />
+                </div>
+                <span className="snav-bottom-label">{tab.label}</span>
+                <div className="snav-bottom-pip" />
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Extras button */}
+        <button className="snav-bottom-more" onClick={() => setDrawerOpen(true)} aria-label="Más opciones">
+          <div className="snav-bottom-more-dots">
+            <span /><span /><span />
+          </div>
+          <span className="snav-bottom-more-label">Más</span>
+        </button>
+      </div>
+
+      {/* Mobile extras drawer */}
+      {drawerOpen && (
+        <div className="snav-mobile-drawer" onClick={() => setDrawerOpen(false)}>
+          <div className="snav-mobile-drawer-backdrop" />
+          <div className={`snav-mobile-drawer-sheet in`} onClick={e => e.stopPropagation()}>
+            <div className="snav-mobile-drawer-handle" />
+            <div className="snav-mobile-drawer-title">Extras</div>
+
+            {/* Streamer */}
+            <button className="snav-mobile-drawer-item" onClick={() => { setDrawerOpen(false); guardedAction(() => router.push("/streamers")); }}>
+              <div className="snav-mobile-drawer-icon">
+                <Image src={imgStreamer} alt="Ser Streamer" width={32} height={32} style={{ objectFit: "contain", width: "100%", height: "100%" }} />
+              </div>
+              <div className="snav-mobile-drawer-text">
+                <span className="snav-mobile-drawer-label" style={{ background: "linear-gradient(135deg,#c4b5fd,#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Ser Streamer</span>
+                <span className="snav-mobile-drawer-desc">¡Aplicá y crecé!</span>
+              </div>
+            </button>
+
+            {/* Feedback */}
+            <button className="snav-mobile-drawer-item" onClick={() => { setDrawerOpen(false); guardedAction(() => setTimeout(() => setFeedbackOpen(true), 200)); }}>
+              <div className="snav-mobile-drawer-icon-svg">
+                <span style={{ fontSize: 24, lineHeight: 1 }}>🐛</span>
+              </div>
+              <div className="snav-mobile-drawer-text">
+                <span className="snav-mobile-drawer-label" style={{ background: "linear-gradient(135deg,#6ee7b7,#34d399)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Feedback</span>
+                <span className="snav-mobile-drawer-desc">Bug, idea o consulta</span>
+              </div>
+            </button>
+
+            {/* Discord */}
+            <button className="snav-mobile-drawer-item" onClick={() => { setDrawerOpen(false); window.open("https://discord.gg/jXkEpvCvRD", "_blank", "noopener,noreferrer"); }}>
+              <div className="snav-mobile-drawer-icon-svg">
+                <DiscordIcon size={22} />
+              </div>
+              <div className="snav-mobile-drawer-text">
+                <span className="snav-mobile-drawer-label" style={{ background: "linear-gradient(135deg,#b9bfff,#7289da)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Comunidad</span>
+                <span className="snav-mobile-drawer-desc">Unite a nuestro Discord</span>
+              </div>
+            </button>
+
+            {/* VIP */}
+            <button className="snav-mobile-drawer-item" onClick={() => { setDrawerOpen(false); guardedAction(() => setTimeout(() => setVipOpen(true), 200)); }}>
+              <div className="snav-mobile-drawer-icon">
+                <Image src={imgLogoVip} alt="VIP" width={32} height={32}
+                  style={{ objectFit: "contain", width: "100%", height: "100%", filter: "drop-shadow(0 0 6px rgba(255,195,0,0.6))" }} />
+              </div>
+              <div className="snav-mobile-drawer-text">
+                <span className="snav-mobile-drawer-label" style={{ background: "linear-gradient(135deg,#ffd700,#ffb800,#ff9500)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Turrinder VIP</span>
+                <span className="snav-mobile-drawer-desc">Desde $4.99 · sin límites</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
 
       {vipOpen        && <VIPModal      onClose={() => setVipOpen(false)}        />}
       {feedbackOpen   && <FeedbackModal onClose={() => setFeedbackOpen(false)}   />}
