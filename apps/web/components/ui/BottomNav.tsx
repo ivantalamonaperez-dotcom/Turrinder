@@ -852,7 +852,7 @@ export default function SideNav() {
     { path: "/modalidades",    img: imgModalidades,    label: "Modalidades",    desc: "Elegí cómo conectar",   accent: "#a78bfa" },
     { path: "/chat",           img: imgChat,           label: "Chats",          desc: "Tus conversaciones",    accent: "#3b9eda" },
     { path: "/profile",        img: imgPerfil,         label: "Perfil",         desc: "Tu cuenta",             accent: "#7dd8f8" },
-    { path: "/configuracion",  img: imgConfiguracion,  label: "Configuración",  desc: "Ajustes y privacidad",  accent: "#94a3b8" },
+    { path: "/configuracion",  img: imgConfiguracion,  label: "Config",  desc: "Ajustes y privacidad",  accent: "#94a3b8" },
   ];
 
   return (
