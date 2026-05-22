@@ -148,14 +148,9 @@ export function useDebateMedia(
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
 
-  /**
-   * remoteMuteStateRef — espejo del estado micBlocked/camBlocked de cada
-   * participante remoto según el último debate-room-state recibido.
-   * Se usa en dos lugares:
-   *   1) peer.ontrack — para aplicar el mute sobre streams que llegan
-   *      DESPUÉS del onState (reconexiones, entrada tardía).
-   *   2) onState — para aplicar enabled=false/true sobre streams ya existentes.
-   */
+  // Espejo de micBlocked/camBlocked del servidor para cada participante remoto.
+  // Se usa en: onState (aplicar mute sobre stream existente) y peer.ontrack
+  // (aplicar mute sobre stream recién llegado en reconexiones).
   const remoteMuteStateRef = useRef<Map<string, { audio: boolean; video: boolean }>>(new Map());
 
   /* ── Estado de sala ─────────────────────────────────────────────────────── */
@@ -340,14 +335,13 @@ export function useDebateMedia(
       if (!stream) return;
       console.log(`[WebRTC] 🎥 Stream remoto recibido de ${targetUserId}`);
 
-      // FIX MUTE: aplicar inmediatamente el estado de mute conocido sobre los
-      // tracks recién llegados. Cubre reconexiones donde onState ya llegó con
-      // micBlocked=true pero el stream WebRTC todavía no existía.
+      // Aplicar el estado de mute conocido sobre el stream recién llegado.
+      // Cubre reconexiones donde onState ya llegó con micBlocked=true
+      // pero el stream WebRTC todavía no existía.
       const muteState = remoteMuteStateRef.current.get(targetUserId);
       if (muteState) {
         stream.getAudioTracks().forEach((t) => { t.enabled = !muteState.audio; });
         stream.getVideoTracks().forEach((t) => { t.enabled = !muteState.video; });
-        console.log(`[Mute] ontrack: ${targetUserId} audio=${!muteState.audio} video=${!muteState.video}`);
       }
 
       remoteStreamsRef.current.set(targetUserId, stream);
@@ -484,14 +478,11 @@ export function useDebateMedia(
         }));
       setParticipants(mapped);
 
-      // ── FIX MUTE RECEPTOR ──────────────────────────────────────────────────
-      // Por cada participante remoto, actualizar remoteMuteStateRef Y aplicar
-      // t.enabled directamente sobre el MediaStream en remoteStreamsRef.
-      // Este es el fix clave: el <video> del receptor reproduce el MediaStream
-      // independientemente del estado del sender. La única forma de silenciarlo
-      // en el receptor es deshabilitar los tracks del stream remoto en este mapa.
-      // broadcastState dispara onState en todos los clientes cada vez que hay
-      // un mute, así que este bloque se ejecuta siempre que cambia micBlocked.
+      // ── Aplicar mute sobre streams REMOTOS (receptor) ─────────────────────
+      // Por cada participante remoto con micBlocked/camBlocked en el servidor,
+      // deshabilitar los tracks del MediaStream que ya está en el <video>.
+      // Esto silencia el audio en el receptor sin depender del sender.
+      // Se ejecuta en cada broadcastState — cubre mute, unmute, modo libre, etc.
       (state.members || [])
         .filter((m: any) => m.userId !== currentUserId)
         .forEach((m: any) => {
@@ -499,21 +490,18 @@ export function useDebateMedia(
           const audioMuted = !!m.micBlocked;
           const videoMuted = !!m.camBlocked;
 
-          // Guardar en ref para que peer.ontrack lo use al llegar streams futuros
+          // Guardar para que peer.ontrack lo use en streams futuros
           remoteMuteStateRef.current.set(uid, { audio: audioMuted, video: videoMuted });
 
-          // Aplicar sobre el stream ya existente (si WebRTC ya lo recibió)
           const stream = remoteStreamsRef.current.get(uid);
           if (stream) {
             stream.getAudioTracks().forEach((t) => { t.enabled = !audioMuted; });
             stream.getVideoTracks().forEach((t) => { t.enabled = !videoMuted; });
-            console.log(`[Mute] onState: ${uid} audio=${!audioMuted} video=${!videoMuted}`);
           }
         });
 
-      // ── FIX MUTE SENDER — stream local ────────────────────────────────────
-      // Cubre allMutedOnEntry, strictMode y reconexiones donde el servidor
-      // ya tiene micBlocked=true para este usuario.
+      // ── Aplicar mute sobre el stream LOCAL (sender) ───────────────────────
+      // Cubre allMutedOnEntry, strictMode y reconexiones.
       const selfInServer = (state.members || []).find(
         (m: any) => m.userId === currentUserId
       );
@@ -802,16 +790,14 @@ export function useDebateMedia(
 
   /* =========================================================
      Sincronizar streams remotos cuando remoteStreams cambia.
-     Re-aplica el estado de mute sobre el stream recién asignado
-     para cubrir la race condition donde el stream llega antes que
-     el primer onState con micBlocked=true.
+     Re-aplica mute sobre el stream recién asignado usando el
+     estado actual del participante (mutedByHost / camOffByHost).
   ========================================================= */
   useEffect(() => {
     setParticipants((prev) =>
       prev.map((p) => {
         const newStream = remoteStreams.get(p.id);
         if (!newStream) return p;
-        // Aplicar mute según el estado actual del participante
         newStream.getAudioTracks().forEach((t) => { t.enabled = !p.mutedByHost; });
         newStream.getVideoTracks().forEach((t) => { t.enabled = !p.camOffByHost; });
         return { ...p, stream: newStream };
@@ -823,10 +809,9 @@ export function useDebateMedia(
      CONTROLES DE MEDIA LOCAL
   ========================================================= */
 
-  // toggleAudio: bloquea si el host silenció el mic, y notifica al servidor
-  // del estado real para que broadcastState lo propague a los demás.
-  // FIX Bug 1: sin este emit, los otros clientes nunca saben que el usuario
-  // se muteó voluntariamente y siguen recibiendo el audio en su <video>.
+  // toggleAudio: bloquea si el host silenció el mic.
+  // Emite debate-self-mute al servidor para que broadcastState propague
+  // micBlocked a todos → el receptor aplica t.enabled=false en el stream remoto.
   const toggleAudio = useCallback(() => {
     if (blockedByHostRef.current.mic) {
       toast("El host silenció tu micrófono", "warn");
@@ -838,15 +823,14 @@ export function useDebateMedia(
     if (!track) return;
     track.enabled = !track.enabled;
     setAudioOn(track.enabled);
-    // Notificar al servidor para que actualice micBlocked y haga broadcastState,
-    // lo que a su vez actualiza el stream remoto en el <video> de los demás.
+    // Notificar al servidor → broadcastState → demás clientes aplican mute remoto
     socketRef.current?.emit("debate-self-mute", {
       roomId,
       micBlocked: !track.enabled,
     });
   }, [toast, roomId]);
 
-  // toggleVideo: igual que toggleAudio pero para la cámara.
+  // toggleVideo: ídem para cámara.
   const toggleVideo = useCallback(() => {
     if (blockedByHostRef.current.cam) {
       toast("El host apagó tu cámara", "warn");

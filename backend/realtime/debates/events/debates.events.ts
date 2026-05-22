@@ -56,8 +56,6 @@ export default function registerDebatesEvents(
   }
 
   // ── CREATE ROOM ────────────────────────────────────────────────────────────
-  // FIX: antes page.tsx emitía "create-debate-room" (sin prefijo "debate-"),
-  //      ahora ambos lados usan "debate-create-room".
   socket.on("debate-create-room", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -82,7 +80,6 @@ export default function registerDebatesEvents(
   });
 
   // ── JOIN ROOM ──────────────────────────────────────────────────────────────
-  // FIX: ahora se extrae y pasa avatarUrl al handler
   socket.on("debate-join-room", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -115,8 +112,6 @@ export default function registerDebatesEvents(
   });
 
   // ── CLOSE ROOM (solo host) ─────────────────────────────────────────────────
-  // FIX: antes page.tsx emitía "close-debate-room" (sin prefijo "debate-"),
-  //      ahora ambos lados usan "debate-close-room".
   socket.on("debate-close-room", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -187,6 +182,37 @@ export default function registerDebatesEvents(
     debateHandler.muteAll(io, roomId, myUserId, value);
   });
 
+  // ── SELF MUTE (usuario apaga su propio mic voluntariamente) ───────────────
+  // FIX: permite que el usuario notifique al servidor de su estado de mute
+  // para que broadcastState lo propague → los demás aplican t.enabled=false
+  // sobre el stream remoto en su <video>.
+  socket.on("debate-self-mute", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const p          = payload as Record<string, unknown>;
+    const roomId     = safeStr(p.roomId);
+    const micBlocked = p.micBlocked;
+
+    if (!roomId || !validRoomId(roomId)) return;
+    if (!validBool(micBlocked)) return;
+
+    debateHandler.selfMute(io, roomId, myUserId, micBlocked);
+  });
+
+  // ── SELF CAM OFF (usuario apaga su propia cam voluntariamente) ────────────
+  socket.on("debate-self-camoff", (payload: unknown) => {
+    if (typeof payload !== "object" || payload === null) return;
+
+    const p          = payload as Record<string, unknown>;
+    const roomId     = safeStr(p.roomId);
+    const camBlocked = p.camBlocked;
+
+    if (!roomId || !validRoomId(roomId)) return;
+    if (!validBool(camBlocked)) return;
+
+    debateHandler.selfCamOff(io, roomId, myUserId, camBlocked);
+  });
+
   // ── KICK USER ──────────────────────────────────────────────────────────────
   socket.on("debate-kick-user", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
@@ -236,29 +262,6 @@ export default function registerDebatesEvents(
     debateHandler.shadowMuteUser(io, roomId, myUserId, targetId);
   });
 
-  // ── SELF MUTE (usuario apaga su propio mic voluntariamente) ─────────────────
-  // FIX Bug 1: permite que el propio usuario notifique al servidor de su estado
-  // de mute para que broadcastState lo propague a los demás participantes.
-  socket.on("debate-self-mute", (payload: unknown) => {
-    if (typeof payload !== "object" || payload === null) return;
-
-    const { roomId, micBlocked } = payload as Record<string, unknown>;
-    if (!validRoomId(roomId)) return;
-    if (typeof micBlocked !== "boolean") return;
-
-    debateHandler.selfMute(io, roomId, myUserId, micBlocked);
-  });
-
-  socket.on("debate-self-camoff", (payload: unknown) => {
-    if (typeof payload !== "object" || payload === null) return;
-
-    const { roomId, camBlocked } = payload as Record<string, unknown>;
-    if (!validRoomId(roomId)) return;
-    if (typeof camBlocked !== "boolean") return;
-
-    debateHandler.selfCamOff(io, roomId, myUserId, camBlocked);
-  });
-
   // ── RAISE HAND ─────────────────────────────────────────────────────────────
   socket.on("debate-raise-hand", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
@@ -280,20 +283,16 @@ export default function registerDebatesEvents(
   });
 
   // ── REQUEST SPEAK ──────────────────────────────────────────────────────────
-  // El cliente emite esto cuando levanta la mano pidiendo turno
   socket.on("debate-request-speak", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
     const { roomId } = payload as Record<string, unknown>;
     if (!validRoomId(roomId)) return;
 
-    // Se implementa igual que raise-hand (agrega a la queue)
     debateHandler.raiseHand(io, roomId, myUserId);
   });
 
   // ── APPROVE SPEAK ──────────────────────────────────────────────────────────
-  // FIX: el cliente emite "debate-approve-speak" pero el evento registrado
-  //      era "debate-approve-speaker" → unificado acá con ambos alias.
   const handleApprove = (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -332,8 +331,6 @@ export default function registerDebatesEvents(
   });
 
   // ── ASSIGN COHOST ──────────────────────────────────────────────────────────
-  // FIX: el cliente emite "debate-cohost-add" pero el evento registrado
-  //      era "debate-assign-cohost" → se agregan ambos alias.
   const handleCohost = (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -407,11 +404,9 @@ export default function registerDebatesEvents(
     });
   });
 
-
   // ── WEBRTC SIGNAL RELAY ────────────────────────────────────────────────────
   // El hook emite { to: targetUserId, data: offer|answer|candidate }.
-  // El servidor reenvía el mensaje al socket del destinatario.
-  // SIN este handler, offers/answers/ICE candidates nunca llegan al otro peer.
+  // El servidor reenvía al socket del destinatario buscando en debateState.
   socket.on("signal", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -419,7 +414,6 @@ export default function registerDebatesEvents(
     const to = safeStr(p.to, 64);
     if (!to) return;
 
-    // Buscar el socketId actual del destinatario en cualquier sala
     let targetSocketId: string | null = null;
     for (const room of debateState.values()) {
       const member = room.members.get(to);
@@ -429,15 +423,12 @@ export default function registerDebatesEvents(
       }
     }
 
-    if (!targetSocketId) return; // destinatario desconectado momentáneamente
+    if (!targetSocketId) return;
 
-    // Reenviar solo al socket del destinatario, incluyendo "from"
     io.to(targetSocketId).emit("signal", { from: myUserId, data: p.data });
   });
 
   // ── WEBRTC RECONNECT REQUEST ───────────────────────────────────────────────
-  // Cuando un peer detecta ICE "failed"/"disconnected", le pide al otro lado
-  // que reinicie el offer para reestablecer la conexión.
   socket.on("signal-reconnect", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
 
@@ -455,11 +446,7 @@ export default function registerDebatesEvents(
     io.to(member.socketId).emit("signal-reconnect-request", { from: myUserId });
   });
 
-
-  // ── VOTES (broadcast via socket.io room) ──────────────────────────────────
-  // Todos los sockets hacen socket.join(roomId) en joinRoom/createRoom,
-  // por lo que io.to(roomId) llega a todos los miembros sin importar userId->socketId.
-
+  // ── VOTES ──────────────────────────────────────────────────────────────────
   socket.on("debate-start-vote", (payload: unknown) => {
     if (typeof payload !== "object" || payload === null) return;
     const p      = payload as Record<string, unknown>;

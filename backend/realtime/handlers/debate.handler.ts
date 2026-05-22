@@ -108,6 +108,10 @@ function startSpeakerTimer(io: Server, roomId: string): void {
     if (m) {
       m.role       = "viewer";
       m.micBlocked = true;
+      // FIX: notificar al speaker que se le acabó el tiempo
+      if (m.socketId) {
+        io.to(m.socketId).emit("debate-you-muted", { by: "system" });
+      }
     }
 
     r.currentSpeaker = null;
@@ -205,9 +209,10 @@ export const debateHandler = {
     roomId:    string,
     userId:    string,
     userName:  string,
-    avatarUrl: string | null
+    avatarUrl: string | null,
   ): void {
     const room = getRoom(roomId);
+
     if (!room) {
       socket.emit("debate-error", { code: "ROOM_NOT_FOUND", roomId });
       return;
@@ -227,7 +232,7 @@ export const debateHandler = {
     }
 
     if (room.members.size >= room.maxPeople) {
-      socket.emit("debate-error", { code: "ROOM_FULL", roomId, max: room.maxPeople });
+      socket.emit("debate-error", { code: "ROOM_FULL", roomId });
       return;
     }
 
@@ -237,7 +242,7 @@ export const debateHandler = {
       name:           userName,
       avatarUrl:      avatarUrl ?? null,
       role:           "viewer",
-      micBlocked:     room.allMutedOnEntry,
+      micBlocked:     room.allMutedOnEntry || room.strictMode,
       camBlocked:     false,
       banned:         false,
       handRaised:     false,
@@ -257,7 +262,6 @@ export const debateHandler = {
       avatarUrl: avatarUrl ?? null,
     });
 
-    // Broadcast a TODOS para que actualicen su lista de participantes
     broadcastState(io, roomId);
   },
 
@@ -285,21 +289,25 @@ export const debateHandler = {
 
     socket.leave(roomId);
 
-    // Si el host se va, cerrar la sala para todos
-    if (room.hostId === userId) {
+    // Si el host se va y quedan miembros, cerrar la sala
+    if (userId === room.hostId && room.members.size > 0) {
       io.to(roomId).emit("debate-room-closed", { roomId, reason: "host-left" });
       io.socketsLeave(roomId);
       clearSpeakerTimer(roomId);
       debateState.delete(roomId);
-      console.log(`[DebateHandler] 🗑️  Sala "${roomId}" cerrada (host se fue)`);
+
+      // TTL para limpiar sala vacía si no quedó nadie
+      setTimeout(() => {
+        if (!debateState.has(roomId)) return;
+        const r = getRoom(roomId);
+        if (r && r.members.size === 0) debateState.delete(roomId);
+      }, EMPTY_ROOM_TTL_MS);
+
       return;
     }
 
-    // Sala vacía tras la salida
     if (room.members.size === 0) {
-      clearSpeakerTimer(roomId);
       debateState.delete(roomId);
-      console.log(`[DebateHandler] 🗑️  Sala "${roomId}" eliminada (vacía)`);
       return;
     }
 
@@ -309,7 +317,7 @@ export const debateHandler = {
     broadcastState(io, roomId);
   },
 
-  // ── CLOSE ROOM (host cierra explícitamente) ─────────────────────────────────
+  // ── CLOSE ROOM ──────────────────────────────────────────────────────────────
   closeRoom(
     io:     Server,
     roomId: string,
@@ -405,6 +413,51 @@ export const debateHandler = {
     broadcastState(io, roomId);
   },
 
+  // ── SELF MUTE ───────────────────────────────────────────────────────────────
+  // FIX: el usuario apaga su propio mic/cam voluntariamente.
+  // Sin este handler, el estado micBlocked en el servidor nunca se actualiza
+  // cuando el usuario se mutea solo → broadcastState no se dispara →
+  // los demás clientes no reciben el cambio → siguen escuchando el audio.
+  selfMute(
+    io: Server, roomId: string, userId: string, micBlocked: boolean
+  ): void {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    const m = room.members.get(userId);
+    if (!m) return;
+
+    // Evitar que un usuario bloqueado por el host pueda reactivarse solo.
+    // Solo se permite desbloquear si: freeMode, es speaker actual, o es moderador.
+    if (!micBlocked && m.micBlocked) {
+      const isSpeaker = room.currentSpeaker === userId;
+      const isMod     = isModerator(room, userId);
+      if (!room.freeMode && !isSpeaker && !isMod) return;
+    }
+
+    m.micBlocked = micBlocked;
+    broadcastState(io, roomId);
+  },
+
+  selfCamOff(
+    io: Server, roomId: string, userId: string, camBlocked: boolean
+  ): void {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    const m = room.members.get(userId);
+    if (!m) return;
+
+    // En modo estricto solo mods pueden reactivar cam
+    if (!camBlocked && m.camBlocked) {
+      const isMod = isModerator(room, userId);
+      if (!room.freeMode && !isMod) return;
+    }
+
+    m.camBlocked = camBlocked;
+    broadcastState(io, roomId);
+  },
+
   // ── KICK / BAN ──────────────────────────────────────────────────────────────
   kickUser(
     io: Server, roomId: string, by: string, target: string
@@ -491,52 +544,6 @@ export const debateHandler = {
     }, ms);
   },
 
-  // ── SELF MUTE (usuario apaga su propio mic/cam voluntariamente) ─────────────
-  // FIX Bug 1: sin este handler, el estado micBlocked en el servidor no
-  // se actualiza cuando el usuario se mutea solo. broadcastState no se dispara,
-  // los demás clientes no reciben el nuevo estado, y sus <video> siguen
-  // reproduciendo el audio del usuario como si nada.
-  selfMute(
-    io: Server, roomId: string, userId: string, micBlocked: boolean
-  ): void {
-    const room = getRoom(roomId);
-    if (!room) return;
-
-    const m = room.members.get(userId);
-    if (!m) return;
-
-    // En modo estricto solo el host/cohost puede activar el mic — ignorar
-    // intentos de self-unmute si micBlocked fue puesto por un moderador.
-    // Para detectarlo: si micBlocked=true en el server Y el usuario intenta
-    // poner micBlocked=false, solo permitirlo si freeMode o si es el speaker.
-    if (!micBlocked && m.micBlocked) {
-      const isSpeaker  = room.currentSpeaker === userId;
-      const isMod      = room.hostId === userId || room.cohosts.has(userId);
-      if (!room.freeMode && !isSpeaker && !isMod) return; // bloqueado por host
-    }
-
-    m.micBlocked = micBlocked;
-    broadcastState(io, roomId);
-  },
-
-  selfCamOff(
-    io: Server, roomId: string, userId: string, camBlocked: boolean
-  ): void {
-    const room = getRoom(roomId);
-    if (!room) return;
-
-    const m = room.members.get(userId);
-    if (!m) return;
-
-    if (!camBlocked && m.camBlocked) {
-      const isMod = room.hostId === userId || room.cohosts.has(userId);
-      if (!room.freeMode && !isMod) return;
-    }
-
-    m.camBlocked = camBlocked;
-    broadcastState(io, roomId);
-  },
-
   // ── SHADOW MUTE ─────────────────────────────────────────────────────────────
   shadowMuteUser(
     io: Server, roomId: string, by: string, target: string
@@ -592,9 +599,9 @@ export const debateHandler = {
     const m = room.members.get(target);
     if (!m) return;
 
-    // Si había un speaker anterior, devolverlo a viewer y mutearlo.
-    // FIX: igual que cutSpeaker — siempre mutear al speaker desplazado,
-    // sin importar allMutedOnEntry o freeMode, y notificar su socket.
+    // FIX: si había speaker anterior, siempre mutearlo explícitamente.
+    // El original usaba room.allMutedOnEntry, que en salas con freeMode=true
+    // dejaba micBlocked=false → el speaker desplazado seguía hablando.
     if (room.currentSpeaker && room.currentSpeaker !== target) {
       const prev = room.members.get(room.currentSpeaker);
       if (prev) {
@@ -613,6 +620,11 @@ export const debateHandler = {
     m.handRaised = false;
     m.role       = "speaker";
     m.micBlocked = false;
+
+    // FIX: notificar al nuevo speaker que su mic fue desbloqueado
+    if (m.socketId) {
+      io.to(m.socketId).emit("debate-you-unmuted", { by });
+    }
 
     startSpeakerTimer(io, roomId);
 
@@ -642,6 +654,8 @@ export const debateHandler = {
     broadcastState(io, roomId);
   },
 
+  // FIX: cutSpeaker siempre mutea al speaker cortado, sin importar el modo.
+  // El original usaba room.allMutedOnEntry → en freeMode dejaba micBlocked=false.
   cutSpeaker(io: Server, roomId: string, by: string): void {
     const room = getRoom(roomId);
     if (!room || !isModerator(room, by)) return;
@@ -649,13 +663,7 @@ export const debateHandler = {
     if (room.currentSpeaker) {
       const prev = room.members.get(room.currentSpeaker);
       if (prev) {
-        prev.role = "viewer";
-
-        // FIX: siempre mutear al speaker cortado, independientemente de
-        // allMutedOnEntry o freeMode. El moderador cortó la palabra
-        // explícitamente — el usuario no debe seguir hablando.
-        // Se fuerza micBlocked=true y se notifica al socket del speaker
-        // para que desactive su track local inmediatamente.
+        prev.role       = "viewer";
         prev.micBlocked = true;
         if (prev.socketId) {
           io.to(prev.socketId).emit("debate-you-muted", { by });
@@ -728,7 +736,7 @@ export const debateHandler = {
     broadcastState(io, roomId);
   },
 
-  transferHost(io, roomId, by, target): void {
+  transferHost(io: Server, roomId: string, by: string, target: string): void {
     const room = getRoom(roomId);
     if (!room || room.hostId !== by) return;
 
@@ -742,7 +750,6 @@ export const debateHandler = {
     room.hostId = target;
     room.cohosts.delete(target);
 
-    // ✅ NUEVO: notificar al nuevo host directamente
     if (next.socketId) {
       io.to(next.socketId).emit("debate-host-transferred", { newHostId: target });
     }
@@ -765,9 +772,19 @@ export const debateHandler = {
         if (m.userId === room.hostId)       return;
         if (room.cohosts.has(m.userId))     return;
         m.micBlocked = true;
+        // FIX: notificar individualmente a cada usuario muteado por modo estricto
+        if (m.socketId) {
+          io.to(m.socketId).emit("debate-you-muted", { by });
+        }
       });
     } else if (mode === "free") {
-      room.members.forEach((m) => { m.micBlocked = false; });
+      room.members.forEach((m) => {
+        m.micBlocked = false;
+        // FIX: notificar individualmente a cada usuario desbloqueado
+        if (m.socketId) {
+          io.to(m.socketId).emit("debate-you-unmuted", { by });
+        }
+      });
     }
 
     broadcastState(io, roomId);
@@ -778,137 +795,10 @@ export const debateHandler = {
     const userId = getUserId(socket);
     if (!userId) return;
 
-    for (const [roomId, room] of debateState.entries()) {
+    debateState.forEach((room, roomId) => {
       if (room.members.has(userId)) {
         debateHandler.leaveRoom(io, socket, roomId, userId);
       }
-    }
-  },
-
-  // ── VOTES ───────────────────────────────────────────────────────────────────
-
-  startVote(
-    io:     Server,
-    roomId: string,
-    by:     string,
-    vote:   any
-  ): void {
-    const room = getRoom(roomId);
-    if (!room || !isModerator(room, by)) return;
-
-    // Sanitize options: máx 6, cada una ≤ 80 chars, al menos 2
-    const rawOptions: string[] = Array.isArray(vote.options) ? vote.options : [];
-    const options = rawOptions
-      .map((o: any) => (typeof o === "string" ? o.trim().slice(0, 80) : ""))
-      .filter(Boolean)
-      .slice(0, 6);
-
-    if (options.length < 2) return; // votación inválida
-
-    const voteObj = {
-      id:         typeof vote.id === "string" ? vote.id : String(now()),
-      type:       ["yes_no", "kick_vote", "custom"].includes(vote.type) ? vote.type : "custom",
-      question:   typeof vote.question === "string" ? vote.question.slice(0, 300) : "",
-      options,
-      votes:      {} as Record<string, string>,
-      endsAt:     typeof vote.endsAt === "number" ? vote.endsAt : now() + 30_000,
-      targetId:   typeof vote.targetId   === "string" ? vote.targetId   : undefined,
-      targetName: typeof vote.targetName === "string" ? vote.targetName : undefined,
-      createdBy:  room.members.get(by)?.name ?? by,
-    };
-
-    if (!voteObj.question) return;
-
-    room.activeVote = voteObj;
-
-    io.to(roomId).emit("debate-vote-started", voteObj);
-
-    // Auto-cerrar al terminar el plazo
-    const msLeft = voteObj.endsAt - now();
-    if (msLeft > 0) {
-      setTimeout(() => {
-        const r = getRoom(roomId);
-        if (!r || r.activeVote?.id !== voteObj.id) return;
-
-        const results: Record<string, number> = {};
-        for (const choice of Object.values(r.activeVote.votes)) {
-          results[choice] = (results[choice] ?? 0) + 1;
-        }
-        const winner = Object.entries(results).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-        io.to(roomId).emit("debate-vote-ended", {
-          voteId:  voteObj.id,
-          results,
-          winner,
-          total:   Object.keys(r.activeVote.votes).length,
-        });
-
-        r.activeVote = null;
-      }, msLeft);
-    }
-  },
-
-  castVote(
-    io:      Server,
-    roomId:  string,
-    userId:  string,
-    voteId:  string,
-    choice:  string
-  ): void {
-    const room = getRoom(roomId);
-    if (!room || !room.activeVote) return;
-    if (room.activeVote.id !== voteId) return;
-    if (!room.members.has(userId)) return;
-    if (!room.activeVote.options.includes(choice)) return;
-
-    // Un voto por usuario
-    room.activeVote.votes[userId] = choice;
-
-    io.to(roomId).emit("debate-vote-cast", {
-      voteId,
-      userId,
-      choice,
-      total: Object.keys(room.activeVote.votes).length,
     });
-  },
-
-  endVote(
-    io:     Server,
-    roomId: string,
-    by:     string,
-    voteId: string
-  ): void {
-    const room = getRoom(roomId);
-    if (!room || !isModerator(room, by)) return;
-    if (!room.activeVote || room.activeVote.id !== voteId) return;
-
-    const results: Record<string, number> = {};
-    for (const choice of Object.values(room.activeVote.votes)) {
-      results[choice] = (results[choice] ?? 0) + 1;
-    }
-    const winner = Object.entries(results).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-    io.to(roomId).emit("debate-vote-ended", {
-      voteId,
-      results,
-      winner,
-      total: Object.keys(room.activeVote.votes).length,
-    });
-
-    room.activeVote = null;
-  },
-
-  // ── MAINTENANCE ─────────────────────────────────────────────────────────────
-  // Llamar periódicamente desde server.ts: setInterval(() => debateHandler.runMaintenance(io), 60_000)
-  runMaintenance(io: Server): void {
-    const t = now();
-
-    for (const [roomId, room] of debateState.entries()) {
-      if (room.members.size === 0 && t - room.createdAt > EMPTY_ROOM_TTL_MS) {
-        clearSpeakerTimer(roomId);
-        debateState.delete(roomId);
-        console.log(`[DebateHandler] 🗑️  Sala "${roomId}" eliminada por TTL vacío`);
-      }
-    }
   },
 };
