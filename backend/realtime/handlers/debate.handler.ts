@@ -790,6 +790,128 @@ export const debateHandler = {
     broadcastState(io, roomId);
   },
 
+  // ── VOTES ───────────────────────────────────────────────────────────────────
+  startVote(
+    io:     Server,
+    roomId: string,
+    by:     string,
+    vote:   any
+  ): void {
+    const room = getRoom(roomId);
+    if (!room || !isModerator(room, by)) return;
+
+    const rawOptions: string[] = Array.isArray(vote.options) ? vote.options : [];
+    const options = rawOptions
+      .map((o: any) => (typeof o === "string" ? o.trim().slice(0, 80) : ""))
+      .filter(Boolean)
+      .slice(0, 6);
+
+    if (options.length < 2) return;
+
+    const voteObj = {
+      id:         typeof vote.id === "string" ? vote.id : String(now()),
+      type:       ["yes_no", "kick_vote", "custom"].includes(vote.type) ? vote.type : "custom",
+      question:   typeof vote.question === "string" ? vote.question.slice(0, 300) : "",
+      options,
+      votes:      {} as Record<string, string>,
+      endsAt:     typeof vote.endsAt === "number" ? vote.endsAt : now() + 30_000,
+      targetId:   typeof vote.targetId   === "string" ? vote.targetId   : undefined,
+      targetName: typeof vote.targetName === "string" ? vote.targetName : undefined,
+      createdBy:  room.members.get(by)?.name ?? by,
+    };
+
+    if (!voteObj.question) return;
+
+    room.activeVote = voteObj;
+    io.to(roomId).emit("debate-vote-started", voteObj);
+
+    const msLeft = voteObj.endsAt - now();
+    if (msLeft > 0) {
+      setTimeout(() => {
+        const r = getRoom(roomId);
+        if (!r || r.activeVote?.id !== voteObj.id) return;
+
+        const results: Record<string, number> = {};
+        for (const choice of Object.values(r.activeVote.votes)) {
+          results[choice] = (results[choice] ?? 0) + 1;
+        }
+        const winner = Object.entries(results).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+        io.to(roomId).emit("debate-vote-ended", {
+          voteId:  voteObj.id,
+          results,
+          winner,
+          total:   Object.keys(r.activeVote.votes).length,
+        });
+
+        r.activeVote = null;
+      }, msLeft);
+    }
+  },
+
+  castVote(
+    io:      Server,
+    roomId:  string,
+    userId:  string,
+    voteId:  string,
+    choice:  string
+  ): void {
+    const room = getRoom(roomId);
+    if (!room || !room.activeVote) return;
+    if (room.activeVote.id !== voteId) return;
+    if (!room.members.has(userId)) return;
+    if (!room.activeVote.options.includes(choice)) return;
+
+    room.activeVote.votes[userId] = choice;
+
+    io.to(roomId).emit("debate-vote-cast", {
+      voteId,
+      userId,
+      choice,
+      total: Object.keys(room.activeVote.votes).length,
+    });
+  },
+
+  endVote(
+    io:     Server,
+    roomId: string,
+    by:     string,
+    voteId: string
+  ): void {
+    const room = getRoom(roomId);
+    if (!room || !isModerator(room, by)) return;
+    if (!room.activeVote || room.activeVote.id !== voteId) return;
+
+    const results: Record<string, number> = {};
+    for (const choice of Object.values(room.activeVote.votes)) {
+      results[choice] = (results[choice] ?? 0) + 1;
+    }
+    const winner = Object.entries(results).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    io.to(roomId).emit("debate-vote-ended", {
+      voteId,
+      results,
+      winner,
+      total: Object.keys(room.activeVote.votes).length,
+    });
+
+    room.activeVote = null;
+  },
+
+  // ── MAINTENANCE ─────────────────────────────────────────────────────────────
+  // Llamar desde server.ts: setInterval(() => debateHandler.runMaintenance(io), 60_000)
+  runMaintenance(io: Server): void {
+    const t = now();
+
+    for (const [roomId, room] of debateState.entries()) {
+      if (room.members.size === 0 && t - room.createdAt > EMPTY_ROOM_TTL_MS) {
+        clearSpeakerTimer(roomId);
+        debateState.delete(roomId);
+        console.log(`[DebateHandler] 🗑️  Sala "${roomId}" eliminada por TTL vacío`);
+      }
+    }
+  },
+
   // ── DISCONNECT ──────────────────────────────────────────────────────────────
   handleDisconnect(io: Server, socket: Socket): void {
     const userId = getUserId(socket);
